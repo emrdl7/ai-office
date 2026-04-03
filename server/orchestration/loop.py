@@ -15,8 +15,8 @@ from bus.payloads import TaskRequestPayload, TaskResultPayload
 from log_bus.event_bus import EventBus, LogEvent
 from workspace.manager import WorkspaceManager
 
-# 에이전트 시스템 프롬프트 파일 디렉토리
-AGENTS_DIR = Path(__file__).parent.parent / 'agents'
+# 에이전트 시스템 프롬프트 파일 디렉토리 (프로젝트 루트 agents/)
+AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
 
 class WorkflowState(str, Enum):
