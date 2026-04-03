@@ -23,9 +23,9 @@
 
 ### Agent Memory (에이전트 기억/학습)
 
-- [ ] **AMEM-01**: 각 에이전트가 자신의 역할에 맞는 경험(성공/실패 패턴, 피드백)을 프로젝트 단위로 저장한다
-- [ ] **AMEM-02**: 에이전트가 이전 작업 경험을 참조하여 동일한 실수를 반복하지 않고 품질을 개선한다
-- [ ] **AMEM-03**: Claude의 보완 지시와 QA 검수 피드백이 해당 에이전트의 경험 기록에 자동 반영된다
+- [x] **AMEM-01**: 각 에이전트가 자신의 역할에 맞는 경험(성공/실패 패턴, 피드백)을 프로젝트 단위로 저장한다
+- [x] **AMEM-02**: 에이전트가 이전 작업 경험을 참조하여 동일한 실수를 반복하지 않고 품질을 개선한다
+- [x] **AMEM-03**: Claude의 보완 지시와 QA 검수 피드백이 해당 에이전트의 경험 기록에 자동 반영된다
 
 ### Infra (인프라)
 
@@ -96,9 +96,9 @@
 | WKFL-02 | Phase 2 | Complete |
 | WKFL-03 | Phase 2 | Complete |
 | WKFL-04 | Phase 2 | Complete |
-| AMEM-01 | Phase 3 | Pending |
-| AMEM-02 | Phase 3 | Pending |
-| AMEM-03 | Phase 3 | Pending |
+| AMEM-01 | Phase 3 | Complete |
+| AMEM-02 | Phase 3 | Complete |
+| AMEM-03 | Phase 3 | Complete |
 | DASH-01 | Phase 4 | Pending |
 | DASH-02 | Phase 4 | Pending |
 | DASH-03 | Phase 4 | Pending |
