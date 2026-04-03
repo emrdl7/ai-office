@@ -12,7 +12,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Infra Foundation** - 메시지 버스, 상태 저장소, Claude CLI 러너, Ollama 러너, 워크스페이스 파일 시스템 구축
+- [x] **Phase 1: Infra Foundation** - 메시지 버스, 상태 저장소, Claude CLI 러너, Ollama 러너, 워크스페이스 파일 시스템 구축 (completed 2026-04-03)
 - [ ] **Phase 2: Orchestration & Workflow** - 에이전트 역할 정의, 오케스트레이션 서버, 메시지 라우팅, QA 게이트, Claude 최종 검증 루프
 - [ ] **Phase 3: Agent Memory** - 에이전트별 프로젝트 단위 경험 저장·참조·자동 반영
 - [ ] **Phase 4: Web Dashboard** - 작업지시 UI, 실시간 로그 스트림, 에이전트 상태 보드, 산출물 뷰어, DAG 시각화
@@ -36,8 +36,8 @@ Plans:
 - [x] 01-02-PLAN.md — SQLite WAL 메시지 버스 (INFR-01)
 - [x] 01-03-PLAN.md — WorkspaceManager atomic write + Gemma4 JSON 파서 (ARTF-01, ARTF-02, INFR-05)
 - [x] 01-04-PLAN.md — Claude CLI subprocess 러너 (INFR-02)
-- [ ] 01-05-PLAN.md — Ollama asyncio.Queue 단일 워커 (INFR-03)
-- [ ] 01-06-PLAN.md — EventBus + FastAPI WebSocket /ws/logs (INFR-04)
+- [x] 01-05-PLAN.md — Ollama asyncio.Queue 단일 워커 (INFR-03)
+- [x] 01-06-PLAN.md — EventBus + FastAPI WebSocket /ws/logs (INFR-04)
 
 ### Phase 2: Orchestration & Workflow
 **Goal**: 사용자의 프로젝트 지시 하나로 4개 에이전트가 순차 실행되어 실제 산출물을 만들고 Claude가 최종 검증까지 완료할 수 있다
@@ -80,7 +80,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infra Foundation | 4/6 | In Progress|  |
+| 1. Infra Foundation | 6/6 | Complete   | 2026-04-03 |
 | 2. Orchestration & Workflow | 0/? | Not started | - |
 | 3. Agent Memory | 0/? | Not started | - |
 | 4. Web Dashboard | 0/? | Not started | - |

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 01-infra-foundation 01-05-PLAN.md
-last_updated: "2026-04-03T05:25:14.344Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 01-infra-foundation 01-06-PLAN.md
+last_updated: "2026-04-03T05:29:20.986Z"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 6
 ---
 
 # Project State
@@ -51,6 +51,7 @@ Plan: 6 of 6
 | Phase 01-infra-foundation P03 | 3 | 2 tasks | 4 files |
 | Phase 01-infra-foundation P04 | 7 | 1 tasks | 2 files |
 | Phase 01-infra-foundation P05 | 525580 | 1 tasks | 2 files |
+| Phase 01-infra-foundation P06 | 12 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Recent decisions affecting current work:
 - [Phase 01-infra-foundation]: 2-pass JSON 파서에서 rfind 사용 — 중첩 JSON의 마지막 닫는 괄호 정확히 선택
 - [Phase 01-infra-foundation]: asyncio.Queue 단일 워커로 동시 Ollama 요청을 직렬화 — gemma4:26b 메모리 스래싱 방지
 - [Phase 01-infra-foundation]: generate_json()을 OllamaRunner에 포함 — parse_json() 파이프라인 통합 제공
+- [Phase 01-infra-foundation]: asyncio.Queue 기반 in-process 이벤트 버스: 폴링 없이 즉시 WebSocket 팬아웃, SQLite 브릿지 불필요
+- [Phase 01-infra-foundation]: QueueFull 예외 무시: 느린 클라이언트 드롭으로 버스 블록 방지
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T05:25:14.341Z
-Stopped at: Completed 01-infra-foundation 01-05-PLAN.md
+Last session: 2026-04-03T05:29:20.983Z
+Stopped at: Completed 01-infra-foundation 01-06-PLAN.md
 Resume file: None
