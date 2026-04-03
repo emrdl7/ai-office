@@ -49,7 +49,13 @@ Plans:
   3. 구성원이 다른 구성원에게 작업을 요청할 수 있으며, 기획자가 그 모든 요청과 결과를 추적하여 전체 흐름을 파악한다
   4. QA 에이전트가 각 단계 완료 시 원본 요구사항 대비 검수를 수행하고 합격/불합격 결과를 기록한다
   5. Claude가 최종 산출물을 검증하여 합격 또는 구체적 보완 사항과 함께 재지시하며, Gemma4 에이전트는 순차 큐로만 실행된다
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Wave 0: payload 스키마 + 에이전트 시스템 프롬프트 4개 + 테스트 stub 8개 (ORCH-02, ORCH-03)
+- [ ] 02-02-PLAN.md — TaskGraph (DAG) + MessageRouter broadcast 복사 (ORCH-05, WKFL-01, WKFL-03, WKFL-04)
+- [ ] 02-03-PLAN.md — OrchestrationLoop 상태 머신 + QA 게이트 (ORCH-01, ORCH-04, WKFL-02)
+- [ ] 02-04-PLAN.md — FastAPI POST /api/tasks 통합 + 에이전트 프롬프트 테스트 GREEN (전체 요구사항)
 
 ### Phase 3: Agent Memory
 **Goal**: 에이전트가 이전 프로젝트 경험을 참조하여 동일한 실수를 반복하지 않고 품질을 점진적으로 개선할 수 있다
@@ -81,6 +87,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Infra Foundation | 6/6 | Complete   | 2026-04-03 |
-| 2. Orchestration & Workflow | 0/? | Not started | - |
+| 2. Orchestration & Workflow | 0/4 | Not started | - |
 | 3. Agent Memory | 0/? | Not started | - |
 | 4. Web Dashboard | 0/? | Not started | - |
