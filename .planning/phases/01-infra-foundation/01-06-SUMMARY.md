@@ -125,3 +125,13 @@ None - no external service configuration required.
 ---
 *Phase: 01-infra-foundation*
 *Completed: 2026-04-03*
+
+## Self-Check: PASSED
+
+- FOUND: server/log_bus/event_bus.py
+- FOUND: server/main.py
+- FOUND: server/tests/test_log_bus.py
+- FOUND: .planning/phases/01-infra-foundation/01-06-SUMMARY.md
+- FOUND commit: bcf791e (Task 1)
+- FOUND commit: 6fc4b2e (Task 2)
+- FOUND commit: 9261b1e (docs metadata)
