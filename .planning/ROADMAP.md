@@ -29,7 +29,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Ollama/Gemma4가 HTTP REST 호출을 받아 응답하며, 단일 요청 큐로 순차 처리됨이 확인된다
   4. 에이전트 이벤트가 로그 버스에 기록되고 WebSocket 채널로 브로드캐스트된다
   5. 에이전트가 생성한 파일이 태스크별 격리 디렉토리(`workspace/<task-id>/`)에 즉시 저장되며, 코드·문서·디자인 명세 등 다양한 형식으로 저장된다
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — uv 환경 초기화 + 전체 파일 scaffold + 테스트 stub
+- [ ] 01-02-PLAN.md — SQLite WAL 메시지 버스 (INFR-01)
+- [ ] 01-03-PLAN.md — WorkspaceManager atomic write + Gemma4 JSON 파서 (ARTF-01, ARTF-02, INFR-05)
+- [ ] 01-04-PLAN.md — Claude CLI subprocess 러너 (INFR-02)
+- [ ] 01-05-PLAN.md — Ollama asyncio.Queue 단일 워커 (INFR-03)
+- [ ] 01-06-PLAN.md — EventBus + FastAPI WebSocket /ws/logs (INFR-04)
 
 ### Phase 2: Orchestration & Workflow
 **Goal**: 사용자의 프로젝트 지시 하나로 4개 에이전트가 순차 실행되어 실제 산출물을 만들고 Claude가 최종 검증까지 완료할 수 있다
@@ -72,7 +80,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infra Foundation | 0/? | Not started | - |
+| 1. Infra Foundation | 0/6 | Ready to execute | - |
 | 2. Orchestration & Workflow | 0/? | Not started | - |
 | 3. Agent Memory | 0/? | Not started | - |
 | 4. Web Dashboard | 0/? | Not started | - |
