@@ -7,18 +7,18 @@
 
 ### Orchestration (오케스트레이션)
 
-- [ ] **ORCH-01**: Claude CLI가 사용자의 프로젝트 지시를 분석하고 기획자에게 진행방향과 함께 전달할 수 있다
-- [ ] **ORCH-02**: 기획자, 디자이너, 개발자, QA 4개 에이전트가 각각 독립된 역할과 시스템 프롬프트를 가진다
-- [ ] **ORCH-03**: 에이전트 간 통신은 JSON 구조화 메시지 스키마(task_request, task_result, status_update)를 따른다
-- [ ] **ORCH-04**: Claude가 최종 산출물을 검증하고, 불합격 시 구체적 보완 사항과 함께 재지시할 수 있다
-- [ ] **ORCH-05**: Gemma4 에이전트는 순차적으로 실행되며, 로컬 하드웨어 부하를 고려한 실행 정책(큐 기반 순차 처리)을 따른다
+- [x] **ORCH-01**: Claude CLI가 사용자의 프로젝트 지시를 분석하고 기획자에게 진행방향과 함께 전달할 수 있다
+- [x] **ORCH-02**: 기획자, 디자이너, 개발자, QA 4개 에이전트가 각각 독립된 역할과 시스템 프롬프트를 가진다
+- [x] **ORCH-03**: 에이전트 간 통신은 JSON 구조화 메시지 스키마(task_request, task_result, status_update)를 따른다
+- [x] **ORCH-04**: Claude가 최종 산출물을 검증하고, 불합격 시 구체적 보완 사항과 함께 재지시할 수 있다
+- [x] **ORCH-05**: Gemma4 에이전트는 순차적으로 실행되며, 로컬 하드웨어 부하를 고려한 실행 정책(큐 기반 순차 처리)을 따른다
 
 ### Workflow (워크플로우)
 
-- [ ] **WKFL-01**: 기획자가 PM으로서 전체 태스크 상태(대기/진행/완료/차단)를 추적하고 관리한다
-- [ ] **WKFL-02**: QA 에이전트가 각 작업 단계 완료 시 원본 요구사항 대비 검수를 수행한다
-- [ ] **WKFL-03**: 구성원이 다른 구성원에게 자유롭게 작업을 요청할 수 있다 (개발자→디자이너 등)
-- [ ] **WKFL-04**: 기획자가 모든 에이전트 간 요청과 결과를 추적하여 전체 흐름을 파악한다
+- [x] **WKFL-01**: 기획자가 PM으로서 전체 태스크 상태(대기/진행/완료/차단)를 추적하고 관리한다
+- [x] **WKFL-02**: QA 에이전트가 각 작업 단계 완료 시 원본 요구사항 대비 검수를 수행한다
+- [x] **WKFL-03**: 구성원이 다른 구성원에게 자유롭게 작업을 요청할 수 있다 (개발자→디자이너 등)
+- [x] **WKFL-04**: 기획자가 모든 에이전트 간 요청과 결과를 추적하여 전체 흐름을 파악한다
 - [ ] **WKFL-05**: 워크플로우가 DAG 형태로 시각화되어 태스크 의존성과 진행상태를 보여준다
 
 ### Agent Memory (에이전트 기억/학습)
@@ -87,15 +87,15 @@
 | INFR-05 | Phase 1 | Complete |
 | ARTF-01 | Phase 1 | Complete |
 | ARTF-02 | Phase 1 | Complete |
-| ORCH-01 | Phase 2 | Pending |
-| ORCH-02 | Phase 2 | Pending |
-| ORCH-03 | Phase 2 | Pending |
-| ORCH-04 | Phase 2 | Pending |
-| ORCH-05 | Phase 2 | Pending |
-| WKFL-01 | Phase 2 | Pending |
-| WKFL-02 | Phase 2 | Pending |
-| WKFL-03 | Phase 2 | Pending |
-| WKFL-04 | Phase 2 | Pending |
+| ORCH-01 | Phase 2 | Complete |
+| ORCH-02 | Phase 2 | Complete |
+| ORCH-03 | Phase 2 | Complete |
+| ORCH-04 | Phase 2 | Complete |
+| ORCH-05 | Phase 2 | Complete |
+| WKFL-01 | Phase 2 | Complete |
+| WKFL-02 | Phase 2 | Complete |
+| WKFL-03 | Phase 2 | Complete |
+| WKFL-04 | Phase 2 | Complete |
 | AMEM-01 | Phase 3 | Pending |
 | AMEM-02 | Phase 3 | Pending |
 | AMEM-03 | Phase 3 | Pending |

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-stopped_at: Phase 2 context gathered
-last_updated: "2026-04-03T05:40:03.455Z"
+stopped_at: Completed 02-orchestration-workflow 02-05-PLAN.md (gap closure)
+last_updated: "2026-04-03T08:35:59.465Z"
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 6
+  completed_phases: 2
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** 사용자의 지시 하나로 AI 구성원들이 자율적으로 협업하여 실제 결과물(파일)을 만들어내는 것
-**Current focus:** Phase 01 — infra-foundation
+**Current focus:** Phase 02 — orchestration-workflow
 
 ## Current Position
 
-Phase: 2
+Phase: 3
 Plan: Not started
 
 ## Performance Metrics
@@ -52,6 +52,11 @@ Plan: Not started
 | Phase 01-infra-foundation P04 | 7 | 1 tasks | 2 files |
 | Phase 01-infra-foundation P05 | 525580 | 1 tasks | 2 files |
 | Phase 01-infra-foundation P06 | 12 | 2 tasks | 3 files |
+| Phase 02-orchestration-workflow P01 | 8min | 3 tasks | 13 files |
+| Phase 02-orchestration-workflow P02 | 2 | 2 tasks | 7 files |
+| Phase 02-orchestration-workflow P03 | 4m | 1 tasks | 9 files |
+| Phase 02-orchestration-workflow P04 | 8 | 2 tasks | 2 files |
+| Phase 02-orchestration-workflow P05 | 1 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +81,17 @@ Recent decisions affecting current work:
 - [Phase 01-infra-foundation]: generate_json()을 OllamaRunner에 포함 — parse_json() 파이프라인 통합 제공
 - [Phase 01-infra-foundation]: asyncio.Queue 기반 in-process 이벤트 버스: 폴링 없이 즉시 WebSocket 팬아웃, SQLite 브릿지 불필요
 - [Phase 01-infra-foundation]: QueueFull 예외 무시: 느린 클라이언트 드롭으로 버스 블록 방지
+- [Phase 02-orchestration-workflow]: 에이전트 시스템 프롬프트를 agents/*.md 파일로 관리 — OllamaRunner system 파라미터로 주입
+- [Phase 02-orchestration-workflow]: TaskRequestPayload.requirements 필드로 원본 요구사항 전문 포함 — QA 독립 참조(D-08) 구조적 보장
+- [Phase 02-orchestration-workflow]: TaskResultPayload.failure_reason Optional[str] — QA 불합격 시 구체적 사유 전달(D-09)
+- [Phase 02-orchestration-workflow]: TaskNode.requirements 필드를 TaskRequestPayload에서 그대로 복사 — QA 독립 참조(D-08)를 DAG 레벨에서도 보장
+- [Phase 02-orchestration-workflow]: MessageRouter route()에서 to_agent=planner/broadcast이면 복사 생략 — 기획자 중복 메시지 방지
+- [Phase 02-orchestration-workflow]: mock patch 대상을 orchestration.loop.run_claude_isolated로 변경 — 직접 임포트된 함수는 임포트된 모듈 네임스페이스에서 패치해야 함
+- [Phase 02-orchestration-workflow]: agents/ 디렉토리에 .md 파일로 시스템 프롬프트 관리 (D-01, D-03) — planner/developer/designer/qa.md 4개 파일
+- [Phase 02-orchestration-workflow]: asyncio.create_task 사용: OrchestrationLoop.run()이 async라서 FastAPI BackgroundTasks 대신 asyncio.create_task 선택
+- [Phase 02-orchestration-workflow]: WorkspaceManager(task_id='', workspace_root='workspace'): task_id='' 로 workspace 루트 전체를 loop가 sub-path로 사용
+- [Phase 02-orchestration-workflow]: loop.py AGENTS_DIR을 루트 agents/(4섹션 완비)로 통일 — 이중 관리 문제 근본 해소
+- [Phase 02-orchestration-workflow]: server/agents/에도 협업 규칙 추가 — 디렉토리 자체가 올바른 문서로 유지
 
 ### Pending Todos
 
@@ -89,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T05:40:03.452Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-orchestration-workflow/02-CONTEXT.md
+Last session: 2026-04-03T08:32:46.803Z
+Stopped at: Completed 02-orchestration-workflow 02-05-PLAN.md (gap closure)
+Resume file: None
