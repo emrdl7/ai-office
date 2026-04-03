@@ -65,7 +65,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. 각 에이전트가 성공·실패 패턴과 피드백을 프로젝트 단위 파일로 저장하며, 다음 작업 시작 시 해당 경험을 컨텍스트에 포함한다
   2. Claude의 보완 지시와 QA 검수 피드백이 해당 에이전트의 경험 기록에 자동 반영되어, 이후 동일 유형의 실수가 감소한다
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — AgentMemory 클래스: MemoryRecord 스키마 + record/load_relevant/compact (AMEM-01, AMEM-02, AMEM-03)
+- [ ] 03-02-PLAN.md — OrchestrationLoop 통합: 경험 주입(_run_agent) + 피드백 기록(_run_qa_gate, _claude_final_verify) (AMEM-02, AMEM-03)
 
 ### Phase 4: Web Dashboard
 **Goal**: 사용자가 브라우저에서 작업을 지시하고, 에이전트 진행 상황을 실시간으로 모니터링하며, 최종 산출물을 확인할 수 있다
@@ -89,5 +93,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Infra Foundation | 6/6 | Complete   | 2026-04-03 |
 | 2. Orchestration & Workflow | 4/5 | In Progress|  |
-| 3. Agent Memory | 0/? | Not started | - |
+| 3. Agent Memory | 0/2 | Not started | - |
 | 4. Web Dashboard | 0/? | Not started | - |
