@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 01-infra-foundation 01-01-PLAN.md
-last_updated: "2026-04-03T05:17:15.579Z"
+stopped_at: Completed 01-infra-foundation 01-05-PLAN.md
+last_updated: "2026-04-03T05:25:14.344Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 0
+  completed_plans: 4
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-03)
 ## Current Position
 
 Phase: 01 (infra-foundation) — EXECUTING
-Plan: 2 of 6
+Plan: 6 of 6
 
 ## Performance Metrics
 
@@ -47,6 +47,10 @@ Plan: 2 of 6
 
 *Updated after each plan completion*
 | Phase 01-infra-foundation P01 | 2 | 2 tasks | 30 files |
+| Phase 01-infra-foundation P02 | 2 | 2 tasks | 3 files |
+| Phase 01-infra-foundation P03 | 3 | 2 tasks | 4 files |
+| Phase 01-infra-foundation P04 | 7 | 1 tasks | 2 files |
+| Phase 01-infra-foundation P05 | 525580 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -62,6 +66,13 @@ Recent decisions affecting current work:
 - [Phase 01-infra-foundation]: uv init으로 server/를 독립 Python 서브프로젝트로 초기화 — pyproject.toml 기반 의존성 관리
 - [Phase 01-infra-foundation]: AgentMessage에 Pydantic alias 사용 (from_agent/to_agent) — Python 예약어 from/to 충돌 우회
 - [Phase 01-infra-foundation]: xfail(strict=False) 패턴으로 stub 테스트 선언 — Wave 0 Nyquist 원칙
+- [Phase 01-infra-foundation]: 절대 임포트 사용: server/는 __init__.py 없는 네임스페이스라 상대 임포트 금지, from db.client import로 통일
+- [Phase 01-infra-foundation]: WAL 모드는 파일 기반 DB 전용: :memory: DB는 WAL 미지원이므로 테스트는 tmp_path 기반 파일 DB 사용
+- [Phase 01-infra-foundation]: workspace_root 파라미터로 테스트 격리 — WorkspaceManager 생성자에 주입 가능
+- [Phase 01-infra-foundation]: safe_path에서 resolve()+startswith() 조합 — 심볼릭 링크 우회 방지
+- [Phase 01-infra-foundation]: 2-pass JSON 파서에서 rfind 사용 — 중첩 JSON의 마지막 닫는 괄호 정확히 선택
+- [Phase 01-infra-foundation]: asyncio.Queue 단일 워커로 동시 Ollama 요청을 직렬화 — gemma4:26b 메모리 스래싱 방지
+- [Phase 01-infra-foundation]: generate_json()을 OllamaRunner에 포함 — parse_json() 파이프라인 통합 제공
 
 ### Pending Todos
 
@@ -75,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T05:17:15.575Z
-Stopped at: Completed 01-infra-foundation 01-01-PLAN.md
+Last session: 2026-04-03T05:25:14.341Z
+Stopped at: Completed 01-infra-foundation 01-05-PLAN.md
 Resume file: None

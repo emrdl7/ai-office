@@ -32,10 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 6 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — uv 환경 초기화 + 전체 파일 scaffold + 테스트 stub
-- [ ] 01-02-PLAN.md — SQLite WAL 메시지 버스 (INFR-01)
-- [ ] 01-03-PLAN.md — WorkspaceManager atomic write + Gemma4 JSON 파서 (ARTF-01, ARTF-02, INFR-05)
-- [ ] 01-04-PLAN.md — Claude CLI subprocess 러너 (INFR-02)
+- [x] 01-01-PLAN.md — uv 환경 초기화 + 전체 파일 scaffold + 테스트 stub
+- [x] 01-02-PLAN.md — SQLite WAL 메시지 버스 (INFR-01)
+- [x] 01-03-PLAN.md — WorkspaceManager atomic write + Gemma4 JSON 파서 (ARTF-01, ARTF-02, INFR-05)
+- [x] 01-04-PLAN.md — Claude CLI subprocess 러너 (INFR-02)
 - [ ] 01-05-PLAN.md — Ollama asyncio.Queue 단일 워커 (INFR-03)
 - [ ] 01-06-PLAN.md — EventBus + FastAPI WebSocket /ws/logs (INFR-04)
 
@@ -80,7 +80,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infra Foundation | 0/6 | Planned    |  |
+| 1. Infra Foundation | 4/6 | In Progress|  |
 | 2. Orchestration & Workflow | 0/? | Not started | - |
 | 3. Agent Memory | 0/? | Not started | - |
 | 4. Web Dashboard | 0/? | Not started | - |
