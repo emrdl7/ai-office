@@ -27,7 +27,7 @@ async def test_claude_analyzes_user_instruction(loop_setup):
   '''Claude가 사용자 지시를 파싱하여 기획자에게 task_request를 전달한다 (ORCH-01)'''
   loop, bus, runner = loop_setup
 
-  with patch('runners.claude_runner.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
+  with patch('orchestration.loop.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
     mock_claude.return_value = '{"direction": "홈페이지 기획을 시작하세요"}'
     msg = await loop.analyze_instruction('홈페이지 만들어줘')
 
@@ -42,7 +42,7 @@ async def test_claude_routes_only_to_planner(loop_setup):
   '''Claude는 작업자에게 직접 지시하지 않고 반드시 기획자를 경유한다 (ORCH-01, D-04)'''
   loop, bus, runner = loop_setup
 
-  with patch('runners.claude_runner.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
+  with patch('orchestration.loop.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
     mock_claude.return_value = '{"direction": "기획을 시작하세요"}'
     msg = await loop.analyze_instruction('웹사이트 만들어줘')
 

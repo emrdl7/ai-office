@@ -30,7 +30,7 @@ async def test_claude_final_verification_pass(loop_setup):
   from orchestration.loop import WorkflowState
   loop, graph = loop_setup
 
-  with patch('runners.claude_runner.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
+  with patch('orchestration.loop.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
     mock_claude.return_value = '모든 요구사항을 충족합니다. PASS'
     result = await loop._claude_final_verify(graph)
 
@@ -44,7 +44,7 @@ async def test_claude_final_verification_fail_triggers_revision(loop_setup):
   from orchestration.loop import WorkflowState
   loop, graph = loop_setup
 
-  with patch('runners.claude_runner.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
+  with patch('orchestration.loop.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
     mock_claude.return_value = '요구사항을 충족하지 못합니다. FAIL — 디자인 보완 필요'
     result = await loop._claude_final_verify(graph)
 
@@ -62,7 +62,7 @@ async def test_max_revision_rounds_escalates(loop_setup):
   # revision_count를 MAX_REVISION_ROUNDS와 동일하게 설정
   loop._revision_count = OrchestrationLoop.MAX_REVISION_ROUNDS
 
-  with patch('runners.claude_runner.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
+  with patch('orchestration.loop.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
     mock_claude.return_value = '여전히 미흡합니다. FAIL'
     result = await loop._claude_final_verify(graph)
 
