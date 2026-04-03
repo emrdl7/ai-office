@@ -1,6 +1,7 @@
 # 오케스트레이션 루프 — 전체 워크플로우 상태 머신 (ORCH-01, ORCH-04, WKFL-02)
 # Claude 분석 → 기획자 → 작업자 → QA → Claude 최종검증 → 보완 루프
 import json
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from bus.schemas import AgentMessage
 from bus.payloads import TaskRequestPayload, TaskResultPayload
 from log_bus.event_bus import EventBus, LogEvent
 from workspace.manager import WorkspaceManager
+from memory.agent_memory import AgentMemory, MemoryRecord
 
 # 에이전트 시스템 프롬프트 파일 디렉토리 (프로젝트 루트 agents/)
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
@@ -50,6 +52,7 @@ class OrchestrationLoop:
     event_bus: EventBus,
     workspace: WorkspaceManager,
     router: MessageRouter,
+    memory_root: str | Path = 'data/memory',
   ):
     self.bus = bus
     self.runner = runner
@@ -59,6 +62,7 @@ class OrchestrationLoop:
     self._state = WorkflowState.IDLE
     self._revision_count = 0
     self._task_graph: TaskGraph | None = None
+    self._memory_root = Path(memory_root)
 
   async def _emit_status(self, state: WorkflowState) -> None:
     '''상태 변경 이벤트를 이벤트 버스에 발행한다'''
@@ -192,6 +196,17 @@ class OrchestrationLoop:
     '''
     system_prompt = self._load_agent_prompt(node.assigned_to)
 
+    # 이전 경험 주입 (AMEM-02, D-03)
+    memory = AgentMemory(node.assigned_to, memory_root=self._memory_root)
+    task_type = node.assigned_to  # 에이전트 이름을 task_type으로 활용
+    experiences = memory.load_relevant(task_type=task_type, limit=5)
+    if experiences:
+      lines = []
+      for exp in experiences:
+        status_str = '성공' if exp.success else '실패'
+        lines.append(f'- [{status_str}] {exp.feedback} (태그: {", ".join(exp.tags)})')
+      system_prompt += '\n\n## 이전 경험\n' + '\n'.join(lines)
+
     # 원본 요구사항과 작업 지시를 함께 전달
     prompt = (
       f'[작업 지시]\n{node.description}\n\n'
@@ -242,6 +257,16 @@ class OrchestrationLoop:
         TaskStatus.DONE,
         artifact_paths=result.artifact_paths,
       )
+      # 성공 경험 기록 (AMEM-01: 성공 패턴도 저장)
+      success_memory = AgentMemory(node.assigned_to, memory_root=self._memory_root)
+      success_memory.record(MemoryRecord(
+        task_id=node.task_id,
+        task_type=node.assigned_to,
+        success=True,
+        feedback=result.summary,
+        tags=['success'],
+        timestamp=datetime.now(timezone.utc).isoformat(),
+      ))
     else:
       self._task_graph.update_status(
         node.task_id,
@@ -280,6 +305,16 @@ class OrchestrationLoop:
       else:
         # 불합격 — failure_reason을 노드에 기록
         node.failure_reason = result_data.get('failure_reason', 'QA 불합격')
+        # QA 불합격 즉시 경험 기록 (AMEM-03, D-05)
+        memory = AgentMemory(node.assigned_to, memory_root=self._memory_root)
+        memory.record(MemoryRecord(
+          task_id=node.task_id,
+          task_type=node.assigned_to,
+          success=False,
+          feedback=node.failure_reason,
+          tags=['qa_fail'],
+          timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
         return False
 
     # 응답 없음 — 안전하게 실패 처리
@@ -323,6 +358,18 @@ class OrchestrationLoop:
       return True
     else:
       # FAIL 또는 응답 불명확 — 불합격 처리
+      # Claude 보완 지시 즉시 경험 기록 (AMEM-03, D-06)
+      for node in task_graph._nodes.values():
+        if node.status == TaskStatus.DONE:
+          mem = AgentMemory(node.assigned_to, memory_root=self._memory_root)
+          mem.record(MemoryRecord(
+            task_id=node.task_id,
+            task_type=node.assigned_to,
+            success=False,
+            feedback=f'Claude 최종검증 불합격: {response[:200]}',
+            tags=['claude_revision'],
+            timestamp=datetime.now(timezone.utc).isoformat(),
+          ))
       self._revision_count += 1
       if self._revision_count >= self.MAX_REVISION_ROUNDS:
         # 최대 반복 횟수 초과 → 에스컬레이션 (D-12)
