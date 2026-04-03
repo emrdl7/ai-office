@@ -80,7 +80,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infra Foundation | 0/6 | Ready to execute | - |
+| 1. Infra Foundation | 0/6 | Planned    |  |
 | 2. Orchestration & Workflow | 0/? | Not started | - |
 | 3. Agent Memory | 0/? | Not started | - |
 | 4. Web Dashboard | 0/? | Not started | - |

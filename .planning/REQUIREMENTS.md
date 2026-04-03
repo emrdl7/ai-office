@@ -29,16 +29,16 @@
 
 ### Infra (인프라)
 
-- [ ] **INFR-01**: SQLite(WAL 모드) 기반 메시지 큐로 에이전트 간 태스크 전달 및 상태 공유를 처리한다
-- [ ] **INFR-02**: Claude CLI는 subprocess로 실행되며, 토큰 격리(최소 컨텍스트 주입)를 적용한다
-- [ ] **INFR-03**: Gemma4는 Ollama 로컬 인스턴스에서 실행되며, 단일 요청 큐로 순차 처리한다
-- [ ] **INFR-04**: 모든 에이전트 이벤트를 수집하는 로그 버스가 존재하며, 대시보드에 실시간 전달된다
-- [ ] **INFR-05**: Gemma4의 구조화 출력(JSON)에 대한 파싱+복구 전략이 적용된다
+- [x] **INFR-01**: SQLite(WAL 모드) 기반 메시지 큐로 에이전트 간 태스크 전달 및 상태 공유를 처리한다
+- [x] **INFR-02**: Claude CLI는 subprocess로 실행되며, 토큰 격리(최소 컨텍스트 주입)를 적용한다
+- [x] **INFR-03**: Gemma4는 Ollama 로컬 인스턴스에서 실행되며, 단일 요청 큐로 순차 처리한다
+- [x] **INFR-04**: 모든 에이전트 이벤트를 수집하는 로그 버스가 존재하며, 대시보드에 실시간 전달된다
+- [x] **INFR-05**: Gemma4의 구조화 출력(JSON)에 대한 파싱+복구 전략이 적용된다
 
 ### Artifact (산출물)
 
-- [ ] **ARTF-01**: 모든 에이전트 산출물은 프로젝트 폴더에 실제 파일로 즉시 저장된다
-- [ ] **ARTF-02**: 산출물은 코드, 디자인 명세, 문서 등 다양한 형식을 지원한다
+- [x] **ARTF-01**: 모든 에이전트 산출물은 프로젝트 폴더에 실제 파일로 즉시 저장된다
+- [x] **ARTF-02**: 산출물은 코드, 디자인 명세, 문서 등 다양한 형식을 지원한다
 
 ### Dashboard (웹 대시보드)
 
@@ -80,13 +80,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFR-01 | Phase 1 | Pending |
-| INFR-02 | Phase 1 | Pending |
-| INFR-03 | Phase 1 | Pending |
-| INFR-04 | Phase 1 | Pending |
-| INFR-05 | Phase 1 | Pending |
-| ARTF-01 | Phase 1 | Pending |
-| ARTF-02 | Phase 1 | Pending |
+| INFR-01 | Phase 1 | Complete |
+| INFR-02 | Phase 1 | Complete |
+| INFR-03 | Phase 1 | Complete |
+| INFR-04 | Phase 1 | Complete |
+| INFR-05 | Phase 1 | Complete |
+| ARTF-01 | Phase 1 | Complete |
+| ARTF-02 | Phase 1 | Complete |
 | ORCH-01 | Phase 2 | Pending |
 | ORCH-02 | Phase 2 | Pending |
 | ORCH-03 | Phase 2 | Pending |
