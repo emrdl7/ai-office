@@ -1,16 +1,77 @@
 # SQLite WAL 기반 메시지 버스 (INFR-01)
-# 실제 구현: 01-02-PLAN
+import json
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+
 from .schemas import AgentMessage
+from db.client import get_connection, init_schema
+
 
 class MessageBus:
-    def __init__(self, db_path: str = 'data/bus.db'):
-        raise NotImplementedError('01-02-PLAN에서 구현 예정')
+    def __init__(self, db_path: str | Path = 'data/bus.db'):
+        self._conn = get_connection(db_path)
+        init_schema(self._conn)
 
     def publish(self, message: AgentMessage) -> None:
-        raise NotImplementedError
+        '''메시지를 버스에 발행 (status=pending)'''
+        data = message.model_dump(by_alias=False)
+        self._conn.execute(
+            '''INSERT INTO messages
+               (id, type, from_agent, to_agent, payload, reply_to,
+                priority, tags, metadata, created_at, ack_at, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (
+                data['id'],
+                data['type'],
+                data['from_agent'],
+                data['to_agent'],
+                json.dumps(data['payload']),
+                data['reply_to'],
+                data['priority'],
+                json.dumps(data['tags']),
+                json.dumps(data['metadata']),
+                data['created_at'].isoformat() if isinstance(data['created_at'], datetime) else data['created_at'],
+                data['ack_at'].isoformat() if data['ack_at'] and isinstance(data['ack_at'], datetime) else data['ack_at'],
+                data['status'],
+            ),
+        )
+        self._conn.commit()
 
     def consume(self, to_agent: str, limit: int = 10) -> list[AgentMessage]:
-        raise NotImplementedError
+        '''pending 메시지를 수신 (created_at 오름차순)'''
+        rows = self._conn.execute(
+            '''SELECT * FROM messages
+               WHERE to_agent = ? AND status = 'pending'
+               ORDER BY created_at ASC
+               LIMIT ?''',
+            (to_agent, limit),
+        ).fetchall()
+        return [self._row_to_message(row) for row in rows]
 
     def ack(self, message_id: str) -> None:
-        raise NotImplementedError
+        '''메시지 처리 완료 표시 (status=done, ack_at=now)'''
+        self._conn.execute(
+            "UPDATE messages SET status='done', ack_at=? WHERE id=?",
+            (datetime.utcnow().isoformat(), message_id),
+        )
+        self._conn.commit()
+
+    def _row_to_message(self, row: sqlite3.Row) -> AgentMessage:
+        return AgentMessage.model_validate({
+            'id': row['id'],
+            'type': row['type'],
+            'from': row['from_agent'],
+            'to': row['to_agent'],
+            'payload': json.loads(row['payload']),
+            'reply_to': row['reply_to'],
+            'priority': row['priority'],
+            'tags': json.loads(row['tags']),
+            'metadata': json.loads(row['metadata']),
+            'created_at': row['created_at'],
+            'ack_at': row['ack_at'],
+            'status': row['status'],
+        })
+
+    def close(self):
+        self._conn.close()
