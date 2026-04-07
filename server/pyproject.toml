@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.135.0",
     "google-auth>=2.49.1",
     "httpx>=0.28.0",
+    "markdown>=3.10.2",
     "pydantic-settings>=2.0.0",
     "pymupdf>=1.27.2.2",
     "python-docx>=1.2.0",

@@ -457,19 +457,31 @@ async def get_artifact_content(file_path: str, request: Request):
   # 브라우저에서 직접 열면 마크다운을 HTML로 렌더링
   accept = request.headers.get('accept', '')
   if 'text/html' in accept and file_path.endswith('.md'):
+    import markdown as md_lib
+    rendered = md_lib.markdown(content, extensions=['tables', 'fenced_code', 'nl2br'])
     html = f'''<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>{Path(file_path).name}</title>
 <style>
-  body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #e0e0e0; background: #1a1a2e; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.8; color: #e0e0e0; background: #1a1a2e; }}
+  h1 {{ font-size: 1.8em; color: #64b5f6; border-bottom: 2px solid #333; padding-bottom: 8px; }}
+  h2 {{ font-size: 1.4em; color: #81c784; margin-top: 2em; }}
+  h3 {{ font-size: 1.15em; color: #ffb74d; }}
+  p {{ margin: 0.8em 0; }}
+  ul, ol {{ padding-left: 24px; }}
+  li {{ margin: 4px 0; }}
   pre {{ background: #16213e; padding: 16px; border-radius: 8px; overflow-x: auto; }}
-  code {{ background: #16213e; padding: 2px 6px; border-radius: 4px; }}
-  h1,h2,h3 {{ color: #64b5f6; }}
-  ul,ol {{ padding-left: 24px; }}
-  hr {{ border: none; border-top: 1px solid #333; }}
+  code {{ background: #16213e; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+  th, td {{ border: 1px solid #444; padding: 8px 12px; text-align: left; }}
+  th {{ background: #16213e; color: #64b5f6; }}
+  hr {{ border: none; border-top: 1px solid #333; margin: 2em 0; }}
+  strong {{ color: #fff; }}
+  a {{ color: #64b5f6; }}
 </style>
-</head><body><pre style="white-space: pre-wrap; word-wrap: break-word;">{content}</pre></body></html>'''
+</head><body>{rendered}</body></html>'''
     return HTMLResponse(content=html)
 
   # API 호출(JSON)
