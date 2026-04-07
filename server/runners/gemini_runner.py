@@ -11,7 +11,7 @@ class GeminiRunnerError(Exception):
   pass
 
 
-async def run_gemini(prompt: str, system: str = '', timeout: float = 300.0) -> str:
+async def run_gemini(prompt: str, system: str = '', timeout: float = 600.0) -> str:
   '''Gemini CLI를 subprocess로 실행하고 텍스트 응답을 반환한다.'''
   project_root = str(Path(__file__).parent.parent.parent)
 
