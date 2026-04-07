@@ -146,10 +146,21 @@ async def chat(
         # 팀 채널 → 팀장 판단 흐름
         result = await office.receive(full_message)
       else:
-        # DM → 특정 팀원에게 직접 대화
+        # DM → 특정 팀원에게 직접 대화 (최근 산출물 컨텍스트 포함)
         agent = office.agents.get(to)
         if agent:
-          response = await agent.handle(full_message)
+          # 해당 에이전트의 최근 산출물을 찾아 컨텍스트로 전달
+          dm_context = ''
+          try:
+            for ws_dir in sorted(WORKSPACE_ROOT.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+              for md_file in ws_dir.rglob(f'*{to}*result*.md'):
+                dm_context = md_file.read_text(encoding='utf-8')[:3000]
+                break
+              if dm_context:
+                break
+          except Exception:
+            pass
+          response = await agent.handle(full_message, context=dm_context)
           await event_bus.publish(LogEvent(
             agent_id=to,
             event_type='response',

@@ -96,6 +96,15 @@ class Agent:
     if context:
       full_prompt = f'{prompt}\n\n[참고 자료]\n{context}'
 
+    # 최근 대화 기록을 컨텍스트에 포함 (DM 대화 연속성)
+    if self._conversation_history:
+      recent = self._conversation_history[-10:]  # 최근 5턴 (10개 메시지)
+      history_text = '\n'.join(
+        f'{"사용자" if m["role"] == "user" else "나"}: {m["content"][:300]}'
+        for m in recent
+      )
+      full_prompt = f'[이전 대화]\n{history_text}\n\n[현재 메시지]\n{full_prompt}'
+
     # 입력 중... 표시
     await self._emit('', 'typing')
 
