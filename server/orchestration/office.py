@@ -585,6 +585,16 @@ class Office:
           prev_phase_result = existing_content
           phase_artifacts.append(f'{found_task_id}/{existing_file}')
           await self._emit('teamlead', f'{phase_name} 단계는 이미 완료되어 있습니다. 다음 단계로 넘어갑니다.', 'response')
+
+          # 스킵해도 그룹 마지막이면 Stitch 시안 생성 체크
+          current_group = phase.get('group', phase_name)
+          remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
+          if not remaining_in_group and current_group == '디자인':
+            # Stitch 시안이 아직 없으면 생성
+            stitch_dir = self.workspace.task_dir / 'stitch'
+            has_stitch = stitch_dir.exists() and any(stitch_dir.iterdir()) if stitch_dir.exists() else False
+            if not has_stitch:
+              await self._generate_stitch_mockup(all_results, user_input)
           continue
       except Exception:
         pass
@@ -1062,10 +1072,12 @@ class Office:
       return sections_text
 
   async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
-    '''디자인 산출물을 바탕으로 Stitch 시안을 생성한다.'''
+    '''디자인 산출물을 바탕으로 Stitch 시안을 생성하고, 개발 단계에 전달한다.'''
     try:
       await self._emit('designer', '디자인 시안을 생성하고 있습니다... 🎨', 'response')
+      self._state = OfficeState.WORKING
       self._active_agent = 'designer'
+      self._work_started_at = datetime.now(timezone.utc).isoformat()
 
       # 디자인 관련 산출물 취합
       design_context_parts = []
@@ -1088,14 +1100,21 @@ class Office:
         stitch_artifacts = []
         if stitch_result.get('html_path'):
           stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.html')
+          # 시안 HTML을 all_results에 추가 → 개발 단계에서 참조
+          try:
+            html_content = Path(stitch_result['html_path']).read_text(encoding='utf-8')
+            all_results['디자인-시안HTML'] = html_content
+          except Exception:
+            pass
         if stitch_result.get('image_path'):
           stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.png')
         await self.event_bus.publish(LogEvent(
           agent_id='designer',
           event_type='response',
-          message='디자인 시안이 생성되었습니다! 🎉',
+          message='디자인 시안이 생성되었습니다! 개발자에게 전달합니다. 🎉',
           data={'artifacts': stitch_artifacts},
         ))
+        await self._team_reaction('designer', '시안 생성')
       else:
         error = stitch_result.get('error', '알 수 없는 오류')[:200]
         await self._emit('designer', f'시안 생성을 건너뜁니다 (Stitch: {error})', 'response')
