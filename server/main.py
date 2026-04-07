@@ -380,7 +380,7 @@ async def get_agents(request: Request):
   agent_models: dict[str, str] = {
     'teamlead': f'Claude {CLAUDE_MODEL}' if CLAUDE_MODEL != 'claude' else 'Claude CLI',
     'planner': 'Gemini CLI',
-    'designer': f'Groq {GROQ_MODEL}',
+    'designer': f'Claude {CLAUDE_MODEL}',
     'developer': 'Gemini CLI',
     'qa': f'Groq {GROQ_MODEL}',
   }

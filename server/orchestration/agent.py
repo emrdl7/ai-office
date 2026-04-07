@@ -100,9 +100,12 @@ class Agent:
     await self._emit('', 'typing')
 
     # developer, planner → Gemini CLI
-    # designer, qa → Groq(클라우드)
+    # designer → Claude Sonnet (CLI)
+    # qa → Groq(클라우드)
     if self.name in ('developer', 'planner'):
       result = await run_gemini(prompt=full_prompt, system=system)
+    elif self.name == 'designer':
+      result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt)
     elif self.groq_runner:
       result = await self.groq_runner.generate(full_prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
     else:
@@ -171,6 +174,8 @@ class Agent:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
     if self.name in ('developer', 'planner'):
       return await run_gemini(prompt=prompt, system=system)
+    if self.name == 'designer':
+      return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt)
     if self.groq_runner:
       return await self.groq_runner.generate(prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
     raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')

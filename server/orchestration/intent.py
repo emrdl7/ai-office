@@ -36,7 +36,7 @@ def _build_system_info() -> str:
     f'[시스템 정보 — 반드시 이 정보만 사용할 것]\n'
     f'당신의 모델: Claude CLI\n'
     f'기획자 모델: Gemini CLI\n'
-    f'디자이너 모델: Groq {GROQ_MODEL}\n'
+    f'디자이너 모델: Claude Sonnet\n'
     f'개발자 모델: Gemini CLI\n'
     f'QA 모델: Groq {GROQ_MODEL}\n\n'
     f'중요 규칙:\n'
