@@ -1,8 +1,9 @@
 // 채팅방 — 메신저 대화 UI + 파일첨부 + 이미지 썸네일 + 링크 프리뷰
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
-import type { LogEntry, ChannelId } from '../types'
+import type { Agent, LogEntry, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
 // 포켓몬 아바타 이미지
@@ -89,8 +90,21 @@ interface FileInfo {
   isImage: boolean
 }
 
+async function fetchAgents(): Promise<Agent[]> {
+  const res = await fetch('/api/agents')
+  if (!res.ok) return []
+  return res.json()
+}
+
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const { logs, addLog, setLogs, activeChannel } = useStore()
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ['agents'],
+    queryFn: fetchAgents,
+    refetchInterval: 2000,
+  })
+  const workingAgents = agents.filter((a) => a.status === 'working' || a.status === 'meeting')
   const [message, setMessage] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
@@ -299,7 +313,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           ) : (
             <>
               {renderMessages(channelLogs)}
-              {typingAgents.size > 0 && <TypingIndicator agents={typingAgents} />}
+              <WorkingIndicator workingAgents={workingAgents} />
               <div ref={bottomRef} />
             </>
           )}
@@ -585,30 +599,50 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
   )
 }
 
-// 입력 중... 인디케이터
-function TypingIndicator({ agents }: { agents: Set<string> }) {
-  const names = Array.from(agents).map((id) => {
-    const p = AGENT_PROFILE[id]
-    return p?.pokemon || p?.name || id
+// 작업 중 인디케이터 — working/meeting 에이전트 표시 + 경과 시간
+function WorkingIndicator({ workingAgents }: { workingAgents: Agent[] }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    if (workingAgents.length === 0) {
+      setElapsed(0)
+      return
+    }
+    setElapsed(0)
+    const timer = setInterval(() => setElapsed((e) => e + 1), 1000)
+    return () => clearInterval(timer)
+  }, [workingAgents.map((a) => a.agent_id + a.status).join(',')])
+
+  if (workingAgents.length === 0) return null
+
+  const names = workingAgents.map((a) => {
+    const p = AGENT_PROFILE[a.agent_id]
+    return p?.pokemon || p?.name || a.agent_id
   })
+
+  const min = Math.floor(elapsed / 60)
+  const sec = elapsed % 60
+  const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`
+
+  const statusText = workingAgents[0]?.status === 'meeting' ? '회의 중' : '작업 중'
 
   let text = ''
   if (names.length === 1) {
-    text = `${names[0]}이(가) 입력 중`
-  } else if (names.length === 2) {
-    text = `${names[0]}, ${names[1]}이(가) 입력 중`
+    text = `${names[0]} ${statusText}`
+  } else if (names.length <= 3) {
+    text = `${names.join(', ')} ${statusText}`
   } else {
-    text = `${names[0]} 외 ${names.length - 1}명이 입력 중`
+    text = `${names[0]} 외 ${names.length - 1}명 ${statusText}`
   }
 
   return (
     <div className="flex items-center gap-2 py-2 pl-12">
       <div className="flex gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
       </div>
-      <span className="text-xs text-gray-400">{text}</span>
+      <span className="text-xs text-gray-400">{text} ({timeStr})</span>
     </div>
   )
 }

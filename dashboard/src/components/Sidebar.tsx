@@ -162,7 +162,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       {/* 채널 */}
       <div className="px-3 pt-4 pb-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 px-2 mb-1">
+        <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 px-2 mb-1">
           채널
         </h3>
         <button
@@ -179,7 +179,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       {/* 팀원 DM */}
       <div className="px-3 pt-2 flex-1 overflow-y-auto">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 px-2 mb-1">
+        <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 px-2 mb-1">
           팀원
         </h3>
         <ul className="space-y-0.5" role="list">
@@ -225,7 +225,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   {/* 이름 + 모델 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm font-medium">{profile.pokemon || profile.name}</span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{profile.pokemon || profile.name}</span>
                       <span className="text-[10px] text-gray-500">{profile.role}</span>
                       <span className={`text-[10px] ${statusLabel(agent.status).color}`}>
                         {statusLabel(agent.status).text}
