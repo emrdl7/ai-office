@@ -870,8 +870,12 @@ class Office:
       f'assigned_to는 planner, designer, developer, qa 중 하나.'
     )
 
-    from runners.gemini_runner import run_gemini
-    raw = await run_gemini(prompt=prompt, system=system)
+    try:
+      from runners.gemini_runner import run_gemini
+      raw = await run_gemini(prompt=prompt, system=system)
+    except Exception:
+      # Gemini rate limit 시 Sonnet으로 fallback
+      raw = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}')
     from runners.json_parser import parse_json
     result = parse_json(raw)
 
@@ -1256,8 +1260,12 @@ class Office:
       f'마크다운 형식으로 직접 작성하세요.'
     )
 
-    from runners.gemini_runner import run_gemini
-    raw = await run_gemini(prompt=prompt, system=system)
+    try:
+      from runners.gemini_runner import run_gemini
+      raw = await run_gemini(prompt=prompt, system=system)
+    except Exception:
+      # Gemini rate limit 시 Sonnet으로 fallback
+      raw = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}')
     content = raw.strip()
     if content.startswith('```'):
       lines = content.split('\n')
