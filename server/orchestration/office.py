@@ -529,30 +529,16 @@ class Office:
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
       await self._emit(agent_name, '', 'typing')
 
-      # 각 단계에 이전 단계 결과 + 회의 내용 전달
-      # Gemini(planner/developer)는 전문, Groq(designer/qa)는 축약
-      is_gemini = agent_name in ('planner', 'developer')
-      max_prev = 30000 if is_gemini else 3000
-      max_ref = 30000 if is_gemini else 2000
-      max_meeting = 30000 if is_gemini else 1500
-
-      # Groq 에이전트에는 첨부 전문 제외하고 사용자 메시지만
-      if is_gemini:
-        project_text = user_input
-      elif '[첨부된 참조 자료]' in user_input:
-        project_text = user_input.split('[첨부된 참조 자료]')[0].strip()
-      else:
-        project_text = user_input
-
+      # 각 단계에 이전 단계 결과 + 회의 내용 전달 (전문)
       phase_prompt = (
-        f'[프로젝트]\n{project_text}\n\n'
+        f'[프로젝트]\n{user_input}\n\n'
         f'[현재 단계]\n{phase_name}: {phase["description"]}\n\n'
-        f'[팀 회의 내용]\n{meeting_summary[:max_meeting]}\n\n'
+        f'[팀 회의 내용]\n{meeting_summary}\n\n'
       )
       if prev_phase_result:
-        phase_prompt += f'[이전 단계 산출물]\n{prev_phase_result[:max_prev]}\n\n'
+        phase_prompt += f'[이전 단계 산출물]\n{prev_phase_result}\n\n'
       if reference_context:
-        phase_prompt += f'[참조 자료]\n{reference_context[:max_ref]}\n\n'
+        phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
 
       phase_prompt += (
         f'위 내용을 바탕으로 {phase_name} 작업을 수행하세요.\n'
@@ -826,13 +812,9 @@ class Office:
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
     '''QA 에이전트가 산출물을 검수한다 (내부 처리 — 채팅에 안 보임).'''
-    # QA는 Groq(12K TPM)이므로 요구사항과 결과물을 축약
-    requirements = node.requirements
-    if '[첨부된 참조 자료]' in requirements:
-      requirements = requirements.split('[첨부된 참조 자료]')[0].strip()
     qa_prompt = (
-      f'[원본 요구사항]\n{requirements[:2000]}\n\n'
-      f'[작업 결과물]\n{content[:6000]}\n\n'
+      f'[원본 요구사항]\n{node.requirements}\n\n'
+      f'[작업 결과물]\n{content}\n\n'
       f'위 요구사항 대비 결과물을 검수하세요.'
     )
     qa_result = await qa_agent.handle(qa_prompt)

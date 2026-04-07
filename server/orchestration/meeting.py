@@ -64,20 +64,12 @@ class Meeting:
     # 라운드 1: 각자 의견
     context = f'[팀장 브리핑]\n{self.briefing}\n'
 
-    # 첨부파일이 큰 경우 TPM이 작은 에이전트에게는 요약본 전달
-    topic_full = self.topic
-    topic_short = self.topic
-    if '[첨부된 참조 자료]' in self.topic:
-      topic_short = await self._summarize_for_meeting(self.topic)
-
     for name in self.participants:
       agent = self.agents.get(name)
       if not agent:
         continue
 
-      # Gemini(planner, developer)는 전문, Groq(designer 등)는 요약본
-      topic = topic_full if name in ('planner', 'developer') else topic_short
-      opinion = await agent.speak(topic, context=context)
+      opinion = await agent.speak(self.topic, context=context)
       self.records.append(MeetingRecord(speaker=name, content=opinion, round=1))
       await self._emit(name, opinion, 'response')
       context += f'\n[{name}의 의견]\n{opinion}\n'
@@ -173,29 +165,6 @@ class Meeting:
         results.append((target_id, rec.speaker, question))
 
     return results
-
-  async def _summarize_for_meeting(self, topic: str) -> str:
-    '''첨부파일이 포함된 토픽을 요약하여 TPM이 작은 에이전트용으로 만든다.'''
-    from runners.groq_runner import GroqRunner
-    parts = topic.split('[첨부된 참조 자료]', 1)
-    user_message = parts[0].strip()
-    attachments = parts[1] if len(parts) > 1 else ''
-
-    # planner와 같은 모델(Llama 4 Scout)로 요약 — TPM 30K
-    groq = self.agents.get('planner', next(iter(self.agents.values()))).groq_runner
-    if not groq:
-      return user_message + '\n\n[첨부 자료 요약 불가]'
-
-    try:
-      summary = await groq.generate(
-        f'아래 첨부 자료의 핵심 내용을 1000자 이내로 요약하세요. '
-        f'주요 요구사항, 목표, 범위, 제약사항을 중심으로 정리하세요.\n\n{attachments}',
-        model='meta-llama/llama-4-scout-17b-16e-instruct',
-      )
-      return user_message + f'\n\n[첨부 자료 요약]\n{summary}'
-    except Exception:
-      # 요약 실패 시 앞부분만 전달
-      return user_message + '\n\n[첨부 자료 요약]\n' + attachments[:2000]
 
   async def _emit(self, agent_id: str, message: str, event_type: str) -> None:
     '''이벤트 버스에 회의 로그를 발행한다.'''
