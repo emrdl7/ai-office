@@ -5,6 +5,7 @@ from pathlib import Path
 
 import os
 CLAUDE_CLI = os.environ.get('CLAUDE_CLI', 'claude')
+CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
 LOG = Path('data/debug.log')
 
 
@@ -23,6 +24,7 @@ async def run_claude_isolated(prompt: str, timeout: float = 180.0) -> str:
     '--verbose',
     '--no-session-persistence',
     '--dangerously-skip-permissions',
+    '--model', CLAUDE_MODEL,
     '--max-turns', '3',
     prompt,
     cwd=project_root,

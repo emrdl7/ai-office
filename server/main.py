@@ -376,8 +376,9 @@ async def get_agents(request: Request):
 
   # 에이전트별 실제 모델명 (러너에서 동적으로 가져옴)
   from runners.groq_runner import MODEL as GROQ_MODEL
+  from runners.claude_runner import CLAUDE_MODEL
   agent_models: dict[str, str] = {
-    'teamlead': 'Claude CLI',
+    'teamlead': f'Claude {CLAUDE_MODEL}' if CLAUDE_MODEL != 'claude' else 'Claude CLI',
     'planner': 'Gemini CLI',
     'designer': f'Groq {GROQ_MODEL}',
     'developer': 'Gemini CLI',
