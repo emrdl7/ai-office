@@ -215,21 +215,18 @@ class Office:
         f'- 당신의 전문 영역과 관련이 있는가?\n'
         f'- 당신을 지목했거나 당신이 대답해야 자연스러운가?\n'
         f'- 전체 인사(안녕, 수고 등)라도 모두가 답할 필요는 없다\n\n'
-        f'반응할 필요가 없으면 [PASS] 한 단어만 출력하세요.\n'
+        f'반응할 필요가 없으면 [PASS] 이 한 단어만 출력하세요. 이유를 설명하지 마세요.\n'
         f'반응할 필요가 있으면 짧게 1~2문장으로 답하세요 (메신저 대화처럼, 마크다운 금지).'
       )
       try:
-        response = await self.groq_runner.generate(prompt, system=system)
+        response = await run_claude_isolated(
+          f'{system}\n\n---\n\n{prompt}',
+          model='claude-haiku-4-5-20251001',
+          timeout=30.0,
+        )
         content = response.strip()
-        # 마크다운 펜스 제거
-        if content.startswith('```'):
-          lines = content.split('\n')
-          lines = lines[1:]
-          if lines and lines[-1].strip() == '```':
-            lines = lines[:-1]
-          content = '\n'.join(lines)
         # [PASS]면 넘기기
-        if content.upper().startswith('[PASS]') or content.upper() == 'PASS':
+        if '[PASS]' in content.upper() or content.strip().upper() == 'PASS':
           continue
         responded.append(name)
         await self._emit(name, content, 'response')
@@ -247,14 +244,12 @@ class Office:
         f'당신이 대표로 한마디 해주세요. 짧고 자연스럽게. 마크다운 금지.'
       )
       try:
-        response = await self.groq_runner.generate(prompt, system=system)
+        response = await run_claude_isolated(
+          f'{system}\n\n---\n\n{prompt}',
+          model='claude-haiku-4-5-20251001',
+          timeout=30.0,
+        )
         content = response.strip()
-        if content.startswith('```'):
-          lines = content.split('\n')
-          lines = lines[1:]
-          if lines and lines[-1].strip() == '```':
-            lines = lines[:-1]
-          content = '\n'.join(lines)
         await self._emit(fallback_name, content, 'response')
       except Exception:
         pass
