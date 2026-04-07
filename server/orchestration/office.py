@@ -659,6 +659,39 @@ class Office:
         qa_passed = await self._run_qa_check(qa_agent, node, group_content)
         if not qa_passed:
           await self._emit('qa', f'{current_group} 검수 불합격: {node.failure_reason[:200]}', 'response')
+
+          # 보완 1회 — 불합격 사유를 담당 에이전트에게 전달하여 수정
+          await self._emit('teamlead', f'{current_group} 보완 요청합니다.', 'response')
+          self._state = OfficeState.REVISION
+          self._active_agent = agent_name
+          await self._emit(agent_name, '', 'typing')
+
+          # 해당 그룹의 모든 소단계 산출물 + 불합격 사유로 보완 프롬프트 생성
+          revision_prompt = (
+            f'[프로젝트]\n{user_input}\n\n'
+            f'[{current_group} 산출물]\n{group_content}\n\n'
+            f'[QA 불합격 사유]\n{node.failure_reason}\n\n'
+            f'위 불합격 사유를 반영하여 {current_group} 산출물을 보완하세요.\n'
+            f'불합격 지적 사항을 모두 해결하고, 전체를 다시 작성하세요.\n'
+            f'마크다운 형식으로 작성하세요.'
+          )
+          revised = await agent.handle(revision_prompt)
+
+          # 보완 결과 저장 (마지막 소단계 파일에 덮어쓰기)
+          try:
+            self.workspace.write_artifact(filename, revised)
+          except Exception:
+            pass
+          all_results[phase_name] = revised
+          prev_phase_result = revised
+
+          await self.event_bus.publish(LogEvent(
+            agent_id=agent_name,
+            event_type='response',
+            message=f'{current_group} 보완 완료했습니다.',
+            data={'artifacts': [f'{self.workspace.task_id}/{filename}']},
+          ))
+          await self._team_reaction(agent_name, f'{current_group}-보완')
         else:
           await self._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
 
