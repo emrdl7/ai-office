@@ -366,7 +366,7 @@ async def get_agents(request: Request):
   state_to_active: dict[OfficeState, str] = {
     OfficeState.TEAMLEAD_THINKING: 'teamlead',
     OfficeState.MEETING: 'all',
-    OfficeState.WORKING: 'working',
+    OfficeState.WORKING: office._active_agent or 'working',
     OfficeState.QA_REVIEW: 'qa',
     OfficeState.TEAMLEAD_REVIEW: 'teamlead',
     OfficeState.REVISION: 'planner',

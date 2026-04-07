@@ -69,6 +69,7 @@ class Office:
     self._interrupted_instruction = None  # 서버 재시작으로 중단된 작업 instruction
     self._interrupted_task_id = None
     self._interrupted_confirmed = False
+    self._active_agent = ''  # 현재 작업 중인 에이전트 ID
     self._last_review_feedback = ''
 
     # Groq 러너 (디자이너, QA용)
@@ -309,6 +310,7 @@ class Office:
       await self._team_chat(user_input)
 
       self._state = OfficeState.COMPLETED
+      self._active_agent = ''
       return {
         'state': self._state.value,
         'response': response,
@@ -347,6 +349,7 @@ class Office:
       return {'state': 'error', 'response': f'{agent_name} 에이전트를 찾을 수 없습니다.', 'artifacts': []}
 
     self._state = OfficeState.WORKING
+    self._active_agent = agent_name
 
     prompt = analysis or user_input
     # 이전 대화 요약 + 참조 자료를 컨텍스트로 전달
@@ -496,6 +499,7 @@ class Office:
       agent = self.agents[agent_name]
 
       self._state = OfficeState.WORKING
+      self._active_agent = agent_name
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
       await self._emit(agent_name, '', 'typing')
 
