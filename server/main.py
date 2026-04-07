@@ -176,10 +176,13 @@ async def chat(
       final_state = result.get('state', 'completed')
       update_task_state(task_id, final_state)
     except Exception as e:
-      import traceback
+      import traceback, logging
+      logging.error(f'_run() error: {e}')
       traceback.print_exc()
       update_task_state(task_id, f'error: {e}')
       office._state = OfficeState.IDLE
+      office._active_agent = ''
+      office._work_started_at = ''
       await event_bus.publish(LogEvent(
         agent_id='teamlead',
         event_type='response',
