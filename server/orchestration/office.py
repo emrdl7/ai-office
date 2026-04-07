@@ -617,16 +617,15 @@ class Office:
         for k, v in same_group_results:
           phase_prompt += f'[이전 작업: {k}]\n{v}\n\n'
 
-      # 다른 그룹의 산출물은 LLM 요약 전달
+      # 다른 그룹의 산출물은 참조 가이드로 전달 (어디 문서의 어디 부분 참고하라)
       other_groups = set()
       for k, v in all_results.items():
         g = k.split('-')[0] if '-' in k else k
         if g != current_group and g not in other_groups:
           other_groups.add(g)
-          # 해당 그룹의 전체 산출물 취합
-          group_full = '\n\n'.join(val for key, val in all_results.items() if key.startswith(g))
-          summary = await self._summarize_for_handoff(g, group_full, phase_name)
-          phase_prompt += f'[{g} 단계 산출물 요약]\n{summary}\n\n'
+          group_results = {key: val for key, val in all_results.items() if key.startswith(g)}
+          guide = await self._create_handoff_guide(g, group_results, phase_name)
+          phase_prompt += f'[{g} 단계 참조 가이드]\n{guide}\n\n'
 
       if reference_context and current_group == '기획':
         phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
@@ -1027,25 +1026,40 @@ class Office:
         self._recent_reactions.append(meme)
         await self._emit(meme_sender, meme, 'response')
 
-  async def _summarize_for_handoff(self, group_name: str, content: str, target_phase: str) -> str:
-    '''다른 그룹의 산출물을 다음 단계에 전달하기 위해 핵심만 요약한다.'''
+  async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
+    '''이전 그룹의 산출물에서 다음 단계에 필요한 참조 가이드를 생성한다.
+
+    요약이 아니라 "어느 작업 시 어느 문서의 어느 부분을 참고하라"는 지시서.
+    '''
+    # 각 문서의 섹션 목차를 추출
+    doc_sections = []
+    for doc_name, content in group_results.items():
+      # 마크다운 헤더를 추출하여 목차 구성
+      headers = [line.strip() for line in content.split('\n') if line.strip().startswith('#')]
+      doc_sections.append(f'[{doc_name}] 섹션 목록:\n' + '\n'.join(headers[:20]))
+
+    sections_text = '\n\n'.join(doc_sections)
+
     try:
-      summary = await run_claude_isolated(
-        f'당신은 프로젝트 관리자입니다. 아래 "{group_name}" 단계의 산출물을 '
-        f'"{target_phase}" 단계 담당자가 작업에 참고할 수 있도록 핵심만 요약하세요.\n\n'
-        f'요약 기준:\n'
-        f'- 다음 단계 작업에 필요한 핵심 결정사항, 스펙, 구조만 추출\n'
-        f'- 불필요한 서론, 배경 설명 제거\n'
-        f'- 구체적 수치(컬러 hex, 폰트, 간격, 레이아웃 구조 등)는 반드시 유지\n'
-        f'- 2000자 이내\n\n'
-        f'{content}',
+      guide = await run_claude_isolated(
+        f'당신은 팀장입니다. "{target_phase}" 담당자에게 작업 지시를 내려야 합니다.\n\n'
+        f'아래는 "{group_name}" 단계에서 완료된 문서들의 섹션 목록입니다:\n\n'
+        f'{sections_text}\n\n'
+        f'"{target_phase}" 작업을 수행할 때 어떤 문서의 어떤 섹션을 참고해야 하는지 '
+        f'구체적으로 지시하세요.\n\n'
+        f'형식:\n'
+        f'- [작업 항목] → [문서명]의 [섹션명] 참고\n'
+        f'- 해당 섹션에서 꼭 확인해야 할 핵심 스펙(수치, 구조 등)을 한 줄로 명시\n\n'
+        f'예시:\n'
+        f'- 네비게이션 마크업 → 기획-IA설계의 "GNB 구조" 참고 (1뎁스 6개: 기관소개/사업안내/...)\n'
+        f'- CSS 변수 정의 → 디자인-시스템의 "컬러 팔레트" 참고 (Primary: #1B4F72, Secondary: #2ECC71)\n',
         model='claude-haiku-4-5-20251001',
         timeout=60.0,
       )
-      return summary
+      return guide
     except Exception:
-      # 요약 실패 시 마지막 산출물의 앞부분이라도
-      return content[-3000:] if len(content) > 3000 else content
+      # 실패 시 목차라도 전달
+      return sections_text
 
   async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
     '''디자인 산출물을 바탕으로 Stitch 시안을 생성한다.'''
