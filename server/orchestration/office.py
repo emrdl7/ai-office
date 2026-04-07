@@ -184,7 +184,7 @@ class Office:
     '''
     from runners.groq_runner import MODEL as GROQ_MODEL
     agent_model_map = {
-      'planner': 'OpenCode CLI',
+      'planner': f'Groq API — {GROQ_MODEL}',
       'designer': f'Groq API — {GROQ_MODEL}',
       'developer': 'OpenCode CLI',
       'qa': f'Groq API — {GROQ_MODEL}',

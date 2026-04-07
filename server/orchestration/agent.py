@@ -94,9 +94,9 @@ class Agent:
     # 입력 중... 표시
     await self._emit('', 'typing')
 
-    # developer, planner → opencode(클라우드)
-    # designer, qa → Groq(클라우드)
-    if self.name in ('developer', 'planner'):
+    # developer → opencode(클라우드)
+    # planner, designer, qa → Groq(클라우드)
+    if self.name == 'developer':
       result = await run_opencode(prompt=full_prompt, system=system)
     elif self.groq_runner:
       result = await self.groq_runner.generate(full_prompt, system=system)
@@ -165,7 +165,7 @@ class Agent:
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
     from runners.opencode_runner import run_opencode
-    if self.name in ('developer', 'planner'):
+    if self.name == 'developer':
       return await run_opencode(prompt=prompt, system=system)
     if self.groq_runner:
       return await self.groq_runner.generate(prompt, system=system)
