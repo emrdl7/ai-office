@@ -34,6 +34,15 @@ function statusDot(status: string): string {
   }
 }
 
+function statusLabel(status: string): { text: string; color: string } {
+  switch (status) {
+    case 'working': return { text: '작업중', color: 'text-blue-400' }
+    case 'meeting': return { text: '회의중', color: 'text-purple-400' }
+    case 'waiting': return { text: '대기', color: 'text-yellow-400' }
+    default: return { text: '오프라인', color: 'text-gray-500' }
+  }
+}
+
 async function fetchAgents(): Promise<Agent[]> {
   const res = await fetch('/api/agents')
   if (!res.ok) throw new Error('에이전트 상태 로드 실패')
@@ -190,6 +199,9 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-sm font-medium">{profile.pokemon || profile.name}</span>
                       <span className="text-[10px] text-gray-500">{profile.role}</span>
+                      <span className={`text-[10px] ${statusLabel(agent.status).color}`}>
+                        {statusLabel(agent.status).text}
+                      </span>
                     </div>
                     {agent.model && (
                       <p className="text-[10px] text-gray-500 truncate">{agent.model}</p>
