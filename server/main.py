@@ -374,7 +374,7 @@ async def get_agents(request: Request):
     'teamlead': 'Claude CLI',
     'planner': 'Groq Llama 4 Scout',
     'designer': f'Groq {GROQ_MODEL}',
-    'developer': 'OpenCode',
+    'developer': 'Gemini CLI',
     'qa': f'Groq {GROQ_MODEL}',
   }
 

@@ -186,7 +186,7 @@ class Office:
     agent_model_map = {
       'planner': 'Groq API — Llama 4 Scout',
       'designer': f'Groq API — {GROQ_MODEL}',
-      'developer': 'OpenCode CLI',
+      'developer': 'Gemini CLI',
       'qa': f'Groq API — {GROQ_MODEL}',
     }
 

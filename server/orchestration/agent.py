@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from runners.groq_runner import GroqRunner, MODEL as GROQ_DEFAULT_MODEL
-from runners.opencode_runner import run_opencode
+from runners.gemini_runner import run_gemini
 
 # 에이전트별 Groq 모델 매핑 (기본: llama-3.3-70b)
 AGENT_GROQ_MODEL: dict[str, str] = {
@@ -99,10 +99,10 @@ class Agent:
     # 입력 중... 표시
     await self._emit('', 'typing')
 
-    # developer → opencode(클라우드)
+    # developer → Gemini CLI
     # planner, designer, qa → Groq(클라우드)
     if self.name == 'developer':
-      result = await run_opencode(prompt=full_prompt, system=system)
+      result = await run_gemini(prompt=full_prompt, system=system)
     elif self.groq_runner:
       result = await self.groq_runner.generate(full_prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
     else:
@@ -169,9 +169,8 @@ class Agent:
 
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
-    from runners.opencode_runner import run_opencode
     if self.name == 'developer':
-      return await run_opencode(prompt=prompt, system=system)
+      return await run_gemini(prompt=prompt, system=system)
     if self.groq_runner:
       return await self.groq_runner.generate(prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
     raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')
