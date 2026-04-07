@@ -775,45 +775,39 @@ class Office:
         if current_group == '디자인':
           await self._generate_stitch_mockup(all_results, user_input)
 
-    # 최종 취합 — LLM 없이 산출물 목록 + 링크로 구성
-    await self._emit('teamlead', '최종 산출물을 정리하고 있습니다.', 'response')
+    # 최종 보고 — Haiku로 짧은 요약 + 산출물 링크
+    await self._emit('teamlead', '최종 보고서를 작성하고 있습니다.', 'response')
     self._active_agent = 'teamlead'
 
-    final_lines = ['# 프로젝트 최종 산출물\n']
+    # 전체 산출물 파일 수집 (모든 workspace에서)
     final_artifacts = []
-    current_group = ''
-    for phase_name, content in all_results.items():
-      group = phase_name.split('-')[0] if '-' in phase_name else phase_name
-      if group != current_group:
-        current_group = group
-        final_lines.append(f'\n## {group}\n')
-      # 소단계별 요약 (첫 3줄)
-      summary = '\n'.join(content.strip().split('\n')[:3])
-      final_lines.append(f'### {phase_name}\n{summary}\n')
-
-    final_content = '\n'.join(final_lines)
-    try:
-      self.workspace.write_artifact('final/result.md', final_content)
-      final_artifacts.append(f'{self.workspace.task_id}/final/result.md')
-    except Exception:
-      pass
-
-    # 전체 산출물 파일 목록 수집
-    try:
-      for f in sorted(self.workspace.task_dir.rglob('*.md')):
-        rel = str(f.relative_to(self.workspace.task_dir.parent))
-        if rel not in [a for a in final_artifacts]:
+    workspace_root = self.workspace.task_dir.parent
+    for ws_dir in sorted(workspace_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+      for f in sorted(ws_dir.rglob('*-result.md')) + sorted(ws_dir.rglob('*.html')):
+        rel = str(f.relative_to(workspace_root))
+        if rel not in final_artifacts:
           final_artifacts.append(rel)
-      for f in sorted(self.workspace.task_dir.rglob('*.html')):
-        rel = str(f.relative_to(self.workspace.task_dir.parent))
-        final_artifacts.append(rel)
-    except Exception:
-      pass
 
+    # 각 단계 제목만 추출하여 Haiku에게 짧은 요약 요청
+    phase_titles = '\n'.join(f'- {name}' for name in all_results.keys())
+    try:
+      summary = await run_claude_isolated(
+        f'아래 프로젝트 단계별 작업이 완료되었습니다. 3~5문장으로 전체 프로젝트를 요약하세요.\n\n'
+        f'프로젝트: {user_input.split("[첨부")[0].strip()[:200]}\n\n'
+        f'완료된 단계:\n{phase_titles}\n\n'
+        f'짧고 핵심적으로 요약하세요. 마크다운 금지.',
+        model='claude-haiku-4-5-20251001',
+        timeout=30.0,
+      )
+    except Exception:
+      summary = f'총 {len(all_results)}개 단계가 완료되었습니다.'
+
+    # 채팅에 요약 + 산출물 링크 공유
+    artifacts_text = '\n'.join(f'📄 {a.split("/", 1)[-1]}' for a in final_artifacts[:15])
     await self.event_bus.publish(LogEvent(
       agent_id='teamlead',
       event_type='response',
-      message=f'프로젝트가 완료되었습니다! 🎉\n\n총 {len(all_results)}개 단계 산출물이 준비되어 있습니다.',
+      message=f'프로젝트가 완료되었습니다! 🎉\n\n{summary}\n\n**산출물 목록:**\n{artifacts_text}',
       data={'artifacts': final_artifacts},
     ))
 
