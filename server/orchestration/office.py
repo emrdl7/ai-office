@@ -500,15 +500,29 @@ class Office:
       await self._emit(agent_name, '', 'typing')
 
       # 각 단계에 이전 단계 결과 + 회의 내용 전달
+      # Gemini(planner/developer)는 전문, Groq(designer/qa)는 축약
+      is_gemini = agent_name in ('planner', 'developer')
+      max_prev = 30000 if is_gemini else 3000
+      max_ref = 30000 if is_gemini else 2000
+      max_meeting = 30000 if is_gemini else 1500
+
+      # Groq 에이전트에는 첨부 전문 제외하고 사용자 메시지만
+      if is_gemini:
+        project_text = user_input
+      elif '[첨부된 참조 자료]' in user_input:
+        project_text = user_input.split('[첨부된 참조 자료]')[0].strip()
+      else:
+        project_text = user_input
+
       phase_prompt = (
-        f'[프로젝트]\n{user_input}\n\n'
+        f'[프로젝트]\n{project_text}\n\n'
         f'[현재 단계]\n{phase_name}: {phase["description"]}\n\n'
-        f'[팀 회의 내용]\n{meeting_summary}\n\n'
+        f'[팀 회의 내용]\n{meeting_summary[:max_meeting]}\n\n'
       )
       if prev_phase_result:
-        phase_prompt += f'[이전 단계 산출물]\n{prev_phase_result[:4000]}\n\n'
+        phase_prompt += f'[이전 단계 산출물]\n{prev_phase_result[:max_prev]}\n\n'
       if reference_context:
-        phase_prompt += f'[참조 자료]\n{reference_context[:4000]}\n\n'
+        phase_prompt += f'[참조 자료]\n{reference_context[:max_ref]}\n\n'
 
       phase_prompt += (
         f'위 내용을 바탕으로 {phase_name} 작업을 수행하세요.\n'
