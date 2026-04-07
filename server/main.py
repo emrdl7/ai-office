@@ -589,6 +589,44 @@ async def log_stream(ws: WebSocket):
     event_bus.unsubscribe(q)
 
 
+# --- 자가개선 API ---
+
+@app.get('/api/improvement/report')
+async def get_improvement_report(request: Request):
+  '''최신 자가개선 분석 보고서를 반환한다.'''
+  office: Office = request.app.state.office
+  return office.improvement_engine.get_report()
+
+
+@app.get('/api/improvement/metrics')
+async def get_improvement_metrics(request: Request):
+  '''프로젝트별 성과 메트릭을 반환한다.'''
+  office: Office = request.app.state.office
+  return office.improvement_engine.get_metrics_summary()
+
+
+@app.get('/api/improvement/rules/{agent}')
+async def get_agent_rules(agent: str, request: Request):
+  '''에이전트별 학습된 품질 규칙 목록을 반환한다.'''
+  office: Office = request.app.state.office
+  rules = office.improvement_engine.prompt_evolver.load_rules(agent)
+  from dataclasses import asdict
+  return [asdict(r) for r in rules]
+
+
+@app.post('/api/improvement/rules/{agent}/toggle')
+async def toggle_agent_rule(agent: str, request: Request):
+  '''규칙 활성화/비활성화 토글.'''
+  body = await request.json()
+  rule_id = body.get('rule_id', '')
+  active = body.get('active', True)
+  office: Office = request.app.state.office
+  success = office.improvement_engine.prompt_evolver.toggle_rule(agent, rule_id, active)
+  if not success:
+    raise HTTPException(status_code=404, detail='규칙을 찾을 수 없습니다')
+  return {'success': True, 'rule_id': rule_id, 'active': active}
+
+
 # --- 정적 파일 서빙 (빌드된 프론트엔드) ---
 DIST_DIR = Path(__file__).parent.parent / 'dashboard' / 'dist'
 if DIST_DIR.exists():

@@ -15,8 +15,10 @@ from runners.claude_runner import run_claude_isolated
 from log_bus.event_bus import EventBus, LogEvent
 from memory.agent_memory import AgentMemory, MemoryRecord
 from harness.rejection_analyzer import get_past_rejections
+from improvement.prompt_evolver import PromptEvolver
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
+_prompt_evolver = PromptEvolver()
 
 
 class Agent:
@@ -69,6 +71,14 @@ class Agent:
         status_str = '성공' if exp.success else '실패'
         lines.append(f'- [{status_str}] {exp.feedback} (태그: {", ".join(exp.tags)})')
       prompt += '\n\n## 이전 경험\n' + '\n'.join(lines)
+
+    # 학습된 품질 규칙 주입 (자가개선 프레임워크)
+    try:
+      rules_text = _prompt_evolver.get_active_rules_text(self.name)
+      if rules_text:
+        prompt += '\n\n' + rules_text
+    except Exception:
+      pass
 
     return prompt
 

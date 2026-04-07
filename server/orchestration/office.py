@@ -22,6 +22,10 @@ from harness.file_reader import resolve_references
 from harness.code_runner import run_code
 from harness.rejection_analyzer import record_rejection, get_past_rejections
 from harness.stitch_client import designer_generate_with_context
+from improvement.engine import ImprovementEngine
+from improvement.metrics import MetricsCollector, ProjectMetrics, PhaseMetrics
+from improvement.qa_adapter import QAAdapter
+from improvement.workflow_optimizer import WorkflowOptimizer
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
@@ -75,6 +79,9 @@ class Office:
 
     # Groq 러너 (디자이너, QA용)
     self.groq_runner = GroqRunner()
+
+    # 자가개선 엔진
+    self.improvement_engine = ImprovementEngine(event_bus=event_bus)
 
     # 팀원 초기화
     self.agents: dict[str, Agent] = {}
@@ -512,53 +519,13 @@ class Office:
   ) -> dict[str, Any]:
     '''프로젝트 전체 실행 — 기획 → 디자인 → 개발 단계별 진행.'''
 
-    PHASES = [
-      # 기획 — 3단계로 분리
-      {
-        'name': '기획-IA설계',
-        'description': '사용자 유형별 정보구조(IA) 트리를 설계하세요. GNB, 서브메뉴, 사용자 동선을 포함.',
-        'assigned_to': 'planner',
-        'group': '기획',
-      },
-      {
-        'name': '기획-와이어프레임',
-        'description': '메인화면 와이어프레임을 설계하세요. 섹션 배치, 콘텐츠 영역, CTA 위치를 명시.',
-        'assigned_to': 'planner',
-        'group': '기획',
-      },
-      {
-        'name': '기획-콘텐츠요구사항',
-        'description': '각 섹션별 필요 콘텐츠, 데이터 소스, 갱신 주기를 정의하세요.',
-        'assigned_to': 'planner',
-        'group': '기획',
-      },
-      # 디자인 — 3단계
-      {
-        'name': '디자인-시스템',
-        'description': '디자인 시스템을 정의하세요. 컬러 팔레트(hex), 타이포그래피(폰트/사이즈), 간격 체계, 아이콘 스타일.',
-        'assigned_to': 'designer',
-        'group': '디자인',
-      },
-      {
-        'name': '디자인-레이아웃',
-        'description': '메인화면 레이아웃을 설계하세요. 반응형(모바일/태블릿/데스크탑) 브레이크포인트별 구성.',
-        'assigned_to': 'designer',
-        'group': '디자인',
-      },
-      {
-        'name': '디자인-컴포넌트',
-        'description': '주요 UI 컴포넌트 명세를 작성하세요. 헤더, 히어로, 카드, 네비게이션, 푸터의 상세 스펙.',
-        'assigned_to': 'designer',
-        'group': '디자인',
-      },
-      # 퍼블리싱 — Stitch 시안 + 디자인 명세 기반 HTML/CSS/JS 통합
-      {
-        'name': '퍼블리싱',
-        'description': '디자인 시안(Stitch HTML)과 디자인 명세를 기반으로 완성된 퍼블리싱 파일을 작성하세요. 단일 index.html 파일에 HTML 구조 + CSS 스타일 + JS 인터랙션(메뉴, 슬라이더 등)을 모두 포함. 시맨틱 마크업, 반응형(모바일/태블릿/데스크탑), 접근성(WCAG 2.1 AA)을 반영.',
-        'assigned_to': 'developer',
-        'group': '퍼블리싱',
-      },
-    ]
+    # 프로젝트 유형 자동 판단 + 동적 PHASES 구성
+    project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
+    PHASES = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
+
+    # 프로젝트 메트릭 수집 시작
+    _project_started_at = datetime.now(timezone.utc).isoformat()
+    _phase_metrics: list[PhaseMetrics] = []
 
     all_results: dict[str, str] = {}
     phase_artifacts: list[str] = []
@@ -625,6 +592,8 @@ class Office:
       self._state = OfficeState.WORKING
       self._active_agent = agent_name
       self._work_started_at = datetime.now(timezone.utc).isoformat()
+      _phase_started_at = datetime.now(timezone.utc).isoformat()
+      _phase_revision_count = 0
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
       await self._emit(agent_name, '', 'typing')
 
@@ -761,6 +730,7 @@ class Office:
         if not qa_passed:
           await self._emit('qa', f'{current_group} 검수 불합격: {node.failure_reason[:200]}', 'response')
 
+          _phase_revision_count += 1
           # 보완 1회 — 불합격 사유를 담당 에이전트에게 전달하여 수정
           await self._emit('teamlead', f'{current_group} 보완 요청합니다.', 'response')
           self._state = OfficeState.REVISION
@@ -795,6 +765,26 @@ class Office:
           await self._team_reaction(agent_name, f'{current_group}-보완')
         else:
           await self._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
+
+        # phase 메트릭 기록
+        _phase_finished_at = datetime.now(timezone.utc).isoformat()
+        try:
+          from datetime import datetime as _dt
+          _start = _dt.fromisoformat(_phase_started_at)
+          _end = _dt.fromisoformat(_phase_finished_at)
+          _dur = (_end - _start).total_seconds()
+        except Exception:
+          _dur = 0.0
+        _phase_metrics.append(PhaseMetrics(
+          phase_name=phase_name,
+          agent_name=agent_name,
+          started_at=_phase_started_at,
+          finished_at=_phase_finished_at,
+          duration_seconds=_dur,
+          qa_passed=qa_passed,
+          revision_count=_phase_revision_count,
+          group=current_group,
+        ))
 
         # 디자인 그룹 완료 시 → Stitch로 시안 생성
         if current_group == '디자인':
@@ -884,8 +874,34 @@ class Office:
 
     # 현재 task를 completed로 마킹 (서버 재시작 시 "이어하겠습니다" 방지)
     from db.task_store import update_task_state as _update_task
-    if hasattr(self, '_current_task_id') and self._current_task_id:
-      _update_task(self._current_task_id, 'completed')
+    task_id = getattr(self, '_current_task_id', '') or ''
+    if task_id:
+      _update_task(task_id, 'completed')
+
+    # 자가개선: 프로젝트 메트릭 수집 및 분석
+    _project_finished_at = datetime.now(timezone.utc).isoformat()
+    try:
+      _p_start = datetime.fromisoformat(_project_started_at)
+      _p_end = datetime.fromisoformat(_project_finished_at)
+      _total_dur = (_p_end - _p_start).total_seconds()
+    except Exception:
+      _total_dur = 0.0
+
+    project_metrics = ProjectMetrics(
+      task_id=task_id or 'unknown',
+      project_type=project_type,
+      instruction=user_input[:500],
+      started_at=_project_started_at,
+      finished_at=_project_finished_at,
+      total_duration=_total_dur,
+      phases=_phase_metrics,
+      final_review_passed=True,
+      final_review_rounds=self._revision_count,
+    )
+    try:
+      await self.improvement_engine.on_project_complete(project_metrics)
+    except Exception:
+      pass  # 자가개선 실패가 프로젝트 완료를 막지 않음
 
     return {
       'state': self._state.value,
