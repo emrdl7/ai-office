@@ -266,6 +266,8 @@ class Office:
       {'state': str, 'response': str, 'artifacts': list[str]}
     '''
     self._state = OfficeState.TEAMLEAD_THINKING
+    self._active_agent = 'teamlead'
+    self._work_started_at = datetime.now(timezone.utc).isoformat()
 
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
