@@ -795,9 +795,13 @@ class Office:
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
     '''QA 에이전트가 산출물을 검수한다 (내부 처리 — 채팅에 안 보임).'''
+    # QA는 Groq(12K TPM)이므로 요구사항과 결과물을 축약
+    requirements = node.requirements
+    if '[첨부된 참조 자료]' in requirements:
+      requirements = requirements.split('[첨부된 참조 자료]')[0].strip()
     qa_prompt = (
-      f'[원본 요구사항]\n{node.requirements}\n\n'
-      f'[작업 결과물]\n{content[:8000]}\n\n'
+      f'[원본 요구사항]\n{requirements[:2000]}\n\n'
+      f'[작업 결과물]\n{content[:6000]}\n\n'
       f'위 요구사항 대비 결과물을 검수하세요.'
     )
     qa_result = await qa_agent.handle(qa_prompt)

@@ -172,6 +172,12 @@ async def chat(
       import traceback
       traceback.print_exc()
       update_task_state(task_id, f'error: {e}')
+      office._state = OfficeState.IDLE
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead',
+        event_type='response',
+        message=f'작업 중 문제가 발생했습니다: {str(e)[:100]}',
+      ))
 
   asyncio.create_task(_run())
   return {'task_id': task_id, 'status': 'accepted', 'to': to, 'attachments': len(files)}
