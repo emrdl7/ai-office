@@ -170,8 +170,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
   // 히스토리 복구는 WebSocket onopen에서 처리 (재연결 시 누락 메시지 자동 복구)
 
+  const isInitialLoad = useRef(true)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // 초기 로드 시에는 즉시 스크롤, 이후 새 메시지는 부드럽게
+    bottomRef.current?.scrollIntoView({ behavior: isInitialLoad.current ? 'instant' : 'smooth' })
+    if (isInitialLoad.current && logs.length > 0) isInitialLoad.current = false
   }, [logs, activeChannel])
 
   function autoResize(el: HTMLTextAreaElement) {

@@ -264,6 +264,19 @@ class Office:
     self._active_agent = 'teamlead'
     self._work_started_at = datetime.now(timezone.utc).isoformat()
 
+    # 하루 첫 메시지면 출근 인사
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    if not hasattr(self, '_greeted_date') or self._greeted_date != today:
+      self._greeted_date = today
+      import random
+      greetings = [
+        '좋은 아침입니다! ☀️ 오늘도 화이팅하겠습니다.',
+        '안녕하세요! 오늘 하루도 잘 부탁드립니다. 💪',
+        '출근했습니다! 오늘 어떤 작업이 있을까요? 🚀',
+        '좋은 하루입니다! 팀원들 준비 완료했습니다. ✨',
+      ]
+      await self._emit('teamlead', random.choice(greetings), 'response')
+
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
       return await self._continue_project(user_input)
@@ -362,6 +375,10 @@ class Office:
     self._state = OfficeState.WORKING
     self._active_agent = agent_name
 
+    # 업무 수신 확인
+    profile_names = {'planner': '알라카짐', 'designer': '나인테일', 'developer': '리자몽', 'qa': '야도란'}
+    await self._emit('teamlead', f'알겠습니다. {profile_names.get(agent_name, agent_name)}에게 맡기겠습니다.', 'response')
+
     prompt = analysis or user_input
     # 이전 대화 요약 + 참조 자료를 컨텍스트로 전달
     ctx_parts = []
@@ -402,6 +419,9 @@ class Office:
     briefing = analysis
     if self._context_summary:
       briefing = f'{analysis}\n\n[이전 논의 요약]\n{self._context_summary}'
+
+    # 업무 수신 확인
+    await self._emit('teamlead', '알겠습니다. 확인하고 팀원들과 논의해보겠습니다.', 'response')
 
     # 1. 회의 소집 — 방향 잡기
     self._state = OfficeState.MEETING
