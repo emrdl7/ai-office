@@ -775,34 +775,51 @@ class Office:
         if current_group == '디자인':
           await self._generate_stitch_mockup(all_results, user_input)
 
-    # 기획자 최종 취합
-    await self._emit('planner', '', 'typing')
-    await self._run_planner_synthesize(user_input, all_results)
+    # 최종 취합 — LLM 없이 산출물 목록 + 링크로 구성
+    await self._emit('teamlead', '최종 산출물을 정리하고 있습니다.', 'response')
+    self._active_agent = 'teamlead'
 
-    # 팀장 최종 검수
-    self._state = OfficeState.TEAMLEAD_REVIEW
-    passed = await self._teamlead_final_review(user_input, None)
+    final_lines = ['# 프로젝트 최종 산출물\n']
+    final_artifacts = []
+    current_group = ''
+    for phase_name, content in all_results.items():
+      group = phase_name.split('-')[0] if '-' in phase_name else phase_name
+      if group != current_group:
+        current_group = group
+        final_lines.append(f'\n## {group}\n')
+      # 소단계별 요약 (첫 3줄)
+      summary = '\n'.join(content.strip().split('\n')[:3])
+      final_lines.append(f'### {phase_name}\n{summary}\n')
 
-    if not passed:
-      for _ in range(self.MAX_REVISION_ROUNDS):
-        self._revision_count += 1
-        await self._run_planner_synthesize(
-          user_input, all_results, revision_feedback=self._last_review_feedback,
-        )
-        passed = await self._teamlead_final_review(user_input, None)
-        if passed:
-          break
-
-    self._state = OfficeState.COMPLETED if passed else OfficeState.ESCALATED
-
-    # 최종 산출물
-    final_content = ''
+    final_content = '\n'.join(final_lines)
     try:
-      final_path = self.workspace.task_dir / 'final' / 'result.md'
-      if final_path.exists():
-        final_content = final_path.read_text(encoding='utf-8')
+      self.workspace.write_artifact('final/result.md', final_content)
+      final_artifacts.append(f'{self.workspace.task_id}/final/result.md')
     except Exception:
       pass
+
+    # 전체 산출물 파일 목록 수집
+    try:
+      for f in sorted(self.workspace.task_dir.rglob('*.md')):
+        rel = str(f.relative_to(self.workspace.task_dir.parent))
+        if rel not in [a for a in final_artifacts]:
+          final_artifacts.append(rel)
+      for f in sorted(self.workspace.task_dir.rglob('*.html')):
+        rel = str(f.relative_to(self.workspace.task_dir.parent))
+        final_artifacts.append(rel)
+    except Exception:
+      pass
+
+    await self.event_bus.publish(LogEvent(
+      agent_id='teamlead',
+      event_type='response',
+      message=f'프로젝트가 완료되었습니다! 🎉\n\n총 {len(all_results)}개 단계 산출물이 준비되어 있습니다.',
+      data={'artifacts': final_artifacts},
+    ))
+
+    self._state = OfficeState.COMPLETED
+    self._active_agent = ''
+    self._work_started_at = ''
 
     phase_artifacts.append(f'{self.workspace.task_id}/final/result.md')
 
