@@ -1,12 +1,14 @@
-# FastAPI 오케스트레이션 서버 진입점 (INFR-04)
-# WebSocket /ws/logs: 에이전트 이벤트 실시간 브로드캐스트
+# FastAPI 오케스트레이션 서버 진입점
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -15,19 +17,21 @@ from log_bus.event_bus import EventBus, LogEvent, event_bus
 from orchestration.loop import OrchestrationLoop, WorkflowState
 from orchestration.router import MessageRouter
 from orchestration.task_graph import TaskGraph
-from runners.ollama_runner import OllamaRunner
+from runners.gemma_runner import GemmaRunner
 from workspace.manager import WorkspaceManager
+from db.task_store import save_task, update_task_state, list_tasks, get_task
 
-# OllamaRunner 싱글턴 (lifespan에서 start/stop)
-ollama_runner = OllamaRunner()
+# GemmaRunner 싱글턴 (lifespan에서 start/stop)
+gemma_runner = GemmaRunner()
 
 # 데이터 디렉토리 생성 (MessageBus SQLite 파일용)
 Path('data').mkdir(exist_ok=True)
 
 # 싱글턴 인스턴스
 message_bus = MessageBus(db_path='data/bus.db')
-# WorkspaceManager: task_id='' → workspace_root 전체를 루트로 사용
-workspace = WorkspaceManager(task_id='', workspace_root='workspace')
+# WorkspaceManager: 프로젝트 루트의 workspace/ 디렉토리 사용
+WORKSPACE_ROOT = Path(__file__).parent.parent / 'workspace'
+workspace = WorkspaceManager(task_id='', workspace_root=str(WORKSPACE_ROOT))
 
 
 @asynccontextmanager
@@ -37,29 +41,27 @@ async def lifespan(app: FastAPI):
   Startup: OllamaRunner 워커 시작, OrchestrationLoop 초기화
   Shutdown: OllamaRunner 워커 종료, MessageBus 연결 해제
   '''
-  await ollama_runner.start()
+  await gemma_runner.start()
   router = MessageRouter(bus=message_bus, event_bus=event_bus)
   app.state.orch_loop = OrchestrationLoop(
     bus=message_bus,
-    runner=ollama_runner,
+    runner=gemma_runner,
     event_bus=event_bus,
     workspace=workspace,
     router=router,
   )
-  app.state.active_tasks: dict[str, WorkflowState] = {}
-  app.state.task_order: list[str] = []          # 작업 지시 순서 추적
   app.state.log_history: list[dict] = []         # 최근 로그 버퍼 (최대 500건)
   yield
-  await ollama_runner.stop()
+  await gemma_runner.stop()
   message_bus.close()
 
 
 app = FastAPI(title='AI Office', lifespan=lifespan)
 
-# CORS 설정 — Vite 개발 서버(localhost:5173) 허용
+# CORS 설정 — Vite 개발 서버(localhost:3100) 허용
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=['http://localhost:5173', 'http://127.0.0.1:5173'],
+  allow_origins=['http://localhost:3100', 'http://127.0.0.1:3100'],
   allow_credentials=True,
   allow_methods=['*'],
   allow_headers=['*'],
@@ -85,39 +87,108 @@ async def health():
   }
 
 
-@app.post('/api/tasks', response_model=TaskResponse, status_code=202)
-async def create_task(body: TaskRequest, request: Request):
-  '''사용자 지시를 받아 오케스트레이션을 백그라운드로 시작한다 (ORCH-01)'''
+@app.post('/api/tasks', status_code=202)
+async def create_task(
+  request: Request,
+  instruction: str = Form(...),
+  files: list[UploadFile] = File(default=[]),
+  base_task_id: str = Form(default=''),
+):
+  '''사용자 지시 + 첨부파일 + 이전 작업 참조를 받아 오케스트레이션을 시작한다.'''
+  from harness.file_reader import read_file
+
   task_id = str(uuid.uuid4())
   loop: OrchestrationLoop = request.app.state.orch_loop
-  request.app.state.active_tasks[task_id] = WorkflowState.IDLE
-  request.app.state.task_order.append(task_id)  # 순서 기록
+  file_names = ','.join(f.filename or '' for f in files if f.filename)
+  save_task(task_id, instruction, 'idle', attachments=file_names)
+
+  # 이전 작업 컨텍스트 수집 — 해당 태스크의 최종 산출물만 포함
+  prev_context = ''
+  if base_task_id:
+    prev_task = get_task(base_task_id)
+    if prev_task:
+      prev_context = f'\n[이전 작업 지시]\n{prev_task["instruction"]}\n'
+      # 해당 태스크 폴더의 final/result.md만 읽기
+      task_final = WORKSPACE_ROOT / base_task_id / 'final' / 'result.md'
+      if task_final.exists() and task_final.stat().st_size > 100:
+        prev_context += f'\n[이전 최종 산출물]\n{task_final.read_text(errors="replace")}\n'
+      if prev_context.strip():
+        prev_context = f'\n[이전 작업 참고]\n{prev_context}'
+
+  # 첨부파일 저장 + 내용 파싱
+  attachments_text = ''
+  upload_dir = WORKSPACE_ROOT / task_id / 'uploads'
+  upload_dir.mkdir(parents=True, exist_ok=True)
+
+  for f in files:
+    if f.filename:
+      file_path = upload_dir / f.filename
+      content = await f.read()
+      file_path.write_bytes(content)
+      parsed = read_file(str(file_path))
+      if parsed:
+        attachments_text += f'\n[첨부파일: {f.filename}]\n{parsed}\n'
+
+  # 전체 컨텍스트 조합 — 첨부파일 우선, 이전 작업은 참고로
+  full_instruction = instruction
+  if attachments_text:
+    full_instruction = f'{instruction}\n\n[첨부된 참조 자료 — 핵심 입력]\n{attachments_text}'
+  if prev_context:
+    full_instruction = f'{full_instruction}\n{prev_context}'
 
   async def _run():
-    final_state = await loop.run(body.instruction)
-    request.app.state.active_tasks[task_id] = final_state
+    try:
+      update_task_state(task_id, 'running')
+      # 태스크별 workspace 격리
+      task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+      loop.workspace = task_workspace
+      final_state = await loop.run(full_instruction)
+      update_task_state(task_id, final_state.value if hasattr(final_state, 'value') else str(final_state))
+    except Exception as e:
+      import traceback
+      traceback.print_exc()
+      update_task_state(task_id, f'error: {e}')
 
   asyncio.create_task(_run())
-  return TaskResponse(task_id=task_id, status='accepted')
+  return {'task_id': task_id, 'status': 'accepted', 'attachments': len(files)}
 
 
 @app.get('/api/tasks/{task_id}')
-async def get_task_status(task_id: str, request: Request):
+async def get_task_status_api(task_id: str):
   '''태스크 현재 상태를 반환한다'''
-  tasks = request.app.state.active_tasks
-  if task_id not in tasks:
+  task = get_task(task_id)
+  if not task:
     raise HTTPException(status_code=404, detail='태스크를 찾을 수 없습니다')
-  return {'task_id': task_id, 'state': tasks[task_id]}
+  return {'task_id': task['task_id'], 'state': task['state'], 'instruction': task['instruction'], 'created_at': task['created_at']}
+
+
+@app.delete('/api/tasks/{task_id}')
+async def delete_task_api(task_id: str):
+  '''태스크 삭제 — DB + workspace 폴더 모두 삭제'''
+  import shutil
+  task = get_task(task_id)
+  if not task:
+    raise HTTPException(status_code=404, detail='태스크를 찾을 수 없습니다')
+  # DB 삭제
+  from db.task_store import _conn
+  c = _conn()
+  c.execute('DELETE FROM tasks WHERE task_id=?', (task_id,))
+  c.commit()
+  c.close()
+  # workspace 폴더 삭제
+  task_dir = WORKSPACE_ROOT / task_id
+  if task_dir.exists():
+    shutil.rmtree(task_dir, ignore_errors=True)
+  return {'deleted': task_id}
 
 
 @app.get('/api/tasks')
-async def list_tasks(request: Request):
-  '''전체 작업 지시 내역을 순서대로 반환한다 (DASH-05)'''
-  tasks = request.app.state.active_tasks
-  order = request.app.state.task_order
+async def list_tasks_api():
+  '''전체 작업 지시 내역을 순서대로 반환한다 (DASH-05) — SQLite 영속'''
+  tasks = list_tasks()
   return [
-    {'task_id': tid, 'state': tasks.get(tid, WorkflowState.IDLE)}
-    for tid in order
+    {'task_id': t['task_id'], 'state': t['state'], 'instruction': t['instruction'], 'attachments': t.get('attachments', ''), 'created_at': t['created_at']}
+    for t in tasks
   ]
 
 
@@ -191,27 +262,72 @@ async def get_dag(request: Request):
 
 @app.get('/api/agents')
 async def get_agents(request: Request):
-  '''에이전트별 현재 상태를 반환한다 (DASH-02).
+  '''에이전트별 현재 상태를 OrchestrationLoop 실시간 상태에서 추론한다 (DASH-02).'''
+  loop: OrchestrationLoop = request.app.state.orch_loop
+  state = loop._state
 
-  알려진 에이전트 목록 기준으로 상태를 추론한다.
-  '''
-  tasks = request.app.state.active_tasks
-  # 알려진 에이전트 목록
-  known_agents = ['claude', 'planner', 'designer', 'developer', 'qa']
+  # 상태별 어떤 에이전트가 활성인지 매핑
+  state_to_active: dict[WorkflowState, str] = {
+    WorkflowState.CLAUDE_ANALYZING: 'claude',
+    WorkflowState.PLANNER_PLANNING: 'planner',
+    WorkflowState.WORKER_EXECUTING: 'developer',
+    WorkflowState.QA_REVIEWING: 'qa',
+    WorkflowState.CLAUDE_FINAL_VERIFYING: 'claude',
+    WorkflowState.REVISION_LOOPING: 'planner',
+  }
 
-  # active_tasks에서 현재 진행 중인 태스크를 통해 에이전트 상태 추론
-  # WorkflowState.IDLE이 아닌 태스크가 있으면 일부 에이전트가 작업 중
-  has_active = any(
-    v != WorkflowState.IDLE for v in tasks.values()
-  )
+  active_agent = state_to_active.get(state)
 
   agents = []
-  for agent_id in known_agents:
-    agents.append({
-      'agent_id': agent_id,
-      'status': 'working' if has_active else 'idle',
-    })
+  for agent_id in ['claude', 'planner', 'designer', 'developer', 'qa']:
+    if active_agent == agent_id:
+      status = 'working'
+    elif state in {WorkflowState.IDLE, WorkflowState.COMPLETED, WorkflowState.ESCALATED}:
+      status = 'idle'
+    else:
+      status = 'waiting'
+    agents.append({'agent_id': agent_id, 'status': status})
   return agents
+
+
+@app.get('/api/artifacts')
+async def list_all_artifacts(task_id: str = ''):
+  '''산출물 목록 반환. task_id 지정 시 해당 태스크만.'''
+  if not WORKSPACE_ROOT.exists():
+    return []
+  result = []
+  dirs = [WORKSPACE_ROOT / task_id] if task_id else sorted(WORKSPACE_ROOT.iterdir())
+  for task_dir in dirs:
+    if not task_dir.is_dir() or task_dir.name.startswith('.'):
+      continue
+    for f in sorted(task_dir.rglob('*')):
+      if f.is_file() and f.name != '.gitkeep':
+        rel = f.relative_to(WORKSPACE_ROOT)
+        ext = f.suffix.lower()
+        ftype = 'code' if ext in {'.py','.ts','.js','.tsx','.jsx','.sh','.html','.css'} else 'doc' if ext in {'.md','.txt'} else 'data' if ext in {'.json','.yaml','.yml','.csv'} else 'image' if ext in {'.png','.jpg','.svg'} else 'unknown'
+        # uploads/ 폴더는 제외 (첨부파일이지 산출물이 아님)
+        if 'uploads' in str(rel):
+          continue
+        result.append({
+          'task_id': task_dir.name,
+          'path': str(rel),
+          'name': f.name,
+          'type': ftype,
+          'size': f.stat().st_size,
+        })
+  return result
+
+
+@app.get('/api/artifacts/{file_path:path}')
+async def get_artifact_content(file_path: str):
+  '''산출물 파일 내용을 반환한다.'''
+  if '..' in file_path:
+    raise HTTPException(status_code=400, detail='유효하지 않은 경로')
+  target = WORKSPACE_ROOT / file_path
+  if not target.exists() or not target.is_file():
+    raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
+  content = target.read_text(encoding='utf-8', errors='replace')
+  return {'path': file_path, 'content': content}
 
 
 @app.get('/api/files/{task_id}')
@@ -224,13 +340,12 @@ async def list_files(task_id: str):
   if '..' in task_id or '/' in task_id or '\\' in task_id:
     raise HTTPException(status_code=400, detail='유효하지 않은 task_id입니다')
 
-  workspace_root = Path('workspace')
-  task_dir = workspace_root / task_id
+  task_dir = WORKSPACE_ROOT / task_id
 
   if not task_dir.exists():
     return []
 
-  wm = WorkspaceManager(task_id=task_id, workspace_root='workspace')
+  wm = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
   artifacts = wm.list_artifacts()
 
   result = []
@@ -253,7 +368,7 @@ async def get_file(task_id: str, file_path: str):
   if '..' in task_id or '/' in task_id or '\\' in task_id:
     raise HTTPException(status_code=400, detail='유효하지 않은 task_id입니다')
 
-  wm = WorkspaceManager(task_id=task_id, workspace_root='workspace')
+  wm = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
   try:
     target = wm.safe_path(file_path)
   except ValueError:

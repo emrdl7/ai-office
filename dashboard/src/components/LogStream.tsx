@@ -1,59 +1,105 @@
-// 실시간 로그 스트림 컴포넌트 (DASH-03)
-import { useEffect, useRef } from 'react'
-import useWebSocket, { ReadyState } from 'react-use-websocket'
+// 실시간 채팅 스트림 — Slack 스타일 메신저 UI (DASH-03)
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import type { LogEntry } from '../types'
 
-// 에이전트 ID별 색상
-const AGENT_COLORS: Record<string, string> = {
-  claude: 'text-purple-400',
-  planner: 'text-blue-400',
-  designer: 'text-pink-400',
-  developer: 'text-green-400',
-  qa: 'text-yellow-400',
-  system: 'text-gray-400',
+// 포켓몬 이미지 URL (PokeAPI 공식 아트워크)
+const POKEMON_IMG: Record<string, string> = {
+  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/150.png',
+  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/65.png',
+  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/38.png',
+  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png',
+  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/80.png',
+  orchestrator: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/4.png',
+  system: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/4.png',
 }
 
-// 이벤트 타입별 접두사 아이콘 (텍스트)
-const EVENT_PREFIX: Record<string, string> = {
-  task_start: '[시작]',
-  task_end: '[완료]',
-  task_fail: '[실패]',
-  message: '[메시지]',
-  error: '[오류]',
+// 에이전트별 포켓몬 아바타/인격 정보
+const AGENT_PROFILE: Record<string, { name: string; pokemon: string; color: string; role: string; personality: string }> = {
+  claude: { name: '팀장', pokemon: '뮤츠', color: 'from-purple-500 to-purple-700', role: '분석·검수', personality: '냉철한 리더십' },
+  planner: { name: '기획자', pokemon: '알라카짐', color: 'from-blue-500 to-blue-700', role: '태스크 분해', personality: 'IQ 5000 전략가' },
+  designer: { name: '디자이너', pokemon: '나시', color: 'from-orange-400 to-pink-500', role: 'UI/UX 설계', personality: '우아한 미적 감각' },
+  developer: { name: '개발자', pokemon: '리자몽', color: 'from-orange-500 to-red-600', role: '코드 구현', personality: '불태우는 실행력' },
+  qa: { name: 'QA', pokemon: '야도란', color: 'from-yellow-500 to-amber-600', role: '품질 검수', personality: '집요한 꼼꼼함' },
+  orchestrator: { name: '시스템', pokemon: '파이리', color: 'from-gray-500 to-gray-600', role: '', personality: '' },
+  system: { name: '시스템', pokemon: '파이리', color: 'from-gray-500 to-gray-600', role: '', personality: '' },
 }
 
-// WebSocket URL 결정 (개발: 프록시 경유, 프로덕션: 직접 연결)
+// 이벤트 타입별 메시지 스타일
+const EVENT_STYLE: Record<string, { badge?: string; tone?: string }> = {
+  task_start: { badge: '시작', tone: 'text-blue-400' },
+  task_end: { badge: '완료', tone: 'text-green-400' },
+  task_fail: { badge: '실패', tone: 'text-red-400' },
+  error: { badge: '오류', tone: 'text-red-400' },
+  status_change: { badge: '상태변경', tone: 'text-gray-400' },
+  message: { tone: 'text-gray-300' },
+  log: { tone: 'text-gray-300' },
+}
+
+// WebSocket URL
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
 
-// 연결 상태 텍스트
-const READY_STATE_LABELS: Record<number, string> = {
-  [ReadyState.CONNECTING]: '연결 중...',
-  [ReadyState.OPEN]: '연결됨',
-  [ReadyState.CLOSING]: '연결 종료 중',
-  [ReadyState.CLOSED]: '연결 끊김',
+type ConnState = 'connecting' | 'open' | 'closed'
+const STATE_LABELS: Record<ConnState, string> = {
+  connecting: '연결 중...',
+  open: '연결됨',
+  closed: '연결 끊김',
+}
+
+// 메시지 내용 파싱 — [태그] 제거하고 실제 내용만 추출
+function parseMessage(raw: string): { tag: string; content: string } {
+  const match = raw.match(/^\[([^\]]+)\]\s*(.*)/)
+  if (match) {
+    return { tag: match[1], content: match[2] }
+  }
+  return { tag: '', content: raw }
+}
+
+// 시간 포맷
+function formatTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export function LogStream() {
   const { logs, addLog, setLogs } = useStore()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const [connState, setConnState] = useState<ConnState>('closed')
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
 
   // WebSocket 연결
-  const { readyState } = useWebSocket(WS_URL, {
-    onMessage: (event) => {
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
+    setConnState('connecting')
+    const ws = new WebSocket(WS_URL)
+    wsRef.current = ws
+    ws.onopen = () => setConnState('open')
+    ws.onclose = () => {
+      setConnState('closed')
+      reconnectTimer.current = setTimeout(connect, 2000)
+    }
+    ws.onmessage = (event) => {
       try {
-        const log = JSON.parse(event.data as string) as LogEntry
+        const log = JSON.parse(event.data) as LogEntry
         addLog(log)
       } catch {
         // JSON 파싱 실패 시 무시
       }
-    },
-    shouldReconnect: () => true,    // 자동 재연결
-    reconnectAttempts: 10,
-    reconnectInterval: 2000,
-  })
+    }
+  }, [addLog])
 
-  // 마운트 시 로그 히스토리 복구
+  useEffect(() => {
+    connect()
+    return () => {
+      clearTimeout(reconnectTimer.current)
+      wsRef.current?.close()
+    }
+  }, [connect])
+
+  // 마운트 시 히스토리 복구
   useEffect(() => {
     fetch('/api/logs/history?limit=100')
       .then((res) => res.json())
@@ -62,62 +108,150 @@ export function LogStream() {
           setLogs(data)
         }
       })
-      .catch(() => {
-        // 히스토리 로드 실패는 무시 (실시간 로그로 대체)
-      })
+      .catch(() => {})
   }, [setLogs])
 
-  // 새 로그 수신 시 자동 스크롤
+  // 자동 스크롤
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
 
-  const isConnected = readyState === ReadyState.OPEN
-  const statusLabel = READY_STATE_LABELS[readyState] ?? '알 수 없음'
+  const isConnected = connState === 'open'
+  const statusLabel = STATE_LABELS[connState]
+
+  // 연속된 같은 에이전트 메시지 그룹화
+  function renderMessages() {
+    const elements: React.ReactNode[] = []
+    let prevAgent = ''
+    let prevTime = ''
+
+    for (let i = 0; i < logs.length; i++) {
+      const log = logs[i]
+      const profile = AGENT_PROFILE[log.agent_id] ?? { name: log.agent_id, emoji: '🤖', color: 'bg-gray-500', role: '' }
+      const style = EVENT_STYLE[log.event_type] ?? {}
+      const { tag, content } = parseMessage(log.message)
+      const time = formatTime(log.timestamp)
+      const isNewGroup = log.agent_id !== prevAgent || time !== prevTime
+
+      // 시스템 상태 변경은 간소화
+      if (log.event_type === 'status_change') {
+        elements.push(
+          <div key={log.id ?? i} className="flex items-center justify-center py-1">
+            <span className="text-[10px] text-gray-500 italic">{content}</span>
+          </div>
+        )
+        prevAgent = log.agent_id
+        prevTime = time
+        continue
+      }
+
+      if (isNewGroup) {
+        // 새 그룹 — 포켓몬 아바타 + 이름 + 포켓몬명 + 시간
+        elements.push(
+          <div key={log.id ?? i} className="flex gap-3 py-1.5 group">
+            <div className="flex-shrink-0 mt-0.5">
+              <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${profile.color} flex items-center justify-center shadow-sm overflow-hidden`}>
+                <img
+                  src={POKEMON_IMG[log.agent_id]}
+                  alt={profile.pokemon}
+                  className="w-8 h-8 object-contain"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  {profile.pokemon}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  ({profile.name})
+                </span>
+                <span className="text-[10px] text-gray-400">{time}</span>
+                {style.badge && (
+                  <span className={`text-[10px] px-1.5 py-0 rounded font-medium
+                    ${style.tone === 'text-green-400' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
+                      style.tone === 'text-red-400' ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                      style.tone === 'text-blue-400' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                      'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+                    {style.badge}
+                  </span>
+                )}
+              </div>
+              {profile.personality && (
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 italic -mt-0.5">
+                  {profile.personality}
+                </p>
+              )}
+              <p className={`text-sm leading-relaxed mt-0.5 ${style.tone ?? 'text-gray-300'}`}>
+                {content}
+              </p>
+            </div>
+          </div>
+        )
+      } else {
+        // 같은 그룹 — 내용만 추가
+        elements.push(
+          <div key={log.id ?? i} className="flex gap-3 py-0.5 pl-11">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                {style.badge && (
+                  <span className={`text-[10px] px-1.5 py-0 rounded font-medium
+                    ${style.tone === 'text-green-400' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
+                      style.tone === 'text-red-400' ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                      style.tone === 'text-blue-400' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                      'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+                    {style.badge}
+                  </span>
+                )}
+              </div>
+              <p className={`text-sm leading-relaxed mt-0.5 ${style.tone ?? 'text-gray-300'}`}>
+                {content}
+              </p>
+            </div>
+          </div>
+        )
+      }
+
+      prevAgent = log.agent_id
+      prevTime = time
+    }
+
+    return elements
+  }
 
   return (
-    <section aria-label="실시간 로그 스트림" className="flex flex-col h-full">
+    <section aria-label="실시간 채팅" className="flex flex-col h-full">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
-        <h2 className="text-sm font-semibold uppercase tracking-wider opacity-60">
-          실시간 로그
-        </h2>
-        <div className="flex items-center gap-1.5" role="status" aria-label={`WebSocket 상태: ${statusLabel}`}>
-          <span
-            className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-gray-400'}`}
-          />
-          <span className="text-xs opacity-60">{statusLabel}</span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wider opacity-60">
+            # 작업 채널
+          </h2>
+          <div className="flex items-center gap-1" role="status">
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-gray-400'}`} />
+            <span className="text-[10px] opacity-50">{statusLabel}</span>
+          </div>
         </div>
       </div>
 
-      {/* 로그 목록 */}
+      {/* 채팅 영역 */}
       <div
-        className="flex-1 overflow-y-auto font-mono text-xs space-y-0.5
-          bg-gray-950 dark:bg-black rounded-lg p-3 min-h-0"
+        className="flex-1 overflow-y-auto space-y-0
+          bg-white dark:bg-gray-900 rounded-lg p-3 min-h-0
+          border border-gray-200 dark:border-gray-700"
         role="log"
         aria-live="polite"
-        aria-label="에이전트 로그"
+        aria-label="에이전트 채팅"
       >
         {logs.length === 0 ? (
-          <p className="text-gray-500 italic">로그를 기다리는 중...</p>
+          <div className="h-full flex flex-col items-center justify-center text-gray-400">
+            <p className="text-2xl mb-2 opacity-30">💬</p>
+            <p className="text-sm">아직 대화가 없습니다</p>
+            <p className="text-xs mt-1 opacity-60">작업을 지시하면 팀원들이 대화를 시작합니다</p>
+          </div>
         ) : (
-          logs.map((log, idx) => {
-            const agentColor = AGENT_COLORS[log.agent_id] ?? 'text-gray-300'
-            const prefix = EVENT_PREFIX[log.event_type] ?? `[${log.event_type}]`
-            const time = new Date(log.timestamp).toLocaleTimeString('ko-KR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })
-            return (
-              <div key={log.id ?? idx} className="flex gap-2 leading-relaxed">
-                <span className="text-gray-600 flex-shrink-0">{time}</span>
-                <span className={`flex-shrink-0 ${agentColor}`}>{log.agent_id}</span>
-                <span className="text-gray-500 flex-shrink-0">{prefix}</span>
-                <span className="text-gray-300 break-all">{log.message}</span>
-              </div>
-            )
-          })
+          renderMessages()
         )}
         <div ref={bottomRef} />
       </div>

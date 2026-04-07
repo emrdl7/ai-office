@@ -99,12 +99,11 @@ class TaskGraph:
     for node in self._nodes.values():
       if node.status != TaskStatus.PENDING:
         continue
+      # 그래프에 없는 의존성은 무시 (기획자가 존재하지 않는 태스크를 참조할 수 있음)
       deps_done = all(
-        self._nodes.get(dep_id, TaskNode(
-          task_id=dep_id, description='', requirements='', assigned_to='',
-          status=TaskStatus.PENDING,
-        )).status == TaskStatus.DONE
+        self._nodes[dep_id].status == TaskStatus.DONE
         for dep_id in node.depends_on
+        if dep_id in self._nodes
       )
       if deps_done:
         result.append(node)

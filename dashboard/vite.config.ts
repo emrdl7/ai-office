@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
@@ -15,17 +14,23 @@ export default defineConfig({
     },
   },
   server: {
+    port: 3100,
     proxy: {
-      // REST API → FastAPI 서버
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        // 백엔드 죽어도 프론트 안 죽도록
+        configure: (proxy) => {
+          proxy.on('error', () => {})
+        },
       },
-      // WebSocket → FastAPI 서버
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', () => {})
+        },
       },
     },
   },

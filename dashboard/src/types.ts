@@ -2,13 +2,16 @@
 
 export interface Agent {
   agent_id: string
-  status: 'idle' | 'working' | 'done' | 'error' | string
+  status: 'idle' | 'working' | 'done' | 'error' | 'waiting' | string
   current_task_id?: string
 }
 
 export interface Task {
   task_id: string
   state: string
+  instruction?: string
+  attachments?: string
+  created_at?: string
 }
 
 export interface LogEntry {
@@ -18,25 +21,6 @@ export interface LogEntry {
   message: string
   data: Record<string, unknown>
   timestamp: string
-}
-
-export interface DagNodeData {
-  label: string
-  status: string
-  assigned_to: string
-  artifact_paths: string[]
-}
-
-export interface DagNode {
-  id: string
-  data: DagNodeData
-  position: { x: number; y: number }
-}
-
-export interface DagEdge {
-  id: string
-  source: string
-  target: string
 }
 
 export interface FileEntry {

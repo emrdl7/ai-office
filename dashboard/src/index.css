@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* 전역 기본 설정 */
 * {
@@ -15,6 +18,3 @@ body {
 #root {
   min-height: 100vh;
 }
-
-/* ReactFlow 스타일 */
-@import "@xyflow/react/dist/style.css";
