@@ -28,6 +28,18 @@ function MessengerApp() {
     }
   }, [theme])
 
+  // 시스템 테마 변경 감지 (사용자가 수동 설정하지 않은 경우)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => {
+      if (!localStorage.getItem('ai-office-theme')) {
+        useStore.setState({ theme: e.matches ? 'dark' : 'light' })
+      }
+    }
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
   return (
     <div className="h-screen flex bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
 

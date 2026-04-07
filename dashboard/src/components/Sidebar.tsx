@@ -115,21 +115,21 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <aside
       className="w-64 h-full flex-shrink-0 flex flex-col
-        bg-gray-900 dark:bg-gray-950
-        border-r border-gray-800"
+        bg-white dark:bg-gray-950
+        border-r border-gray-200 dark:border-gray-800"
       aria-label="채널 목록"
     >
       {/* 헤더 */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <span className="text-blue-400 font-bold text-lg">AI</span>
-          <h1 className="text-sm font-semibold text-white">Office</h1>
+          <h1 className="text-sm font-semibold text-gray-900 dark:text-white">Office</h1>
         </div>
         <div className="flex gap-1">
           <button
             onClick={toggleArtifacts}
             className={`p-1.5 rounded cursor-pointer transition-colors
-              ${showArtifacts ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+              ${showArtifacts ? 'bg-blue-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}
             aria-label="산출물 패널 토글"
             title="산출물"
           >
@@ -140,7 +140,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           </button>
           <button
             onClick={toggleTheme}
-            className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800
+            className="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800
               cursor-pointer transition-colors"
             aria-label="테마 전환"
             title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
@@ -170,7 +170,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           className={`w-full text-left px-2 py-1.5 rounded text-sm cursor-pointer transition-colors
             ${activeChannel === 'all'
               ? 'bg-blue-600/20 text-blue-300'
-              : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
         >
           # 팀 채널
@@ -197,7 +197,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                     cursor-pointer transition-colors
                     ${isActive
                       ? 'bg-blue-600/20 text-blue-300'
-                      : 'text-gray-300 hover:bg-gray-800'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                 >
                   {/* 아바타 */}
@@ -219,7 +219,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                     </div>
                     {/* 온라인 상태 표시 */}
                     <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full
-                      border-2 border-gray-900 ${statusDot(agent.status)}`} />
+                      border-2 border-white dark:border-gray-950 ${statusDot(agent.status)}`} />
                   </div>
 
                   {/* 이름 + 모델 */}

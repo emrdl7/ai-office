@@ -22,13 +22,15 @@ interface DashboardState {
   toggleArtifacts: () => void
 }
 
+const savedTheme = localStorage.getItem('ai-office-theme') as 'dark' | 'light' | null
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light')
 
 export const useStore = create<DashboardState>((set) => ({
   agents: [],
   tasks: [],
   logs: [],
-  theme: prefersDark ? 'dark' : 'light',
+  theme: initialTheme,
   selectedTaskId: '',
   activeChannel: 'all',
   showArtifacts: false,
@@ -52,7 +54,11 @@ export const useStore = create<DashboardState>((set) => ({
     return set({ logs: unique.slice(-MAX_LOGS) })
   },
   toggleTheme: () =>
-    set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+    set((state) => {
+      const next = state.theme === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('ai-office-theme', next)
+      return { theme: next }
+    }),
   setSelectedTaskId: (selectedTaskId) => set({ selectedTaskId }),
   setActiveChannel: (activeChannel) => set({ activeChannel }),
   toggleArtifacts: () => set((state) => ({ showArtifacts: !state.showArtifacts })),
