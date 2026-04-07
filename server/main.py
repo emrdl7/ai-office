@@ -171,15 +171,7 @@ async def chat(
         else:
           result = {'state': 'error', 'response': f'{to}를 찾을 수 없습니다.'}
 
-      # 결과물이 있으면 메시지로 전달
-      artifacts = result.get('artifacts', [])
-      if artifacts:
-        await event_bus.publish(LogEvent(
-          agent_id='teamlead',
-          event_type='response',
-          message='작업이 완료되었습니다. 결과물을 첨부합니다.',
-          data={'artifacts': artifacts},
-        ))
+      # 결과물은 _execute_project 내에서 이미 채팅에 공유됨 — 중복 메시지 제거
 
       final_state = result.get('state', 'completed')
       update_task_state(task_id, final_state)
