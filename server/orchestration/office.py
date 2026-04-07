@@ -786,24 +786,42 @@ class Office:
       # 현재 프로젝트에서 사용된 산출물만 수집
       final_artifacts = list(phase_artifacts)
 
-      phase_titles = '\n'.join(f'- {name}' for name in all_results.keys())
+      # 각 단계별 핵심 내용을 한 줄씩 추출하여 보고서 구성
+      phase_summaries = []
+      for name, content in all_results.items():
+        # 첫 번째 의미있는 줄 추출
+        for line in content.strip().split('\n'):
+          line = line.strip().lstrip('#').strip()
+          if len(line) > 20 and not line.startswith('-'):
+            phase_summaries.append(f'- **{name}**: {line[:100]}')
+            break
+        else:
+          phase_summaries.append(f'- **{name}**: 완료')
+
+      # Haiku에게 전체 요약 한 문단 요청
       try:
-        summary = await run_claude_isolated(
-          f'아래 프로젝트 단계별 작업이 완료되었습니다. 3~5문장으로 전체 프로젝트를 요약하세요.\n\n'
-          f'프로젝트: {user_input.split("[첨부")[0].strip()[:200]}\n\n'
-          f'완료된 단계:\n{phase_titles}\n\n'
-          f'짧고 핵심적으로 요약하세요. 마크다운 금지.',
+        overview = await run_claude_isolated(
+          f'아래는 프로젝트 단계별 결과 목록입니다. 전체를 2~3문장으로 요약하세요.\n\n'
+          + '\n'.join(phase_summaries) + '\n\n'
+          f'자연스러운 한국어로 요약하세요. 마크다운 금지.',
           model='claude-haiku-4-5-20251001',
           timeout=30.0,
         )
       except Exception:
-        summary = f'총 {len(all_results)}개 단계가 완료되었습니다.'
+        overview = '모든 단계가 정상 완료되었습니다.'
 
-      artifacts_text = '\n'.join(f'📄 {a.split("/", 1)[-1]}' for a in final_artifacts[:15])
+      report_lines = [
+        f'프로젝트가 완료되었습니다! 🎉\n',
+        overview,
+        '\n**단계별 결과:**',
+        *phase_summaries,
+        '\n**산출물:**',
+        *[f'📄 {a.split("/", 1)[-1]}' for a in final_artifacts[:15]],
+      ]
       await self.event_bus.publish(LogEvent(
         agent_id='teamlead',
         event_type='response',
-        message=f'프로젝트가 완료되었습니다! 🎉\n\n{summary}\n\n**산출물 목록:**\n{artifacts_text}',
+        message='\n'.join(report_lines),
         data={'artifacts': final_artifacts},
       ))
     else:
