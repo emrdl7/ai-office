@@ -112,7 +112,11 @@ class Agent:
     # designer → Claude Sonnet
     # qa → Claude Haiku
     if self.name in ('developer', 'planner'):
-      result = await run_gemini(prompt=full_prompt, system=system)
+      try:
+        result = await run_gemini(prompt=full_prompt, system=system)
+      except Exception:
+        # Gemini rate limit 시 Sonnet으로 fallback
+        result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt)
     elif self.name == 'designer':
       result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt)
     elif self.name == 'qa':
@@ -184,7 +188,10 @@ class Agent:
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
     if self.name in ('developer', 'planner'):
-      return await run_gemini(prompt=prompt, system=system)
+      try:
+        return await run_gemini(prompt=prompt, system=system)
+      except Exception:
+        return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt)
     if self.name == 'designer':
       return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt)
     if self.name == 'qa':
