@@ -184,7 +184,7 @@ class Office:
     '''
     from runners.groq_runner import MODEL as GROQ_MODEL
     agent_model_map = {
-      'planner': f'Groq API — {GROQ_MODEL}',
+      'planner': 'Groq API — Llama 4 Scout',
       'designer': f'Groq API — {GROQ_MODEL}',
       'developer': 'OpenCode CLI',
       'qa': f'Groq API — {GROQ_MODEL}',
@@ -393,15 +393,8 @@ class Office:
     self._state = OfficeState.MEETING
     await self._emit('teamlead', '팀원들 의견을 모아볼게요.', 'response')
 
-    # 회의 토픽은 첨부파일 원문을 제외하고 요약만 전달 (Groq TPM 한도 대응)
-    meeting_topic = user_input
-    if '[첨부된 참조 자료]' in user_input:
-      parts = user_input.split('[첨부된 참조 자료]', 1)
-      # 사용자 메시지 + 첨부 앞부분 2000자만
-      meeting_topic = parts[0].strip() + '\n\n[첨부 자료 요약]\n' + parts[1][:2000] + '\n...(이하 생략)'
-
     meeting = Meeting(
-      topic=meeting_topic,
+      topic=user_input,
       briefing=briefing,
       agents=self.agents,
       participants=['planner', 'designer', 'developer'],

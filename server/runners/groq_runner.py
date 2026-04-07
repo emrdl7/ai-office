@@ -36,7 +36,7 @@ class GroqRunner:
     if self._client:
       await self._client.aclose()
 
-  async def generate(self, prompt: str, system: str = '') -> str:
+  async def generate(self, prompt: str, system: str = '', model: str = '') -> str:
     '''Groq API를 호출하여 텍스트 응답을 반환한다.'''
     if not self._client:
       await self.start()
@@ -50,7 +50,7 @@ class GroqRunner:
     messages.append({'role': 'user', 'content': prompt})
 
     body = {
-      'model': MODEL,
+      'model': model or MODEL,
       'messages': messages,
       'max_tokens': MAX_TOKENS,
       'temperature': 0.7,
