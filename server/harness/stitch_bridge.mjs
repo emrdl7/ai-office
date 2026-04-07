@@ -1,26 +1,45 @@
-// Stitch SDK 브릿지 — 디자인 생성 + HTML/스크린샷 다운로드
+// Stitch SDK 브릿지 — 프로젝트 자동 생성 + 디자인 생성 + HTML/스크린샷 다운로드
 import { StitchToolClient } from '@google/stitch-sdk'
 import fs from 'fs'
 import path from 'path'
 
 const [,, action, ...args] = process.argv
 const apiKey = process.env.STITCH_API_KEY
-const projectId = process.env.STITCH_PROJECT_ID || '16138809057658740976'
 
 async function generate(prompt, outputDir) {
   fs.mkdirSync(outputDir, { recursive: true })
   const client = new StitchToolClient({ apiKey })
 
   try {
+    // 1. 프로젝트 생성
+    const project = await client.callTool('create_project', { title: 'AI Office Design' })
+    const projectId = project?.name?.split('/').pop()
+    if (!projectId) {
+      console.log(JSON.stringify({ success: false, error: 'Failed to create project' }))
+      return
+    }
+
+    // 2. 화면 생성
     const result = await client.callTool('generate_screen_from_text', {
-      prompt, project_id: projectId,
+      prompt,
+      project_id: projectId,
     })
 
     // 스크린 데이터 추출
     const screens = result?.outputComponents?.[0]?.design?.screens || []
     const screen = screens[0]
     if (!screen) {
-      console.log(JSON.stringify({ success: false, error: 'No screen generated' }))
+      // outputComponents 구조가 다를 수 있음 — 전체 결과에서 탐색
+      const designSystem = result?.outputComponents?.[0]?.designSystem
+      if (designSystem) {
+        // 디자인 시스템은 생성됐지만 스크린이 없는 경우
+        const designMd = designSystem?.designSystem?.theme?.designMd
+        if (designMd) {
+          const mdPath = path.join(outputDir, 'design_system.md')
+          fs.writeFileSync(mdPath, designMd)
+        }
+      }
+      console.log(JSON.stringify({ success: false, error: 'No screen generated', project_id: projectId }))
       return
     }
 
@@ -44,7 +63,7 @@ async function generate(prompt, outputDir) {
 
     // 디자인 시스템 마크다운
     let designMdPath = null
-    const designMd = screen.theme?.designMd || screen.designSystem?.designSystem?.theme?.designMd
+    const designMd = screen.theme?.designMd || result?.outputComponents?.[0]?.designSystem?.designSystem?.theme?.designMd
     if (designMd) {
       designMdPath = path.join(outputDir, 'design_system.md')
       fs.writeFileSync(designMdPath, designMd)
@@ -54,6 +73,7 @@ async function generate(prompt, outputDir) {
       success: true,
       title: screen.title || '',
       screen_id: screen.id,
+      project_id: projectId,
       html_path: htmlPath,
       image_path: imagePath,
       design_md_path: designMdPath,
@@ -77,7 +97,6 @@ function readStdin() {
 
 try {
   if (action === 'generate') {
-    // --stdin 플래그면 stdin에서 프롬프트 읽기, 아니면 인자에서
     let prompt, outputDir
     if (args[0] === '--stdin') {
       prompt = await readStdin()
