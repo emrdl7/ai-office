@@ -388,7 +388,8 @@ class Office:
       ctx_parts.append(reference_context)
     result = await agent.handle(prompt, context='\n\n'.join(ctx_parts))
 
-    # 결과를 workspace에 저장
+    # 결과를 채팅에 공유
+    summary = '\n'.join(result.strip().split('\n')[:8])
     saved_paths = []
     try:
       file_path = 'quick-task/result.md'
@@ -397,7 +398,16 @@ class Office:
     except Exception:
       pass
 
+    await self.event_bus.publish(LogEvent(
+      agent_id=agent_name,
+      event_type='response',
+      message=summary,
+      data={'artifacts': saved_paths},
+    ))
+
     self._state = OfficeState.COMPLETED
+    self._active_agent = ''
+    self._work_started_at = ''
     return {
       'state': self._state.value,
       'response': result,

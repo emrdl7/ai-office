@@ -189,7 +189,12 @@ async def chat(
         message=f'작업 중 문제가 발생했습니다: {str(e)[:100]}',
       ))
 
-  asyncio.create_task(_run())
+  task = asyncio.create_task(_run())
+  def _handle_task_error(t):
+    if t.exception():
+      import logging
+      logging.error(f'Unhandled task error: {t.exception()}')
+  task.add_done_callback(_handle_task_error)
   return {'task_id': task_id, 'status': 'accepted', 'to': to, 'attachments': len(files)}
 
 
