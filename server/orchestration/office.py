@@ -775,41 +775,63 @@ class Office:
         if current_group == '디자인':
           await self._generate_stitch_mockup(all_results, user_input)
 
-    # 최종 보고 — Haiku로 짧은 요약 + 산출물 링크
-    await self._emit('teamlead', '최종 보고서를 작성하고 있습니다.', 'response')
-    self._active_agent = 'teamlead'
+    # 퍼블리싱이 포함된 프로젝트(사이트 구축)인지 판단
+    has_publishing = any('퍼블리싱' in k for k in all_results)
 
-    # 전체 산출물 파일 수집 (모든 workspace에서)
-    final_artifacts = []
-    workspace_root = self.workspace.task_dir.parent
-    for ws_dir in sorted(workspace_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-      for f in sorted(ws_dir.rglob('*-result.md')) + sorted(ws_dir.rglob('*.html')):
-        rel = str(f.relative_to(workspace_root))
-        if rel not in final_artifacts:
-          final_artifacts.append(rel)
+    if has_publishing:
+      # 사이트 구축 → 짧은 요약 + 산출물 링크
+      await self._emit('teamlead', '최종 보고서를 작성하고 있습니다.', 'response')
+      self._active_agent = 'teamlead'
 
-    # 각 단계 제목만 추출하여 Haiku에게 짧은 요약 요청
-    phase_titles = '\n'.join(f'- {name}' for name in all_results.keys())
-    try:
-      summary = await run_claude_isolated(
-        f'아래 프로젝트 단계별 작업이 완료되었습니다. 3~5문장으로 전체 프로젝트를 요약하세요.\n\n'
-        f'프로젝트: {user_input.split("[첨부")[0].strip()[:200]}\n\n'
-        f'완료된 단계:\n{phase_titles}\n\n'
-        f'짧고 핵심적으로 요약하세요. 마크다운 금지.',
-        model='claude-haiku-4-5-20251001',
-        timeout=30.0,
-      )
-    except Exception:
-      summary = f'총 {len(all_results)}개 단계가 완료되었습니다.'
+      final_artifacts = []
+      workspace_root = self.workspace.task_dir.parent
+      for ws_dir in sorted(workspace_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        for f in sorted(ws_dir.rglob('*-result.md')) + sorted(ws_dir.rglob('*.html')):
+          rel = str(f.relative_to(workspace_root))
+          if rel not in final_artifacts:
+            final_artifacts.append(rel)
 
-    # 채팅에 요약 + 산출물 링크 공유
-    artifacts_text = '\n'.join(f'📄 {a.split("/", 1)[-1]}' for a in final_artifacts[:15])
-    await self.event_bus.publish(LogEvent(
-      agent_id='teamlead',
-      event_type='response',
-      message=f'프로젝트가 완료되었습니다! 🎉\n\n{summary}\n\n**산출물 목록:**\n{artifacts_text}',
-      data={'artifacts': final_artifacts},
-    ))
+      phase_titles = '\n'.join(f'- {name}' for name in all_results.keys())
+      try:
+        summary = await run_claude_isolated(
+          f'아래 프로젝트 단계별 작업이 완료되었습니다. 3~5문장으로 전체 프로젝트를 요약하세요.\n\n'
+          f'프로젝트: {user_input.split("[첨부")[0].strip()[:200]}\n\n'
+          f'완료된 단계:\n{phase_titles}\n\n'
+          f'짧고 핵심적으로 요약하세요. 마크다운 금지.',
+          model='claude-haiku-4-5-20251001',
+          timeout=30.0,
+        )
+      except Exception:
+        summary = f'총 {len(all_results)}개 단계가 완료되었습니다.'
+
+      artifacts_text = '\n'.join(f'📄 {a.split("/", 1)[-1]}' for a in final_artifacts[:15])
+      await self.event_bus.publish(LogEvent(
+        agent_id='teamlead',
+        event_type='response',
+        message=f'프로젝트가 완료되었습니다! 🎉\n\n{summary}\n\n**산출물 목록:**\n{artifacts_text}',
+        data={'artifacts': final_artifacts},
+      ))
+    else:
+      # 문서/분석 프로젝트 → 기획자가 최종 보고서 취합
+      await self._emit('teamlead', '기획자에게 최종 보고서 작성을 요청합니다.', 'response')
+      self._active_agent = 'planner'
+      await self._emit('planner', '', 'typing')
+      await self._run_planner_synthesize(user_input, all_results)
+
+      # 팀장 최종 검수
+      self._state = OfficeState.TEAMLEAD_REVIEW
+      self._active_agent = 'teamlead'
+      passed = await self._teamlead_final_review(user_input, None)
+
+      if not passed:
+        for _ in range(self.MAX_REVISION_ROUNDS):
+          self._revision_count += 1
+          await self._run_planner_synthesize(
+            user_input, all_results, revision_feedback=self._last_review_feedback,
+          )
+          passed = await self._teamlead_final_review(user_input, None)
+          if passed:
+            break
 
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
