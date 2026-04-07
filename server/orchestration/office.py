@@ -498,6 +498,20 @@ class Office:
       agent_name = phase['assigned_to']
       agent = self.agents[agent_name]
 
+      # 이미 완료된 단계는 스킵 (서버 재시작 후 중복 실행 방지)
+      existing_file = f'{phase_name}/{agent_name}-result.md'
+      try:
+        existing_path = self.workspace.task_dir / existing_file
+        existing_content = existing_path.read_text(encoding='utf-8') if existing_path.exists() else ''
+        if existing_content and len(existing_content) > 100:
+          all_results[phase_name] = existing_content
+          prev_phase_result = existing_content
+          phase_artifacts.append(f'{self.workspace.task_id}/{existing_file}')
+          await self._emit('teamlead', f'{phase_name} 단계는 이미 완료되어 있습니다. 다음 단계로 넘어갑니다.', 'response')
+          continue
+      except Exception:
+        pass
+
       self._state = OfficeState.WORKING
       self._active_agent = agent_name
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
