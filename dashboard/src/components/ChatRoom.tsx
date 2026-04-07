@@ -581,7 +581,9 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
       {artifactPaths.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-1.5">
           {artifactPaths.map((path, pi) => {
-            const name = path.split('/').pop() ?? path
+            // task_id/단계명/파일명 → 단계명/파일명 으로 표시
+            const parts = path.split('/')
+            const name = parts.length >= 3 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : parts.pop() ?? path
             return (
               <a key={pi} href={`/api/artifacts/${path}`} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
@@ -589,7 +591,7 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
                   text-xs text-gray-600 dark:text-gray-300
                   hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 <span>{fileIcon(name)}</span>
-                <span className="truncate max-w-[150px]">{name}</span>
+                <span className="truncate max-w-[250px]">{name}</span>
               </a>
             )
           })}

@@ -783,13 +783,8 @@ class Office:
       await self._emit('teamlead', '최종 보고서를 작성하고 있습니다.', 'response')
       self._active_agent = 'teamlead'
 
-      final_artifacts = []
-      workspace_root = self.workspace.task_dir.parent
-      for ws_dir in sorted(workspace_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        for f in sorted(ws_dir.rglob('*-result.md')) + sorted(ws_dir.rglob('*.html')):
-          rel = str(f.relative_to(workspace_root))
-          if rel not in final_artifacts:
-            final_artifacts.append(rel)
+      # 현재 프로젝트에서 사용된 산출물만 수집
+      final_artifacts = list(phase_artifacts)
 
       phase_titles = '\n'.join(f'- {name}' for name in all_results.keys())
       try:
