@@ -105,19 +105,25 @@ class Office:
       instruction_preview = instruction[:50]
 
       if state == 'waiting_input' and ctx:
-        # 사용자 확인 대기 복원
+        # 사용자 확인 대기 복원 (원래 workspace도 복원)
         self._pending_project = ctx
         self._pending_task_id = task_id
+        from workspace.manager import WorkspaceManager
+        WORKSPACE_ROOT = Path(__file__).parent.parent.parent / 'workspace'
+        self.workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
         await self._emit(
           'teamlead',
           f'@마스터 이전에 확인 요청드린 사항이 있습니다. 답변해 주시면 이어서 진행하겠습니다.',
           'response',
         )
       elif state == 'running':
-        # running → interrupted 상태로 변경, 원래 instruction 보존
+        # running → interrupted 상태로 변경, 원래 instruction + workspace 보존
         update_task_state(task_id, 'interrupted')
         self._interrupted_instruction = instruction
         self._interrupted_task_id = task_id
+        from workspace.manager import WorkspaceManager
+        WORKSPACE_ROOT = Path(__file__).parent.parent.parent / 'workspace'
+        self.workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
         await self._emit(
           'teamlead',
           f'@마스터 서버 재시작으로 중단된 작업이 있습니다: "{instruction_preview}..."\n이어서 진행하려면 말씀해 주세요.',
@@ -276,11 +282,17 @@ class Office:
           self._state = OfficeState.IDLE
           return {'state': self._state.value, 'response': '', 'artifacts': []}
         else:
-          # 두 번째 응답: 실제 재실행
+          # 두 번째 응답: 원래 task_id의 workspace 복원 후 재실행
           original = self._interrupted_instruction
+          original_task_id = self._interrupted_task_id
           self._interrupted_instruction = None
           self._interrupted_task_id = None
           self._interrupted_confirmed = False
+          # 원래 workspace 복원 (이미 완료된 단계 산출물 유지)
+          if original_task_id:
+            from workspace.manager import WorkspaceManager
+            WORKSPACE_ROOT = Path(__file__).parent.parent.parent / 'workspace'
+            self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=str(WORKSPACE_ROOT))
           return await self.receive(original)
       else:
         # 다른 입력이면 중단 작업 폐기
