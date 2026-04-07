@@ -786,24 +786,29 @@ class Office:
       # 현재 프로젝트에서 사용된 산출물만 수집
       final_artifacts = list(phase_artifacts)
 
-      # 각 단계별 핵심 내용을 한 줄씩 추출하여 보고서 구성
+      # 각 단계별 제목(첫 마크다운 헤더)을 추출
       phase_summaries = []
       for name, content in all_results.items():
-        # 첫 번째 의미있는 줄 추출
+        title = '완료'
         for line in content.strip().split('\n'):
-          line = line.strip().lstrip('#').strip()
-          if len(line) > 20 and not line.startswith('-'):
-            phase_summaries.append(f'- **{name}**: {line[:100]}')
+          stripped = line.strip()
+          # 마크다운 헤더 우선
+          if stripped.startswith('#'):
+            title = stripped.lstrip('#').strip()[:80]
             break
-        else:
-          phase_summaries.append(f'- **{name}**: 완료')
+          # 헤더 없으면 20자 이상 첫 줄 (서문/인사말 제외)
+          skip_prefixes = ('알겠습니다', '네,', '안녕', 'I ', 'OK')
+          if len(stripped) > 20 and not any(stripped.startswith(p) for p in skip_prefixes):
+            title = stripped[:80]
+            break
+        phase_summaries.append(f'- **{name}**: {title}')
 
-      # Haiku에게 전체 요약 한 문단 요청
+      # Haiku에게 전체 요약 (완료 시점 기준)
       try:
         overview = await run_claude_isolated(
-          f'아래는 프로젝트 단계별 결과 목록입니다. 전체를 2~3문장으로 요약하세요.\n\n'
+          f'아래 프로젝트의 모든 단계가 완료되었습니다. 2~3문장으로 최종 완료 보고를 작성하세요.\n\n'
           + '\n'.join(phase_summaries) + '\n\n'
-          f'자연스러운 한국어로 요약하세요. 마크다운 금지.',
+          f'과거형으로, 자연스러운 한국어로 작성하세요. 마크다운 금지.',
           model='claude-haiku-4-5-20251001',
           timeout=30.0,
         )
