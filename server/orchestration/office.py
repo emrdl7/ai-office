@@ -511,14 +511,35 @@ class Office:
       agent = self.agents[agent_name]
 
       # 이미 완료된 단계는 스킵 (서버 재시작 후 중복 실행 방지)
+      # 현재 workspace + 전체 workspace에서 가장 최신 산출물 검색
       existing_file = f'{phase_name}/{agent_name}-result.md'
+      existing_content = ''
+      found_task_id = ''
       try:
+        # 1) 현재 workspace에서 먼저 찾기
         existing_path = self.workspace.task_dir / existing_file
-        existing_content = existing_path.read_text(encoding='utf-8') if existing_path.exists() else ''
+        if existing_path.exists():
+          existing_content = existing_path.read_text(encoding='utf-8')
+          found_task_id = self.workspace.task_id
+
+        # 2) 없으면 전체 workspace에서 가장 최신 찾기
+        if not existing_content or len(existing_content) < 100:
+          workspace_root = self.workspace.task_dir.parent
+          latest_path = None
+          latest_mtime = 0
+          for ws_dir in workspace_root.iterdir():
+            candidate = ws_dir / existing_file
+            if candidate.exists() and candidate.stat().st_mtime > latest_mtime:
+              latest_mtime = candidate.stat().st_mtime
+              latest_path = candidate
+              found_task_id = ws_dir.name
+          if latest_path:
+            existing_content = latest_path.read_text(encoding='utf-8')
+
         if existing_content and len(existing_content) > 100:
           all_results[phase_name] = existing_content
           prev_phase_result = existing_content
-          phase_artifacts.append(f'{self.workspace.task_id}/{existing_file}')
+          phase_artifacts.append(f'{found_task_id}/{existing_file}')
           await self._emit('teamlead', f'{phase_name} 단계는 이미 완료되어 있습니다. 다음 단계로 넘어갑니다.', 'response')
           continue
       except Exception:
