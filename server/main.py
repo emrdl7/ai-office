@@ -372,7 +372,7 @@ async def get_agents(request: Request):
   from runners.groq_runner import MODEL as GROQ_MODEL
   agent_models: dict[str, str] = {
     'teamlead': 'Claude CLI',
-    'planner': 'Groq Llama 4 Scout',
+    'planner': 'Gemini CLI',
     'designer': f'Groq {GROQ_MODEL}',
     'developer': 'Gemini CLI',
     'qa': f'Groq {GROQ_MODEL}',

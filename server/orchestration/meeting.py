@@ -75,8 +75,8 @@ class Meeting:
       if not agent:
         continue
 
-      # planner(30K TPM)는 전문, 나머지(12K TPM)는 요약본
-      topic = topic_full if name == 'planner' else topic_short
+      # Gemini(planner, developer)는 전문, Groq(designer 등)는 요약본
+      topic = topic_full if name in ('planner', 'developer') else topic_short
       opinion = await agent.speak(topic, context=context)
       self.records.append(MeetingRecord(speaker=name, content=opinion, round=1))
       await self._emit(name, opinion, 'response')

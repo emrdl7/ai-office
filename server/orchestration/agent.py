@@ -99,9 +99,9 @@ class Agent:
     # 입력 중... 표시
     await self._emit('', 'typing')
 
-    # developer → Gemini CLI
-    # planner, designer, qa → Groq(클라우드)
-    if self.name == 'developer':
+    # developer, planner → Gemini CLI
+    # designer, qa → Groq(클라우드)
+    if self.name in ('developer', 'planner'):
       result = await run_gemini(prompt=full_prompt, system=system)
     elif self.groq_runner:
       result = await self.groq_runner.generate(full_prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
@@ -169,7 +169,7 @@ class Agent:
 
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
-    if self.name == 'developer':
+    if self.name in ('developer', 'planner'):
       return await run_gemini(prompt=prompt, system=system)
     if self.groq_runner:
       return await self.groq_runner.generate(prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))

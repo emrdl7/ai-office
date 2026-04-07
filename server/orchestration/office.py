@@ -184,7 +184,7 @@ class Office:
     '''
     from runners.groq_runner import MODEL as GROQ_MODEL
     agent_model_map = {
-      'planner': 'Groq API — Llama 4 Scout',
+      'planner': 'Gemini CLI',
       'designer': f'Groq API — {GROQ_MODEL}',
       'developer': 'Gemini CLI',
       'qa': f'Groq API — {GROQ_MODEL}',
