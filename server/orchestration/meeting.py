@@ -64,12 +64,21 @@ class Meeting:
     # 라운드 1: 각자 의견
     context = f'[팀장 브리핑]\n{self.briefing}\n'
 
+    # 첨부파일이 큰 경우 TPM이 작은 에이전트에게는 축약본 전달
+    topic_full = self.topic
+    topic_short = self.topic
+    if '[첨부된 참조 자료]' in self.topic:
+      parts = self.topic.split('[첨부된 참조 자료]', 1)
+      topic_short = parts[0].strip() + '\n\n[첨부 자료 요약 (회의용)]\n' + parts[1][:2000] + '\n...(전문은 작업 단계에서 전달됩니다)'
+
     for name in self.participants:
       agent = self.agents.get(name)
       if not agent:
         continue
 
-      opinion = await agent.speak(self.topic, context=context)
+      # planner(30K TPM)는 전문, 나머지(12K TPM)는 축약본
+      topic = topic_full if name == 'planner' else topic_short
+      opinion = await agent.speak(topic, context=context)
       self.records.append(MeetingRecord(speaker=name, content=opinion, round=1))
       await self._emit(name, opinion, 'response')
       context += f'\n[{name}의 의견]\n{opinion}\n'
