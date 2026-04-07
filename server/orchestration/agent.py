@@ -51,11 +51,18 @@ class Agent:
       return path.read_text(encoding='utf-8')
     return ''
 
-  def _build_system_prompt(self) -> str:
-    '''시스템 프롬프트 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
+  def _build_system_prompt(self, task_hint: str = '') -> str:
+    '''시스템 프롬프트 + 전문 지식 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
     prompt = self._system_prompt
 
-    # 과거 불합격 패턴 주입
+    # Layer 1 + 2: 전문 지식 주입
+    from orchestration.expertise import load_expertise, detect_task_type
+    task_type = detect_task_type(task_hint) if task_hint else ''
+    expertise = load_expertise(self.name, task_type)
+    if expertise:
+      prompt += f'\n\n{expertise}'
+
+    # Layer 3: 과거 불합격 패턴 주입
     past_warnings = get_past_rejections(limit=3)
     if past_warnings:
       prompt += (
@@ -63,7 +70,7 @@ class Agent:
         + '\n'.join(past_warnings)
       )
 
-    # 이전 경험 주입
+    # Layer 3: 이전 경험 주입
     experiences = self.memory.load_relevant(task_type=self.name, limit=5)
     if experiences:
       lines = []
@@ -100,7 +107,7 @@ class Agent:
     Returns:
       에이전트의 응답 텍스트
     '''
-    system = self._build_system_prompt()
+    system = self._build_system_prompt(task_hint=prompt)
 
     full_prompt = prompt
     if context:
@@ -163,7 +170,7 @@ class Agent:
     Returns:
       에이전트의 발언 텍스트
     '''
-    system = self._build_system_prompt()
+    system = self._build_system_prompt(task_hint=topic)
 
     prompt = (
       f'팀 회의 중입니다. 아래 주제에 대해 당신의 전문 관점에서 의견을 말하세요.\n\n'
@@ -186,7 +193,7 @@ class Agent:
 
   async def respond_to(self, sender: str, question: str) -> str:
     '''다른 에이전트의 질문에 답변한다.'''
-    system = self._build_system_prompt()
+    system = self._build_system_prompt(task_hint=question)
     prompt = (
       f'{sender}이(가) 당신에게 질문했습니다:\n\n'
       f'"{question}"\n\n'
@@ -221,3 +228,7 @@ class Agent:
       tags=tags or [],
       timestamp=datetime.now(timezone.utc).isoformat(),
     ))
+    # 실패 시 학습 규칙 추출 시도
+    if not success:
+      from orchestration.expertise import extract_learned_rule
+      extract_learned_rule(self.name, feedback, str(self.memory._file.parent))

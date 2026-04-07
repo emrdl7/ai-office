@@ -210,7 +210,7 @@ class Office:
       agent = self.agents.get(name)
       if not agent:
         continue
-      system = agent._build_system_prompt()
+      system = agent._build_system_prompt(task_hint=user_input)
       my_model = agent_model_map.get(name, '알 수 없음')
       prompt = (
         f'팀 채팅방에서 사용자(팀장의 상사)가 이렇게 말했습니다:\n\n'
@@ -245,7 +245,7 @@ class Office:
       import random
       fallback_name = random.choice(['planner', 'designer', 'developer', 'qa'])
       agent = self.agents[fallback_name]
-      system = agent._build_system_prompt()
+      system = agent._build_system_prompt(task_hint=user_input)
       prompt = (
         f'팀 채팅방에서 사용자가 "{user_input}"라고 했는데 아무도 답을 안 했습니다.\n'
         f'당신이 대표로 한마디 해주세요. 짧고 자연스럽게. 마크다운 금지.'
@@ -941,7 +941,7 @@ class Office:
   ) -> None:
     '''기획자가 회의 내용을 바탕으로 태스크를 분배한다.'''
     planner = self.agents['planner']
-    system = planner._build_system_prompt()
+    system = planner._build_system_prompt(task_hint=user_input)
 
     ref_section = f'[참조 자료]\n{reference_context[:4000]}\n\n' if reference_context else ''
 
@@ -1336,7 +1336,7 @@ class Office:
   ) -> None:
     '''기획자가 작업 결과를 취합하여 최종 산출물을 작성한다.'''
     planner = self.agents['planner']
-    system = planner._build_system_prompt()
+    system = planner._build_system_prompt(task_hint=user_input)
     results_text = '\n\n'.join(worker_results.values())
 
     revision_section = ''

@@ -329,6 +329,13 @@ class OrchestrationLoop:
         """
         system_prompt = self._load_agent_prompt("planner")
 
+        # 전문 지식 주입
+        from orchestration.expertise import load_expertise, detect_task_type
+        task_type = detect_task_type(self._user_instruction)
+        expertise = load_expertise("planner", task_type)
+        if expertise:
+            system_prompt += f"\n\n{expertise}"
+
         # 기획자 회고 메모리 — 과거 불합격 시 태스크 분배 방식 반성
         past_warnings = get_past_rejections(limit=3)
         if past_warnings:
@@ -465,6 +472,13 @@ class OrchestrationLoop:
             TaskResultPayload 또는 실패 시 None
         """
         system_prompt = self._load_agent_prompt(node.assigned_to)
+
+        # 전문 지식 주입
+        from orchestration.expertise import load_expertise, detect_task_type
+        task_type = detect_task_type(self._user_instruction)
+        expertise = load_expertise(node.assigned_to, task_type)
+        if expertise:
+            system_prompt += f"\n\n{expertise}"
 
         # 과거 불합격 패턴 주입 — 같은 실수 반복 방지
         past_warnings = get_past_rejections(limit=3)

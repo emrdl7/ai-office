@@ -94,6 +94,12 @@ def record_rejection(feedback: str, task_type: str, memory_root: str = 'data/mem
       timestamp=now,
     ))
 
+  # 학습 규칙 추출 시도
+  from orchestration.expertise import extract_learned_rule
+  for agent, issues in blamed.items():
+    for issue in issues[:2]:
+      extract_learned_rule(agent, issue, memory_root)
+
   return blamed
 
 
