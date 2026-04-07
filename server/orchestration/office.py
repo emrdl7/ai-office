@@ -662,6 +662,10 @@ class Office:
         else:
           await self._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
 
+        # 디자인 그룹 완료 시 → Stitch로 시안 생성
+        if current_group == '디자인':
+          await self._generate_stitch_mockup(all_results, user_input)
+
     # 기획자 최종 취합
     await self._emit('planner', '', 'typing')
     await self._run_planner_synthesize(user_input, all_results)
@@ -877,43 +881,64 @@ class Office:
     '''소단계 완료 후 다른 팀원이 가볍게 리액션한다 (오피스 분위기).'''
     import random
 
-    # 리액션 풀 — 에이전트별 성격 반영
+    # 리액션 풀 — 에이전트별 성격 반영 (대량 + 상황별)
     REACTIONS: dict[str, list[str]] = {
       'teamlead': [
-        '좋습니다 👍', '잘 진행되고 있네요', '확인했습니다',
-        'ㅎㅎ 수고했어요', '깔끔하네요 ✨',
+        '좋습니다 👍', '잘 진행되고 있네요', '확인했습니다', 'ㅎㅎ 수고했어요',
+        '깔끔하네요 ✨', '이 속도면 괜찮겠는데요', '방향 잘 잡혔습니다',
+        '한 단계 완료! 다음도 부탁합니다', '기대 이상이네요', '멋지게 나왔네요 👏',
+        '팀워크 좋습니다', '이러다 칼퇴하는 거 아닙니까 ㅎㅎ', '완벽합니다',
+        '프로의 냄새가 나는군요', '착착 진행되니까 보기 좋네요',
       ],
       'planner': [
-        '기획 의도 잘 반영됐네요', '이 방향 좋습니다 👏',
-        '다음 단계도 기대됩니다', 'ㅎㅎ 빠르네요',
-        '📋 체크리스트 확인 완료',
+        '기획 의도 잘 반영됐네요', '이 방향 좋습니다 👏', '다음 단계도 기대됩니다',
+        'ㅎㅎ 빠르네요', '📋 체크리스트 확인 완료', '사용자 관점에서 딱이에요',
+        '요구사항 대비 잘 맞아떨어지네요', 'IA 구조와 일관성 좋습니다',
+        '이 흐름이면 사용자 동선 문제없을 듯', '벤치마킹 결과를 잘 녹였네요',
+        '기획서에 이거 반영해둘게요 📝', '전환율 올라갈 듯 ㅎㅎ',
+        '과업지시서 요구사항 충족!', '구조가 탄탄하네요', '논리적이라 좋습니다',
       ],
       'designer': [
-        '디자인적으로 괜찮아 보여요', '레이아웃 확인했습니다 🎨',
-        '컬러 밸런스 좋네요', '간격 체크할게요',
-        '🖌️ 디테일 살펴볼게요',
+        '디자인적으로 괜찮아 보여요', '레이아웃 확인했습니다 🎨', '컬러 밸런스 좋네요',
+        '간격 체크할게요', '🖌️ 디테일 살펴볼게요', '비주얼 완성도 높네요',
+        '여백 처리가 센스 있어요', '타이포 위계가 잘 잡혔네요',
+        'ㅎㅎ 이거 실제로 보면 예쁠 듯', '접근성도 고려됐네요 👍',
+        'UI 패턴이 익숙해서 사용자 학습 비용 낮겠네요', '그리드 시스템 깔끔!',
+        '모바일에서도 잘 나올 것 같아요 📱', '브랜드 톤 잘 살렸습니다',
+        'CTA 배치 좋아요, 눈에 잘 띄네요',
       ],
       'developer': [
-        '구현 가능합니다 💪', '기술적으로 문제없어요',
-        '이 구조면 개발 편하겠네요', 'ㅎㅎ 코드 짜기 좋은 명세',
-        '🔥 바로 착수할게요',
+        '구현 가능합니다 💪', '기술적으로 문제없어요', '이 구조면 개발 편하겠네요',
+        'ㅎㅎ 코드 짜기 좋은 명세', '🔥 바로 착수할게요', '컴포넌트 분리하기 좋겠네요',
+        '시맨틱 마크업으로 갈게요', '반응형 구현 문제없어 보입니다',
+        'Next.js로 하면 더 좋을 듯 ㅎㅎ', 'API 연동도 깔끔하게 되겠네요',
+        '성능 최적화도 같이 챙길게요 ⚡', '이거 빌드하면 진짜 멋지겠다',
+        '코드 리뷰 기대됩니다', 'SEO도 같이 잡아볼게요', '라이트하우스 100점 가능?',
       ],
       'qa': [
-        '검수 준비 중... 👀', '꼼꼼히 볼게요',
-        '기준 대비 확인하겠습니다', '품질 체크 ✅',
+        '검수 준비 중... 👀', '꼼꼼히 볼게요', '기준 대비 확인하겠습니다',
+        '품질 체크 ✅', '요구사항 매칭 중...', '이상 없어 보이는데 한번 더 볼게요',
+        '빠짐없이 다 들어갔네요', '테스트 시나리오 만들어볼게요',
+        'ㅎㅎ 할 게 없으면 좋겠지만... 찾아볼게요', '크로스 브라우징도 체크할게요',
+        '접근성 검수도 포함합니다', '엣지 케이스 한번 살펴볼게요',
       ],
     }
 
-    # 이모지/짤 풀
+    # 잡담/이모지 풀
     MEMES = [
-      '☕ 커피 한 잔 하면서 다음 단계 준비~',
-      '🎵 작업 BGM 틀어놓고~',
-      '💡 아이디어 떠올랐는데 나중에 공유할게요',
-      '🍕 야근 안 해도 되겠죠...?',
-      '🚀 순항 중!',
-      '😎 이 페이스면 일찍 끝나겠는데요',
-      '🎯 목표 달성까지 화이팅',
+      '☕ 커피 한 잔 하면서 다음 단계 준비~', '🎵 작업 BGM 틀어놓고~',
+      '💡 아이디어 떠올랐는데 나중에 공유할게요', '🍕 야근 안 해도 되겠죠...?',
+      '🚀 순항 중!', '😎 이 페이스면 일찍 끝나겠는데요', '🎯 목표 달성까지 화이팅',
+      '🙌 팀워크 최고', '✌️ 오늘 컨디션 좋네요', '🍜 점심 뭐 먹죠?',
+      '🏃 스프린트 완주까지 조금만 더!', '🎪 이 프로젝트 끝나면 회식 각?',
+      '🌟 오늘 MVP는 누구?', '📚 참고 자료 공유해둘게요', '🔋 충전 완료!',
+      '🎨 이거 포트폴리오에 넣어야겠다 ㅎㅎ', '💻 코딩하기 좋은 날씨네요',
+      '🤔 잠깐 생각 좀...', '🎉 한 고비 넘겼다!', '☕ 아아 한 잔 더...',
     ]
+
+    # 중복 방지 — 최근 사용한 리액션 추적
+    if not hasattr(self, '_recent_reactions'):
+      self._recent_reactions: list[str] = []
 
     # 작업자 외 팀원 중 1~2명이 리액션
     others = [n for n in ('teamlead', 'planner', 'designer', 'developer', 'qa') if n != worker]
@@ -921,13 +946,66 @@ class Office:
 
     for reactor in reactors:
       pool = REACTIONS.get(reactor, ['👍'])
-      msg = random.choice(pool)
+      # 최근 사용하지 않은 것 중에서 선택
+      available = [r for r in pool if r not in self._recent_reactions]
+      if not available:
+        self._recent_reactions = []  # 풀 소진 시 리셋
+        available = pool
+      msg = random.choice(available)
+      self._recent_reactions.append(msg)
+      if len(self._recent_reactions) > 30:
+        self._recent_reactions = self._recent_reactions[-15:]
       await self._emit(reactor, msg, 'response')
 
-    # 20% 확률로 누군가 짤/이모지 공유
-    if random.random() < 0.2:
+    # 30% 확률로 누군가 잡담/이모지 공유
+    if random.random() < 0.3:
       meme_sender = random.choice(others)
-      await self._emit(meme_sender, random.choice(MEMES), 'response')
+      available_memes = [m for m in MEMES if m not in self._recent_reactions]
+      if available_memes:
+        meme = random.choice(available_memes)
+        self._recent_reactions.append(meme)
+        await self._emit(meme_sender, meme, 'response')
+
+  async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
+    '''디자인 산출물을 바탕으로 Stitch 시안을 생성한다.'''
+    try:
+      await self._emit('designer', '디자인 시안을 생성하고 있습니다... 🎨', 'response')
+      self._active_agent = 'designer'
+
+      # 디자인 관련 산출물 취합
+      design_context_parts = []
+      for key in sorted(all_results.keys()):
+        if '디자인' in key or '기획' in key:
+          design_context_parts.append(f'[{key}]\n{all_results[key]}')
+
+      design_context = '\n\n'.join(design_context_parts)
+
+      # 사용자 요청에서 첨부 제외한 핵심만
+      project_brief = user_input.split('[첨부된 참조 자료]')[0].strip() if '[첨부된 참조 자료]' in user_input else user_input
+
+      stitch_result = await designer_generate_with_context(
+        design_context=f'[프로젝트]\n{project_brief}\n\n{design_context}',
+        task_id=self.workspace.task_id,
+        workspace_root=str(self.workspace.task_dir.parent),
+      )
+
+      if stitch_result.get('success'):
+        stitch_artifacts = []
+        if stitch_result.get('html_path'):
+          stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.html')
+        if stitch_result.get('image_path'):
+          stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.png')
+        await self.event_bus.publish(LogEvent(
+          agent_id='designer',
+          event_type='response',
+          message='디자인 시안이 생성되었습니다! 🎉',
+          data={'artifacts': stitch_artifacts},
+        ))
+      else:
+        error = stitch_result.get('error', '알 수 없는 오류')[:200]
+        await self._emit('designer', f'시안 생성을 건너뜁니다 (Stitch: {error})', 'response')
+    except Exception as e:
+      await self._emit('designer', f'시안 생성을 건너뜁니다 ({str(e)[:100]})', 'response')
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
     '''QA 에이전트가 산출물을 검수한다 (내부 처리 — 채팅에 안 보임).'''
