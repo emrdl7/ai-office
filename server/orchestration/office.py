@@ -837,12 +837,10 @@ class Office:
     self._active_agent = ''
     self._work_started_at = ''
 
-    phase_artifacts.append(f'{self.workspace.task_id}/final/result.md')
-
     return {
       'state': self._state.value,
-      'response': final_content,
-      'artifacts': phase_artifacts if final_content else [],
+      'response': '프로젝트 완료',
+      'artifacts': phase_artifacts,
     }
 
   async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str:
