@@ -29,6 +29,23 @@ class IntentResult:
     self.analysis = analysis              # PROJECT일 때 분석 내용
 
 
+def _build_system_info() -> str:
+  '''각 에이전트의 실제 러너/모델 정보를 동적으로 구성한다.'''
+  from runners.groq_runner import MODEL as GROQ_MODEL
+  return (
+    f'[시스템 정보 — 반드시 이 정보만 사용할 것]\n'
+    f'당신의 모델: Claude CLI\n'
+    f'기획자 모델: OpenCode CLI\n'
+    f'디자이너 모델: Groq {GROQ_MODEL}\n'
+    f'개발자 모델: OpenCode CLI\n'
+    f'QA 모델: Groq {GROQ_MODEL}\n\n'
+    f'중요 규칙:\n'
+    f'- 당신의 모델명은 "Claude CLI"이다. "Claude Opus"나 다른 이름을 사용하지 마라.\n'
+    f'- 자기소개 요청 시 당신 본인만 소개하라. 다른 팀원 소개를 대신 하지 마라.\n'
+    f'- 내부 구현(오케스트레이션, 서버, 메시지 버스 등)을 언급하지 마라.'
+  )
+
+
 async def classify_intent(user_input: str) -> IntentResult:
   '''팀장(Claude)이 사용자 입력의 의도를 분류한다.
 
@@ -36,9 +53,11 @@ async def classify_intent(user_input: str) -> IntentResult:
     IntentResult — 의도 유형, 담당 에이전트, 직접 답변 등
   '''
   teamlead_prompt = _load_teamlead_prompt()
+  system_info = _build_system_info()
 
   prompt = (
     f'{teamlead_prompt}\n\n'
+    f'{system_info}\n\n'
     f'---\n\n'
     f'사용자가 다음과 같이 말했습니다:\n\n'
     f'"{user_input}"\n\n'

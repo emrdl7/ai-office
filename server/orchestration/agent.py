@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from runners.gemma_runner import GemmaRunner
 from runners.groq_runner import GroqRunner
 from runners.opencode_runner import run_opencode
 from runners.claude_runner import run_claude_isolated
@@ -27,13 +26,11 @@ class Agent:
   def __init__(
     self,
     name: str,
-    runner: GemmaRunner,
     event_bus: EventBus,
     memory_root: str | Path = 'data/memory',
     groq_runner: GroqRunner | None = None,
   ):
     self.name = name
-    self.runner = runner
     self.groq_runner = groq_runner
     self.event_bus = event_bus
     self.memory = AgentMemory(name, memory_root=memory_root)
@@ -98,13 +95,13 @@ class Agent:
     await self._emit('', 'typing')
 
     # developer, planner → opencode(클라우드)
-    # designer, qa → Groq(클라우드) / Gemma(로컬 폴백)
+    # designer, qa → Groq(클라우드)
     if self.name in ('developer', 'planner'):
       result = await run_opencode(prompt=full_prompt, system=system)
-    elif self.groq_runner and self.name in ('designer', 'qa'):
+    elif self.groq_runner:
       result = await self.groq_runner.generate(full_prompt, system=system)
     else:
-      result = await self.runner.generate(full_prompt, system=system)
+      raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')
 
     # 마크다운 코드 펜스 제거
     content = result.strip()
@@ -167,9 +164,12 @@ class Agent:
 
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
-    if self.groq_runner and self.name in ('designer', 'qa'):
+    from runners.opencode_runner import run_opencode
+    if self.name in ('developer', 'planner'):
+      return await run_opencode(prompt=prompt, system=system)
+    if self.groq_runner:
       return await self.groq_runner.generate(prompt, system=system)
-    return await self.runner.generate(prompt, system=system)
+    raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')
 
   def record_experience(self, task_id: str, success: bool, feedback: str, tags: list[str] | None = None) -> None:
     '''경험을 메모리에 기록한다.'''

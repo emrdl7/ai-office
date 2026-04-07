@@ -3,6 +3,7 @@
 export interface Agent {
   agent_id: string
   status: 'idle' | 'working' | 'done' | 'error' | 'waiting' | 'meeting' | string
+  model?: string
   current_task_id?: string
 }
 

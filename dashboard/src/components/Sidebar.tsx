@@ -185,12 +185,15 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                       border-2 border-gray-900 ${statusDot(agent.status)}`} />
                   </div>
 
-                  {/* 이름 + 상태 */}
+                  {/* 이름 + 모델 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-sm font-medium">{profile.pokemon || profile.name}</span>
                       <span className="text-[10px] text-gray-500">{profile.role}</span>
                     </div>
+                    {agent.model && (
+                      <p className="text-[10px] text-gray-500 truncate">{agent.model}</p>
+                    )}
                     {msg && (
                       <p className="text-[11px] text-gray-500 truncate">{msg}</p>
                     )}

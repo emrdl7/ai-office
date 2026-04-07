@@ -1,7 +1,9 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
-# 기존 프로세스 정리
+# 기존 프로세스 정리 (serve.sh 루프부터 종료해야 좀비 방지)
+pkill -f 'serve\.sh' 2>/dev/null
+sleep 1
 lsof -ti:8000 | xargs kill -9 2>/dev/null
 lsof -ti:3100 | xargs kill -9 2>/dev/null
 sleep 1

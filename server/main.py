@@ -17,12 +17,8 @@ from log_bus.event_bus import EventBus, LogEvent, event_bus
 from orchestration.office import Office, OfficeState
 from orchestration.router import MessageRouter
 from orchestration.task_graph import TaskGraph
-from runners.gemma_runner import GemmaRunner
 from workspace.manager import WorkspaceManager
 from db.task_store import save_task, update_task_state, list_tasks, get_task
-
-# GemmaRunner 싱글턴 (lifespan에서 start/stop)
-gemma_runner = GemmaRunner()
 
 # 데이터 디렉토리 생성 (MessageBus SQLite 파일용)
 Path('data').mkdir(exist_ok=True)
@@ -36,16 +32,9 @@ workspace = WorkspaceManager(task_id='', workspace_root=str(WORKSPACE_ROOT))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-  '''FastAPI 생명주기 관리.
-
-  Startup: OllamaRunner 워커 시작, OrchestrationLoop 초기화
-  Shutdown: OllamaRunner 워커 종료, MessageBus 연결 해제
-  '''
-  # Gemma(로컬) 비활성화 — 모든 에이전트가 클라우드 사용
-  # await gemma_runner.start()
+  '''FastAPI 생명주기 관리.'''
   office = Office(
     bus=message_bus,
-    runner=gemma_runner,
     event_bus=event_bus,
     workspace=workspace,
   )
@@ -58,7 +47,6 @@ async def lifespan(app: FastAPI):
   asyncio.create_task(office.restore_pending_tasks())
   yield
   await office.groq_runner.stop()
-  # await gemma_runner.stop()
   message_bus.close()
 
 
@@ -380,6 +368,16 @@ async def get_agents(request: Request):
 
   active = state_to_active.get(state, '')
 
+  # 에이전트별 실제 모델명 (러너에서 동적으로 가져옴)
+  from runners.groq_runner import MODEL as GROQ_MODEL
+  agent_models: dict[str, str] = {
+    'teamlead': 'Claude CLI',
+    'planner': 'OpenCode',
+    'designer': f'Groq {GROQ_MODEL}',
+    'developer': 'OpenCode',
+    'qa': f'Groq {GROQ_MODEL}',
+  }
+
   agents = []
   for agent_id in ['teamlead', 'planner', 'designer', 'developer', 'qa']:
     if active == 'all':
@@ -390,7 +388,7 @@ async def get_agents(request: Request):
       status = 'idle'
     else:
       status = 'waiting'
-    agents.append({'agent_id': agent_id, 'status': status})
+    agents.append({'agent_id': agent_id, 'status': status, 'model': agent_models.get(agent_id, '')})
   return agents
 
 

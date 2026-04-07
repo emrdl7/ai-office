@@ -10,7 +10,6 @@ from typing import Any
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
 from orchestration.router import MessageRouter
 from runners.claude_runner import run_claude_isolated
-from runners.gemma_runner import GemmaRunner
 from runners.opencode_runner import run_opencode
 from bus.message_bus import MessageBus
 from bus.schemas import AgentMessage
@@ -55,14 +54,12 @@ class OrchestrationLoop:
     def __init__(
         self,
         bus: MessageBus,
-        runner: GemmaRunner,
         event_bus: EventBus,
         workspace: WorkspaceManager,
         router: MessageRouter,
         memory_root: str | Path = "data/memory",
     ):
         self.bus = bus
-        self.runner = runner
         self.event_bus = event_bus
         self.workspace = workspace
         self.router = router

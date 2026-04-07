@@ -11,7 +11,6 @@ from orchestration.intent import IntentType, classify_intent
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
-from runners.gemma_runner import GemmaRunner
 from runners.groq_runner import GroqRunner
 from runners.claude_runner import run_claude_isolated
 from runners.opencode_runner import run_opencode
@@ -54,13 +53,11 @@ class Office:
   def __init__(
     self,
     bus: MessageBus,
-    runner: GemmaRunner,
     event_bus: EventBus,
     workspace: WorkspaceManager,
     memory_root: str | Path = 'data/memory',
   ):
     self.bus = bus
-    self.runner = runner
     self.event_bus = event_bus
     self.workspace = workspace
     self._state = OfficeState.IDLE
@@ -69,6 +66,9 @@ class Office:
     self._context_summary = ''  # 기획자가 압축한 이전 대화 요약
     self._task_count = 0        # 업무 횟수 카운터
     self._pending_project = None  # 사용자 확인 대기 중인 프로젝트
+    self._interrupted_instruction = None  # 서버 재시작으로 중단된 작업 instruction
+    self._interrupted_task_id = None
+    self._interrupted_confirmed = False
     self._last_review_feedback = ''
 
     # Groq 러너 (디자이너, QA용)
@@ -79,16 +79,16 @@ class Office:
     for name in ('planner', 'designer', 'developer', 'qa'):
       self.agents[name] = Agent(
         name=name,
-        runner=runner,
         event_bus=event_bus,
         memory_root=memory_root,
         groq_runner=self.groq_runner,
       )
 
   async def restore_pending_tasks(self) -> None:
-    '''서버 재시작 시 중단된 태스크를 알림만 보낸다.
+    '''서버 재시작 시 중단된 태스크를 복원한다.
 
     자동 재실행하지 않고 사용자에게 선택권을 준다.
+    "진행해" 등으로 응답하면 원래 instruction으로 다시 실행한다.
     '''
     from db.task_store import get_resumable_tasks, update_task_state
 
@@ -100,7 +100,8 @@ class Office:
       state = task['state']
       task_id = task['task_id']
       ctx = task.get('context')
-      instruction = task['instruction'][:50]
+      instruction = task['instruction']
+      instruction_preview = instruction[:50]
 
       if state == 'waiting_input' and ctx:
         # 사용자 확인 대기 복원
@@ -112,11 +113,13 @@ class Office:
           'response',
         )
       elif state == 'running':
-        # running → interrupted 상태로 변경, 알림만
+        # running → interrupted 상태로 변경, 원래 instruction 보존
         update_task_state(task_id, 'interrupted')
+        self._interrupted_instruction = instruction
+        self._interrupted_task_id = task_id
         await self._emit(
           'teamlead',
-          f'@마스터 서버 재시작으로 중단된 작업이 있습니다: "{instruction}..."\n이어서 진행하려면 말씀해 주세요.',
+          f'@마스터 서버 재시작으로 중단된 작업이 있습니다: "{instruction_preview}..."\n이어서 진행하려면 말씀해 주세요.',
           'response',
         )
 
@@ -179,16 +182,27 @@ class Office:
     필요 없으면 [PASS]로 넘기고, 할 말이 있을 때만 응답한다.
     아무도 안 답하면 랜덤 한 명이 대표로 답변한다.
     '''
+    from runners.groq_runner import MODEL as GROQ_MODEL
+    agent_model_map = {
+      'planner': 'OpenCode CLI',
+      'designer': f'Groq API — {GROQ_MODEL}',
+      'developer': 'OpenCode CLI',
+      'qa': f'Groq API — {GROQ_MODEL}',
+    }
+
     responded: list[str] = []
     for name in ('planner', 'designer', 'developer', 'qa'):
       agent = self.agents.get(name)
       if not agent:
         continue
       system = agent._build_system_prompt()
+      my_model = agent_model_map.get(name, '알 수 없음')
       prompt = (
         f'팀 채팅방에서 사용자(팀장의 상사)가 이렇게 말했습니다:\n\n'
         f'"{user_input}"\n\n'
-        f'당신은 {name}입니다. 이 메시지에 당신이 반응해야 하는지 판단하세요.\n\n'
+        f'당신은 {name}입니다. 당신이 사용하는 AI 모델/러너는 "{my_model}"입니다.\n'
+        f'모델이나 자기소개를 물어보면 이 정보를 기반으로 답하세요.\n\n'
+        f'이 메시지에 당신이 반응해야 하는지 판단하세요.\n\n'
         f'판단 기준:\n'
         f'- 당신의 전문 영역과 관련이 있는가?\n'
         f'- 당신을 지목했거나 당신이 대답해야 자연스러운가?\n'
@@ -248,6 +262,30 @@ class Office:
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
       return await self._continue_project(user_input)
+
+    # 0-1. 중단된 작업이 있고 사용자가 재개를 요청하면 원래 instruction으로 재실행
+    if hasattr(self, '_interrupted_instruction') and self._interrupted_instruction:
+      resume_keywords = ('진행', '이어서', '계속', '재개', '다시', 'ㅇㅇ', '응', '네', 'yes', 'ok')
+      if any(kw in user_input.lower() for kw in resume_keywords):
+        if not self._interrupted_confirmed:
+          # 첫 번째 응답: 확인 질문
+          self._interrupted_confirmed = True
+          instruction_preview = self._interrupted_instruction[:80]
+          await self._emit('teamlead', f'@마스터 이전 작업 "{instruction_preview}..." 이어서 진행할까요?', 'response')
+          self._state = OfficeState.IDLE
+          return {'state': self._state.value, 'response': '', 'artifacts': []}
+        else:
+          # 두 번째 응답: 실제 재실행
+          original = self._interrupted_instruction
+          self._interrupted_instruction = None
+          self._interrupted_task_id = None
+          self._interrupted_confirmed = False
+          return await self.receive(original)
+      else:
+        # 다른 입력이면 중단 작업 폐기
+        self._interrupted_instruction = None
+        self._interrupted_task_id = None
+        self._interrupted_confirmed = False
 
     # 1. 파일 참조 해석
     reference_context = resolve_references(user_input)
