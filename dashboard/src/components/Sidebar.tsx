@@ -74,14 +74,42 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const logs = useStore((s) => s.logs)
 
-  // 에이전트의 마지막 메시지
-  const lastMsg = (agentId: string): string => {
-    for (let i = logs.length - 1; i >= 0; i--) {
-      if (logs[i].agent_id === agentId && logs[i].event_type !== 'status_change') {
-        return logs[i].message.replace(/^\[.*?\]\s*/, '').slice(0, 40)
-      }
-    }
-    return ''
+  // 에이전트별 상태 코멘트 (캐릭터 성격 반영)
+  const STATUS_COMMENTS: Record<string, Record<string, string>> = {
+    teamlead: {
+      idle: '지시 대기 중',
+      working: '상황 판단 중...',
+      meeting: '회의 진행 중',
+      waiting: '팀원 작업 지켜보는 중',
+    },
+    planner: {
+      idle: '다음 기획 구상 중',
+      working: '기획안 작성 중... 집중!',
+      meeting: '전략 방향 정리 중',
+      waiting: '다른 팀원 결과 기다리는 중',
+    },
+    designer: {
+      idle: '영감 충전 중',
+      working: '디자인 작업 중... 1px도 양보 없다',
+      meeting: 'UX 관점에서 검토 중',
+      waiting: '기획안 검토하면서 대기',
+    },
+    developer: {
+      idle: '코드 리뷰 중',
+      working: '코드 작성 중... 🔥',
+      meeting: '기술 스택 검토 중',
+      waiting: '디자인 명세 기다리는 중',
+    },
+    qa: {
+      idle: '검수 대기',
+      working: '꼼꼼히 검수 중...',
+      meeting: '품질 기준 정리 중',
+      waiting: '산출물 도착 기다리는 중',
+    },
+  }
+
+  const getComment = (agentId: string, status: string): string => {
+    return STATUS_COMMENTS[agentId]?.[status] || ''
   }
 
   return (
@@ -159,7 +187,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             const profile = AGENT_PROFILE[agent.agent_id]
             if (!profile) return null
             const isActive = activeChannel === agent.agent_id
-            const msg = lastMsg(agent.agent_id)
+            const comment = getComment(agent.agent_id, agent.status)
 
             return (
               <li key={agent.agent_id}>
@@ -206,8 +234,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                     {agent.model && (
                       <p className="text-[10px] text-gray-500 truncate">{agent.model}</p>
                     )}
-                    {msg && (
-                      <p className="text-[11px] text-gray-500 truncate">{msg}</p>
+                    {comment && (
+                      <p className="text-[11px] text-gray-500 truncate italic">{comment}</p>
                     )}
                   </div>
                 </button>
