@@ -645,6 +645,29 @@ class Office:
       except Exception:
         pass
 
+      # 퍼블리싱 단계: 코드블록에서 HTML 추출 → .html 파일로 저장 → URL 제공
+      if current_group == '퍼블리싱':
+        import re
+        html_match = re.search(r'```(?:html)?\s*\n(<!DOCTYPE[\s\S]*?)\n```', content, re.IGNORECASE)
+        if not html_match:
+          # DOCTYPE 없이 <html>로 시작하는 경우
+          html_match = re.search(r'```(?:html)?\s*\n(<html[\s\S]*?)\n```', content, re.IGNORECASE)
+        if html_match:
+          html_code = html_match.group(1)
+          try:
+            self.workspace.write_artifact(f'{phase_name}/index.html', html_code)
+            phase_artifacts.append(f'{self.workspace.task_id}/{phase_name}/index.html')
+            # 채팅에 URL 공유
+            html_url = f'/api/artifacts/{self.workspace.task_id}/{phase_name}/index.html'
+            await self.event_bus.publish(LogEvent(
+              agent_id='developer',
+              event_type='response',
+              message=f'퍼블리싱 완료! 웹 화면을 확인하세요 👇\n{html_url}',
+              data={'artifacts': [f'{self.workspace.task_id}/{phase_name}/index.html']},
+            ))
+          except Exception:
+            pass
+
       all_results[phase_name] = content
       prev_phase_result = content
 

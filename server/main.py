@@ -470,6 +470,10 @@ async def get_artifact_content(file_path: str, request: Request):
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
   content = target.read_text(encoding='utf-8', errors='replace')
 
+  # .html 파일은 그대로 서빙
+  if file_path.endswith('.html'):
+    return HTMLResponse(content=content)
+
   # 브라우저에서 직접 열면 마크다운을 HTML로 렌더링
   accept = request.headers.get('accept', '')
   if 'text/html' in accept and file_path.endswith('.md'):
