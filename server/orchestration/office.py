@@ -595,15 +595,37 @@ class Office:
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
       await self._emit(agent_name, '', 'typing')
 
-      # 각 단계에 이전 단계 결과 + 회의 내용 전달 (전문)
+      # 각 단계에 필요한 컨텍스트 구성
+      current_group = phase.get('group', phase_name)
+
+      # 프로젝트 설명: 첫 그룹(기획)에만 첨부 전문, 이후는 핵심만
+      if current_group == '기획':
+        project_text = user_input
+      elif '[첨부된 참조 자료]' in user_input:
+        project_text = user_input.split('[첨부된 참조 자료]')[0].strip()
+      else:
+        project_text = user_input
+
       phase_prompt = (
-        f'[프로젝트]\n{user_input}\n\n'
+        f'[프로젝트]\n{project_text}\n\n'
         f'[현재 단계]\n{phase_name}: {phase["description"]}\n\n'
-        f'[팀 회의 내용]\n{meeting_summary}\n\n'
       )
-      if prev_phase_result:
-        phase_prompt += f'[이전 단계 산출물]\n{prev_phase_result}\n\n'
-      if reference_context:
+
+      # 같은 그룹 내 이전 소단계 결과는 전문 전달
+      same_group_results = [(k, v) for k, v in all_results.items() if current_group in k]
+      if same_group_results:
+        for k, v in same_group_results:
+          phase_prompt += f'[이전 작업: {k}]\n{v}\n\n'
+
+      # 다른 그룹의 산출물은 요약만 (마지막 소단계의 앞 3000자)
+      other_groups = set()
+      for k, v in all_results.items():
+        g = k.split('-')[0] if '-' in k else k
+        if g != current_group and g not in other_groups:
+          other_groups.add(g)
+          phase_prompt += f'[{g} 단계 산출물 요약]\n{v[:3000]}\n\n'
+
+      if reference_context and current_group == '기획':
         phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
 
       phase_prompt += (
