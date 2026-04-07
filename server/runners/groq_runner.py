@@ -56,26 +56,33 @@ class GroqRunner:
       'temperature': 0.7,
     }
 
-    try:
-      resp = await self._client.post(
-        GROQ_URL,
-        json=body,
-        headers={
-          'Authorization': f'Bearer {self._api_key}',
-          'Content-Type': 'application/json',
-        },
-      )
-      resp.raise_for_status()
-      data = resp.json()
-      content = data['choices'][0]['message']['content']
-      return content.strip()
-    except httpx.TimeoutException:
-      raise GroqRunnerError(f'Groq 타임아웃 ({REQUEST_TIMEOUT}초)')
-    except httpx.HTTPStatusError as e:
-      error_body = e.response.text[:300]
-      raise GroqRunnerError(f'Groq HTTP {e.response.status_code}: {error_body}')
-    except (KeyError, IndexError) as e:
-      raise GroqRunnerError(f'Groq 응답 파싱 실패: {e}')
+    max_retries = 3
+    for attempt in range(max_retries):
+      try:
+        resp = await self._client.post(
+          GROQ_URL,
+          json=body,
+          headers={
+            'Authorization': f'Bearer {self._api_key}',
+            'Content-Type': 'application/json',
+          },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data['choices'][0]['message']['content']
+        return content.strip()
+      except httpx.TimeoutException:
+        raise GroqRunnerError(f'Groq 타임아웃 ({REQUEST_TIMEOUT}초)')
+      except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429 and attempt < max_retries - 1:
+          # Rate limit — 대기 후 재시도
+          wait = (attempt + 1) * 10  # 10초, 20초
+          await asyncio.sleep(wait)
+          continue
+        error_body = e.response.text[:300]
+        raise GroqRunnerError(f'Groq HTTP {e.response.status_code}: {error_body}')
+      except (KeyError, IndexError) as e:
+        raise GroqRunnerError(f'Groq 응답 파싱 실패: {e}')
 
   async def generate_json(self, prompt: str, system: str = '') -> Any | None:
     '''generate() + JSON 파싱 파이프라인'''
