@@ -1,4 +1,5 @@
 # 오케스트레이션 루프 — 전체 워크플로우 상태 머신 (ORCH-01, ORCH-04, WKFL-02)
+from __future__ import annotations
 # Claude 분석 → 기획자 → 작업자 → QA → Claude 최종검증 → 보완 루프
 import json
 from datetime import datetime, timezone

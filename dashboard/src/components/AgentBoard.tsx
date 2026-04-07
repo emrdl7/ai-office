@@ -5,11 +5,11 @@ import type { Agent } from '../types'
 
 // 포켓몬 이미지 URL (PokeAPI 공식 아트워크)
 const POKEMON_IMG: Record<string, string> = {
-  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/150.png',
-  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/65.png',
-  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/38.png',
-  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png',
-  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/80.png',
+  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png',
+  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/65.png',
+  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/38.png',
+  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png',
+  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/80.png',
 }
 
 // 포켓몬 이름 + 직급

@@ -1,4 +1,5 @@
 # Gemma Ollama HTTP 러너 — subprocess 대신 직접 API 호출
+from __future__ import annotations
 # subprocess 인자 전달 시 특수문자로 인한 잘림 문제 해결
 import asyncio
 import httpx
@@ -8,9 +9,9 @@ from .json_parser import parse_json
 
 OLLAMA_URL = 'http://localhost:11434'
 MODEL = 'gemma4:26b'
-NUM_CTX = 32768
-NUM_PREDICT = 8192
-REQUEST_TIMEOUT = 300.0
+NUM_CTX = 65536
+NUM_PREDICT = 16384
+REQUEST_TIMEOUT = 600.0
 THINK_TIMEOUT = 60.0  # thinking 무한 반복 방지
 
 

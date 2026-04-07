@@ -2,7 +2,7 @@
 
 export interface Agent {
   agent_id: string
-  status: 'idle' | 'working' | 'done' | 'error' | 'waiting' | string
+  status: 'idle' | 'working' | 'done' | 'error' | 'waiting' | 'meeting' | string
   current_task_id?: string
 }
 
@@ -28,3 +28,6 @@ export interface FileEntry {
   type: 'code' | 'doc' | 'design' | 'data' | 'unknown'
   size: number
 }
+
+// 채널 타입
+export type ChannelId = 'all' | 'planner' | 'designer' | 'developer' | 'qa'

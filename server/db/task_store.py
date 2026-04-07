@@ -1,9 +1,11 @@
 # 태스크 영속 저장소 — SQLite 기반
-# 서버 재시작해도 태스크 내역 유지
+from __future__ import annotations
+# 서버 재시작해도 태스크 내역 + 진행 상태 유지
 import sqlite3
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 
 DB_PATH = Path(__file__).parent.parent / 'data' / 'tasks.db'
@@ -24,6 +26,12 @@ def _conn() -> sqlite3.Connection:
       updated_at TEXT NOT NULL
     )
   ''')
+  # context_json 컬럼 추가 (이미 있으면 무시)
+  try:
+    conn.execute('ALTER TABLE tasks ADD COLUMN context_json TEXT DEFAULT ""')
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass  # 이미 존재
   conn.commit()
   return conn
 
@@ -42,14 +50,20 @@ def save_task(task_id: str, instruction: str, state: str = 'idle', attachments: 
   c.close()
 
 
-def update_task_state(task_id: str, state: str) -> None:
-  '''태스크 상태를 업데이트한다.'''
+def update_task_state(task_id: str, state: str, context: Optional[dict] = None) -> None:
+  '''태스크 상태를 업데이트한다. context가 있으면 함께 저장.'''
   now = datetime.now(timezone.utc).isoformat()
   c = _conn()
-  c.execute(
-    'UPDATE tasks SET state=?, updated_at=? WHERE task_id=?',
-    (state, now, task_id),
-  )
+  if context is not None:
+    c.execute(
+      'UPDATE tasks SET state=?, context_json=?, updated_at=? WHERE task_id=?',
+      (state, json.dumps(context, ensure_ascii=False), now, task_id),
+    )
+  else:
+    c.execute(
+      'UPDATE tasks SET state=?, updated_at=? WHERE task_id=?',
+      (state, now, task_id),
+    )
   c.commit()
   c.close()
 
@@ -65,13 +79,45 @@ def list_tasks() -> list[dict]:
   return [dict(r) for r in rows]
 
 
-def get_task(task_id: str) -> dict | None:
+def get_task(task_id: str) -> Optional[dict]:
   '''태스크 하나를 조회한다.'''
   c = _conn()
   row = c.execute(
-    'SELECT task_id, instruction, state, attachments, created_at, updated_at '
+    'SELECT task_id, instruction, state, attachments, context_json, created_at, updated_at '
     'FROM tasks WHERE task_id=?',
     (task_id,),
   ).fetchone()
   c.close()
-  return dict(row) if row else None
+  if not row:
+    return None
+  d = dict(row)
+  if d.get('context_json'):
+    try:
+      d['context'] = json.loads(d['context_json'])
+    except json.JSONDecodeError:
+      d['context'] = None
+  else:
+    d['context'] = None
+  return d
+
+
+def get_resumable_tasks() -> list[dict]:
+  '''서버 재시작 시 복구할 태스크 목록 (running, waiting_input).'''
+  c = _conn()
+  rows = c.execute(
+    "SELECT task_id, instruction, state, attachments, context_json, created_at, updated_at "
+    "FROM tasks WHERE state IN ('running', 'waiting_input') ORDER BY created_at ASC"
+  ).fetchall()
+  c.close()
+  results = []
+  for row in rows:
+    d = dict(row)
+    if d.get('context_json'):
+      try:
+        d['context'] = json.loads(d['context_json'])
+      except json.JSONDecodeError:
+        d['context'] = None
+    else:
+      d['context'] = None
+    results.append(d)
+  return results

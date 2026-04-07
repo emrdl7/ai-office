@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from bus.message_bus import MessageBus
 from log_bus.event_bus import EventBus, LogEvent, event_bus
-from orchestration.loop import OrchestrationLoop, WorkflowState
+from orchestration.office import Office, OfficeState
 from orchestration.router import MessageRouter
 from orchestration.task_graph import TaskGraph
 from runners.gemma_runner import GemmaRunner
@@ -41,18 +41,24 @@ async def lifespan(app: FastAPI):
   Startup: OllamaRunner 워커 시작, OrchestrationLoop 초기화
   Shutdown: OllamaRunner 워커 종료, MessageBus 연결 해제
   '''
-  await gemma_runner.start()
-  router = MessageRouter(bus=message_bus, event_bus=event_bus)
-  app.state.orch_loop = OrchestrationLoop(
+  # Gemma(로컬) 비활성화 — 모든 에이전트가 클라우드 사용
+  # await gemma_runner.start()
+  office = Office(
     bus=message_bus,
     runner=gemma_runner,
     event_bus=event_bus,
     workspace=workspace,
-    router=router,
   )
-  app.state.log_history: list[dict] = []         # 최근 로그 버퍼 (최대 500건)
+  app.state.office = office
+  app.state.log_history: list[dict] = []
+
+  await office.groq_runner.start()
+
+  # 중단된 태스크 알림 (자동 재실행 없이 사용자에게 선택권)
+  asyncio.create_task(office.restore_pending_tasks())
   yield
-  await gemma_runner.stop()
+  await office.groq_runner.stop()
+  # await gemma_runner.stop()
   message_bus.close()
 
 
@@ -87,6 +93,102 @@ async def health():
   }
 
 
+@app.post('/api/chat', status_code=202)
+async def chat(
+  request: Request,
+  message: str = Form(default=''),
+  to: str = Form(default='all'),
+  files: list[UploadFile] = File(default=[]),
+):
+  '''메신저 채팅 — 팀 채널 또는 특정 팀원에게 메시지 전송 (파일 첨부 지원)'''
+  from harness.file_reader import read_file
+
+  office: Office = request.app.state.office
+  task_id = str(uuid.uuid4())
+  file_names = [f.filename for f in files if f.filename]
+  save_task(task_id, message, 'idle', attachments=','.join(file_names))
+
+  # 첨부파일 저장 + 내용 파싱
+  attachments_text = ''
+  file_urls: list[dict] = []
+  IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'}
+  if files:
+    upload_dir = WORKSPACE_ROOT / task_id / 'uploads'
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    for f in files:
+      if f.filename:
+        file_path = upload_dir / f.filename
+        content = await f.read()
+        file_path.write_bytes(content)
+        ext = Path(f.filename).suffix.lower()
+        file_urls.append({
+          'name': f.filename,
+          'url': f'/api/uploads/{task_id}/{f.filename}',
+          'size': len(content),
+          'isImage': ext in IMAGE_EXTS,
+        })
+        parsed = read_file(str(file_path))
+        if parsed:
+          attachments_text += f'\n[첨부파일: {f.filename}]\n{parsed}\n'
+
+  # 사용자 메시지를 이벤트 버스로 발행 (파일 URL 포함)
+  await event_bus.publish(LogEvent(
+    agent_id='user',
+    event_type='message',
+    message=message,
+    data={'to': to, 'attachments': file_names, 'files': file_urls},
+  ))
+
+  full_message = message
+  if attachments_text:
+    full_message = f'{message}\n\n[첨부된 참조 자료]\n{attachments_text}'
+
+  async def _run():
+    try:
+      update_task_state(task_id, 'running')
+      task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+      office.workspace = task_workspace
+      office._current_task_id = task_id
+
+      if to == 'all':
+        # 팀 채널 → 팀장 판단 흐름
+        result = await office.receive(full_message)
+      else:
+        # DM → 특정 팀원에게 직접 대화
+        agent = office.agents.get(to)
+        if agent:
+          response = await agent.handle(full_message)
+          await event_bus.publish(LogEvent(
+            agent_id=to,
+            event_type='response',
+            message=response,
+            data={'dm': True},
+          ))
+          result = {'state': 'completed', 'response': response}
+        else:
+          result = {'state': 'error', 'response': f'{to}를 찾을 수 없습니다.'}
+
+      # 결과물이 있으면 메시지로 전달
+      artifacts = result.get('artifacts', [])
+      if artifacts:
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead',
+          event_type='response',
+          message='작업이 완료되었습니다. 결과물을 첨부합니다.',
+          data={'artifacts': artifacts},
+        ))
+
+      final_state = result.get('state', 'completed')
+      update_task_state(task_id, final_state)
+    except Exception as e:
+      import traceback
+      traceback.print_exc()
+      update_task_state(task_id, f'error: {e}')
+
+  asyncio.create_task(_run())
+  return {'task_id': task_id, 'status': 'accepted', 'to': to, 'attachments': len(files)}
+
+
 @app.post('/api/tasks', status_code=202)
 async def create_task(
   request: Request,
@@ -98,7 +200,7 @@ async def create_task(
   from harness.file_reader import read_file
 
   task_id = str(uuid.uuid4())
-  loop: OrchestrationLoop = request.app.state.orch_loop
+  office: Office = request.app.state.office
   file_names = ','.join(f.filename or '' for f in files if f.filename)
   save_task(task_id, instruction, 'idle', attachments=file_names)
 
@@ -108,7 +210,6 @@ async def create_task(
     prev_task = get_task(base_task_id)
     if prev_task:
       prev_context = f'\n[이전 작업 지시]\n{prev_task["instruction"]}\n'
-      # 해당 태스크 폴더의 final/result.md만 읽기
       task_final = WORKSPACE_ROOT / base_task_id / 'final' / 'result.md'
       if task_final.exists() and task_final.stat().st_size > 100:
         prev_context += f'\n[이전 최종 산출물]\n{task_final.read_text(errors="replace")}\n'
@@ -129,7 +230,7 @@ async def create_task(
       if parsed:
         attachments_text += f'\n[첨부파일: {f.filename}]\n{parsed}\n'
 
-  # 전체 컨텍스트 조합 — 첨부파일 우선, 이전 작업은 참고로
+  # 전체 컨텍스트 조합
   full_instruction = instruction
   if attachments_text:
     full_instruction = f'{instruction}\n\n[첨부된 참조 자료 — 핵심 입력]\n{attachments_text}'
@@ -141,9 +242,10 @@ async def create_task(
       update_task_state(task_id, 'running')
       # 태스크별 workspace 격리
       task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
-      loop.workspace = task_workspace
-      final_state = await loop.run(full_instruction)
-      update_task_state(task_id, final_state.value if hasattr(final_state, 'value') else str(final_state))
+      office.workspace = task_workspace
+      result = await office.receive(full_instruction)
+      final_state = result.get('state', 'completed')
+      update_task_state(task_id, final_state)
     except Exception as e:
       import traceback
       traceback.print_exc()
@@ -198,9 +300,9 @@ async def get_dag(request: Request):
 
   노드 위치는 depends_on 기반 depth 계산으로 결정한다.
   '''
-  loop: OrchestrationLoop = request.app.state.orch_loop
-  # TaskGraph는 loop 내부 속성으로 접근
-  graph: TaskGraph = getattr(loop, 'task_graph', None) or getattr(loop, '_task_graph', None)
+  office: Office = request.app.state.office
+  # TaskGraph는 현재 실행 중이 아니면 None
+  graph: TaskGraph = getattr(office, '_task_graph', None)
 
   if graph is None:
     return {'nodes': [], 'edges': []}
@@ -262,27 +364,29 @@ async def get_dag(request: Request):
 
 @app.get('/api/agents')
 async def get_agents(request: Request):
-  '''에이전트별 현재 상태를 OrchestrationLoop 실시간 상태에서 추론한다 (DASH-02).'''
-  loop: OrchestrationLoop = request.app.state.orch_loop
-  state = loop._state
+  '''에이전트별 현재 상태를 Office 상태에서 추론한다.'''
+  office: Office = request.app.state.office
+  state = office._state
 
-  # 상태별 어떤 에이전트가 활성인지 매핑
-  state_to_active: dict[WorkflowState, str] = {
-    WorkflowState.CLAUDE_ANALYZING: 'claude',
-    WorkflowState.PLANNER_PLANNING: 'planner',
-    WorkflowState.WORKER_EXECUTING: 'developer',
-    WorkflowState.QA_REVIEWING: 'qa',
-    WorkflowState.CLAUDE_FINAL_VERIFYING: 'claude',
-    WorkflowState.REVISION_LOOPING: 'planner',
+  # 상태별 활성 에이전트 매핑
+  state_to_active: dict[OfficeState, str] = {
+    OfficeState.TEAMLEAD_THINKING: 'teamlead',
+    OfficeState.MEETING: 'all',
+    OfficeState.WORKING: 'working',
+    OfficeState.QA_REVIEW: 'qa',
+    OfficeState.TEAMLEAD_REVIEW: 'teamlead',
+    OfficeState.REVISION: 'planner',
   }
 
-  active_agent = state_to_active.get(state)
+  active = state_to_active.get(state, '')
 
   agents = []
-  for agent_id in ['claude', 'planner', 'designer', 'developer', 'qa']:
-    if active_agent == agent_id:
+  for agent_id in ['teamlead', 'planner', 'designer', 'developer', 'qa']:
+    if active == 'all':
+      status = 'meeting'
+    elif active == agent_id:
       status = 'working'
-    elif state in {WorkflowState.IDLE, WorkflowState.COMPLETED, WorkflowState.ESCALATED}:
+    elif state in {OfficeState.IDLE, OfficeState.COMPLETED, OfficeState.ESCALATED}:
       status = 'idle'
     else:
       status = 'waiting'
@@ -316,6 +420,18 @@ async def list_all_artifacts(task_id: str = ''):
           'size': f.stat().st_size,
         })
   return result
+
+
+@app.get('/api/uploads/{task_id}/{filename}')
+async def get_upload_file(task_id: str, filename: str):
+  '''업로드된 파일을 바이너리로 반환한다 (이미지 썸네일 등).'''
+  if '..' in task_id or '..' in filename:
+    raise HTTPException(status_code=400, detail='유효하지 않은 경로')
+  target = WORKSPACE_ROOT / task_id / 'uploads' / filename
+  if not target.exists() or not target.is_file():
+    raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
+  from fastapi.responses import FileResponse
+  return FileResponse(str(target), filename=filename)
 
 
 @app.get('/api/artifacts/{file_path:path}')
@@ -391,41 +507,39 @@ async def get_log_history(request: Request, limit: int = 100):
 
   limit: 반환할 최대 건수 (기본 100, 최대 500)
   '''
+  from db.log_store import load_logs
   limit = min(limit, 500)
-  history = request.app.state.log_history
-  return history[-limit:]
+  return load_logs(limit=limit)
 
 
 @app.websocket('/ws/logs')
 async def log_stream(ws: WebSocket):
-  '''실시간 에이전트 로그 스트림 (INFR-04).
-
-  연결 시: event_bus 구독
-  이벤트 수신 시: JSON으로 클라이언트에 전송하고 log_history에도 저장
-  연결 종료 시: finally에서 반드시 구독 해제 (Pitfall 4 방지)
-
-  메시지 형식:
-  {
-    "id": "uuid",
-    "agent_id": "planner",
-    "event_type": "task_start",
-    "message": "태스크 시작",
-    "data": {},
-    "timestamp": "2026-04-03T..."
-  }
-  '''
+  '''실시간 에이전트 로그 스트림 (저장은 EventBus에서 처리)'''
   await ws.accept()
   q = event_bus.subscribe()
   try:
     while True:
       event: LogEvent = await q.get()
-      event_dict = asdict(event)
-      await ws.send_json(event_dict)
-      # log_history에 추가 (최대 500건 순환 버퍼)
-      app.state.log_history.append(event_dict)
-      if len(app.state.log_history) > 500:
-        app.state.log_history = app.state.log_history[-500:]
+      await ws.send_json(asdict(event))
   except WebSocketDisconnect:
     pass
   finally:
-    event_bus.unsubscribe(q)  # 반드시 구독 해제 (메모리 누수 방지)
+    event_bus.unsubscribe(q)
+
+
+# --- 정적 파일 서빙 (빌드된 프론트엔드) ---
+DIST_DIR = Path(__file__).parent.parent / 'dashboard' / 'dist'
+if DIST_DIR.exists():
+  from fastapi.staticfiles import StaticFiles
+  from fastapi.responses import FileResponse
+
+  # /assets 등 정적 파일
+  app.mount('/assets', StaticFiles(directory=str(DIST_DIR / 'assets')), name='static')
+
+  # SPA fallback — API/WS가 아닌 모든 경로는 index.html 반환
+  @app.get('/{path:path}')
+  async def spa_fallback(path: str):
+    file_path = DIST_DIR / path
+    if file_path.exists() and file_path.is_file():
+      return FileResponse(str(file_path))
+    return FileResponse(str(DIST_DIR / 'index.html'))

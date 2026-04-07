@@ -1,4 +1,5 @@
 # Gemma4 구조화 JSON 출력 파싱+복구 전략 (INFR-05)
+from __future__ import annotations
 # Gemma4는 format:json 파라미터를 사용해도 응답에 후행 텍스트,
 # 마크다운 코드 펜스, 후행 쉼표 등을 포함하는 경우가 있다.
 # 2-pass 전략: strict 파싱 실패 시 repair 시도

@@ -1,4 +1,5 @@
 # 인메모리 DAG 태스크 상태 관리자 (WKFL-01)
+from __future__ import annotations
 # TaskGraph: 태스크 노드의 추가, 상태 추적, 의존성 기반 실행 순서 결정
 from enum import Enum
 from dataclasses import dataclass, field

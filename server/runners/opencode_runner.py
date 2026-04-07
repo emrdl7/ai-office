@@ -1,4 +1,5 @@
 # Opencode CLI 러너 — 클라우드 모델로 코드 생성
+from __future__ import annotations
 # developer 에이전트의 코드/구현 작업을 opencode run으로 대체
 import asyncio
 import json

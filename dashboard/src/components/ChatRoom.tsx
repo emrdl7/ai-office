@@ -1,0 +1,614 @@
+// 채팅방 — 메신저 대화 UI + 파일첨부 + 이미지 썸네일 + 링크 프리뷰
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useStore } from '../store'
+import { AGENT_PROFILE } from './Sidebar'
+import type { LogEntry, ChannelId } from '../types'
+import Markdown from 'react-markdown'
+
+// 포켓몬 아바타 이미지
+const POKEMON_IMG: Record<string, string> = {
+  teamlead: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/150.png',
+  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/65.png',
+  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/38.png',
+  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/6.png',
+  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/80.png',
+}
+
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'])
+
+function formatTime(ts: string): string {
+  return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function isSystemEvent(e: LogEntry): boolean {
+  return ['status_change', 'meeting_start', 'meeting_end', 'task_start', 'task_end', 'internal'].includes(e.event_type)
+}
+
+function fileIcon(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (['pdf'].includes(ext)) return '📕'
+  if (['doc', 'docx'].includes(ext)) return '📘'
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return '📗'
+  if (IMAGE_EXTS.has(ext)) return '🖼️'
+  if (['zip', 'tar', 'gz'].includes(ext)) return '📦'
+  return '📄'
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function isImageFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return IMAGE_EXTS.has(ext)
+}
+
+// URL 감지 + 링크화
+function linkify(text: string) {
+  const urlRegex = /(https?:\/\/[^\s<]+)/g
+  const parts = text.split(urlRegex)
+  return parts.map((part, i) => {
+    if (urlRegex.test(part)) {
+      urlRegex.lastIndex = 0
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 hover:text-blue-300 underline break-all"
+        >
+          {part.length > 60 ? part.slice(0, 60) + '...' : part}
+        </a>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
+// 채널별 로그 필터
+function filterLogs(logs: LogEntry[], channel: ChannelId): LogEntry[] {
+  if (channel === 'all') {
+    return logs.filter((log) => !log.data?.dm && log.data?.to !== 'planner' && log.data?.to !== 'designer' && log.data?.to !== 'developer' && log.data?.to !== 'qa')
+  }
+  return logs.filter((log) => {
+    if (log.agent_id === channel && log.data?.dm) return true
+    if (log.agent_id === 'user' && log.data?.to === channel) return true
+    return false
+  })
+}
+
+// 첨부파일 정보 타입
+interface FileInfo {
+  name: string
+  url: string
+  size: number
+  isImage: boolean
+}
+
+export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
+  const { logs, addLog, setLogs, activeChannel } = useStore()
+  const [message, setMessage] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [previews, setPreviews] = useState<string[]>([])
+  const [sending, setSending] = useState(false)
+  const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
+  const sendLock = useRef(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const [connected, setConnected] = useState(false)
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // WebSocket
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
+    const ws = new WebSocket(WS_URL)
+    wsRef.current = ws
+    ws.onopen = () => {
+      setConnected(true)
+      // 재연결 시 누락된 메시지 복구
+      fetch('/api/logs/history?limit=200')
+        .then((r) => r.json())
+        .then((data: LogEntry[]) => {
+          if (Array.isArray(data) && data.length > 0) setLogs(data)
+        })
+        .catch(() => {})
+    }
+    ws.onclose = () => {
+      setConnected(false)
+      reconnectTimer.current = setTimeout(connect, 2000)
+    }
+    ws.onmessage = (event) => {
+      try {
+        const log = JSON.parse(event.data) as LogEntry
+        if (log.event_type === 'typing') {
+          // 입력 중 표시 → 5초 후 자동 해제
+          setTypingAgents((prev) => new Set(prev).add(log.agent_id))
+          setTimeout(() => {
+            setTypingAgents((prev) => {
+              const next = new Set(prev)
+              next.delete(log.agent_id)
+              return next
+            })
+          }, 15000)
+        } else {
+          // 실제 메시지 도착 시 typing 해제
+          setTypingAgents((prev) => {
+            const next = new Set(prev)
+            next.delete(log.agent_id)
+            return next
+          })
+          addLog(log)
+        }
+      } catch { /* 무시 */ }
+    }
+  }, [addLog])
+
+  useEffect(() => {
+    connect()
+    return () => { clearTimeout(reconnectTimer.current); wsRef.current?.close() }
+  }, [connect])
+
+  // 히스토리 복구는 WebSocket onopen에서 처리 (재연결 시 누락 메시지 자동 복구)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs, activeChannel])
+
+  function autoResize(el: HTMLTextAreaElement) {
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px'
+  }
+
+  // 파일 선택
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? [])
+    if (selected.length === 0) return
+    setFiles((prev) => [...prev, ...selected])
+    // 이미지 로컬 프리뷰 생성
+    const newPreviews = selected.map((f) =>
+      isImageFile(f.name) ? URL.createObjectURL(f) : ''
+    )
+    setPreviews((prev) => [...prev, ...newPreviews])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function removeFile(idx: number) {
+    if (previews[idx]) URL.revokeObjectURL(previews[idx])
+    setFiles((prev) => prev.filter((_, i) => i !== idx))
+    setPreviews((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  // 전송
+  async function handleSend() {
+    if (sendLock.current) return
+    if (!message.trim() && files.length === 0) return
+    sendLock.current = true
+    setSending(true)
+    try {
+      const form = new FormData()
+      form.append('message', message.trim())
+      form.append('to', activeChannel)
+      for (const f of files) form.append('files', f)
+      await fetch('/api/chat', { method: 'POST', body: form })
+      setMessage('')
+      setFiles([])
+      previews.forEach((p) => { if (p) URL.revokeObjectURL(p) })
+      setPreviews([])
+      if (inputRef.current) inputRef.current.style.height = 'auto'
+    } catch { /* 에러 */ }
+    finally {
+      sendLock.current = false
+      setSending(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+  }
+
+  const channelLogs = filterLogs(logs, activeChannel)
+  const profile = AGENT_PROFILE[activeChannel]
+  const channelTitle = activeChannel === 'all'
+    ? '# 팀 채널'
+    : `${profile?.pokemon || profile?.name || activeChannel}`
+
+  return (
+    <>
+      {/* 헤더 */}
+      <header className="flex items-center justify-between px-4 md:px-5 py-3
+        bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+        <div className="flex items-center gap-3">
+          {/* 모바일 햄버거 */}
+          <button
+            onClick={onMenuClick}
+            className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
+              dark:hover:bg-gray-800 cursor-pointer"
+            aria-label="메뉴"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          {activeChannel !== 'all' && POKEMON_IMG[activeChannel] && (
+            <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile?.color}
+              flex items-center justify-center overflow-hidden`}>
+              <img src={POKEMON_IMG[activeChannel]} alt={profile?.pokemon}
+                className="w-7 h-7 object-contain scale-[1.6]" />
+            </div>
+          )}
+          <div>
+            <h2 className="text-sm font-semibold">{channelTitle}</h2>
+            {activeChannel !== 'all' && profile && (
+              <p className="text-[11px] text-gray-500">{profile.role}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLogs([])}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
+              dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
+              cursor-pointer transition-colors"
+            aria-label="대화 지우기"
+            title="대화 지우기"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
+              dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
+              cursor-pointer transition-colors"
+            aria-label="새로고침"
+            title="새로고침"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
+        </div>
+      </header>
+
+      {/* 대화 영역 */}
+      <div
+        className="flex-1 overflow-y-auto py-3 min-h-0
+          bg-gray-50 dark:bg-gray-900/50"
+        role="log" aria-live="polite" aria-label="대화"
+      >
+        <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1">
+          {channelLogs.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 py-40">
+              <p className="text-sm">
+                {activeChannel === 'all'
+                  ? '팀 채널입니다. 팀원들과 대화하세요.'
+                  : `${profile?.pokemon || profile?.name}에게 메시지를 보내세요.`}
+              </p>
+            </div>
+          ) : (
+            <>
+              {renderMessages(channelLogs)}
+              {typingAgents.size > 0 && <TypingIndicator agents={typingAgents} />}
+              <div ref={bottomRef} />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 하단 입력창 */}
+      <div className="py-3 md:py-4 bg-white dark:bg-gray-900
+        border-t border-gray-200 dark:border-gray-800">
+        <div className="max-w-3xl mx-auto px-3 md:px-5">
+
+        {/* 첨부파일 미리보기 */}
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {files.map((f, i) => (
+              <div key={`${f.name}-${i}`} className="relative group">
+                {isImageFile(f.name) && previews[i] ? (
+                  // 이미지 썸네일
+                  <div className="w-20 h-20 md:w-24 md:h-24 rounded-lg overflow-hidden
+                    border border-gray-200 dark:border-gray-700 relative">
+                    <img src={previews[i]} alt={f.name}
+                      className="w-full h-full object-cover" />
+                    <button onClick={() => removeFile(i)}
+                      className="absolute top-1 right-1 w-5 h-5 rounded-full
+                        bg-black/60 text-white text-xs flex items-center justify-center
+                        opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                      aria-label={`${f.name} 제거`}>✕</button>
+                  </div>
+                ) : (
+                  // 일반 파일
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg
+                    bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                    <span className="text-lg">{fileIcon(f.name)}</span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[120px]">{f.name}</p>
+                      <p className="text-[10px] text-gray-400">{formatSize(f.size)}</p>
+                    </div>
+                    <button onClick={() => removeFile(i)}
+                      className="text-gray-400 hover:text-red-400 cursor-pointer text-sm ml-1"
+                      aria-label={`${f.name} 제거`}>✕</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 입력 영역 */}
+        <div className="relative rounded-2xl bg-gray-100 dark:bg-gray-800
+          border border-gray-200 dark:border-gray-700
+          focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-shadow">
+
+          <input ref={fileInputRef} type="file" multiple accept="*/*"
+            onChange={handleFileChange} className="hidden" />
+
+          <textarea ref={inputRef} value={message}
+            onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
+            onKeyDown={handleKeyDown}
+            placeholder={activeChannel === 'all'
+              ? '팀에게 메시지 보내기...'
+              : `${profile?.pokemon || profile?.name}에게 메시지 보내기...`}
+            rows={1}
+            className="w-full px-4 pt-3 pb-10 text-sm resize-none bg-transparent
+              text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500
+              focus:outline-none min-h-[56px] max-h-[200px]"
+            aria-label="메시지 입력" disabled={sending} />
+
+          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+            <button onClick={() => fileInputRef.current?.click()}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
+                dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700
+                cursor-pointer transition-colors" aria-label="파일 첨부" disabled={sending}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+              </svg>
+            </button>
+            <button onClick={handleSend}
+              disabled={sending || (!message.trim() && files.length === 0)}
+              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-30
+                text-white transition-colors cursor-pointer disabled:cursor-not-allowed" aria-label="전송">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-gray-400 text-center mt-1.5 hidden md:block">
+          Enter로 전송 · Shift+Enter로 줄바꿈
+        </p>
+        </div>
+      </div>
+    </>
+  )
+}
+
+
+// --- 메시지 렌더링 ---
+
+function renderMessages(logs: LogEntry[]) {
+  const elements: React.ReactNode[] = []
+  let prevAgent = ''
+  let prevTime = ''
+
+  for (let i = 0; i < logs.length; i++) {
+    const log = logs[i]
+    const profile = AGENT_PROFILE[log.agent_id] ?? {
+      name: log.agent_id, pokemon: log.agent_id, color: 'from-gray-500 to-gray-600', role: '',
+    }
+    const time = formatTime(log.timestamp)
+    const isNewGroup = log.agent_id !== prevAgent || time !== prevTime
+
+    // 시스템/내부 이벤트 — 숨김
+    if (isSystemEvent(log)) {
+      continue
+    }
+
+    // 사용자 메시지 (오른쪽)
+    if (log.agent_id === 'user') {
+      elements.push(<UserMessage key={log.id ?? i} log={log} time={time} />)
+      prevAgent = log.agent_id
+      prevTime = time
+      continue
+    }
+
+    // 에이전트 메시지 (왼쪽)
+    const isResponse = log.event_type === 'response'
+    if (isNewGroup) {
+      elements.push(
+        <div key={log.id ?? i} className="flex gap-2 md:gap-3 py-1.5">
+          <div className="flex-shrink-0 mt-0.5">
+            <div className={`w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br ${profile.color}
+              flex items-center justify-center overflow-hidden shadow-sm`}>
+              {POKEMON_IMG[log.agent_id]
+                ? <img src={POKEMON_IMG[log.agent_id]} alt={profile.pokemon}
+                    className="w-7 h-7 object-contain scale-[1.6]" loading="lazy" />
+                : <span className="text-white text-xs font-bold">{profile.name[0]}</span>}
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
+            <div className="flex items-baseline gap-2 mb-0.5">
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                {profile.pokemon || profile.name}</span>
+              <span className="text-[10px] text-gray-400">{profile.role}</span>
+              <span className="text-[10px] text-gray-400">{time}</span>
+            </div>
+            <MessageBubble log={log} isResponse={isResponse} />
+          </div>
+        </div>
+      )
+    } else {
+      elements.push(
+        <div key={log.id ?? i} className="flex gap-3 py-0.5 pl-10 md:pl-12">
+          <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
+            <MessageBubble log={log} isResponse={isResponse} />
+          </div>
+        </div>
+      )
+    }
+    prevAgent = log.agent_id
+    prevTime = time
+  }
+  return elements
+}
+
+// 사용자 메시지 컴포넌트
+function UserMessage({ log, time }: { log: LogEntry; time: string }) {
+  const fileInfos = (log.data?.files as FileInfo[]) ?? []
+  const fileNames = (log.data?.attachments as string[]) ?? []
+
+  return (
+    <div className="flex justify-end py-1">
+      <div className="max-w-[85%] md:max-w-[70%]">
+        <div className="flex items-baseline gap-2 justify-end mb-0.5">
+          <span className="text-[10px] text-gray-400">{time}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">나</span>
+        </div>
+
+        {/* 이미지 썸네일 */}
+        {fileInfos.filter((f) => f.isImage).map((f, i) => (
+          <div key={`img-${i}`} className="mb-1.5 flex justify-end">
+            <a href={f.url} target="_blank" rel="noopener noreferrer"
+              className="block max-w-[240px] rounded-xl overflow-hidden
+                border border-gray-200 dark:border-gray-700">
+              <img src={f.url} alt={f.name}
+                className="w-full max-h-[300px] object-cover" loading="lazy" />
+            </a>
+          </div>
+        ))}
+
+        {/* 일반 파일 첨부 */}
+        {fileInfos.filter((f) => !f.isImage).length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
+            {fileInfos.filter((f) => !f.isImage).map((f, i) => (
+              <a key={`file-${i}`} href={f.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                  bg-blue-500/80 text-white text-xs hover:bg-blue-500 transition-colors">
+                <span>{fileIcon(f.name)}</span>
+                <span className="truncate max-w-[120px]">{f.name}</span>
+                <span className="text-blue-200 text-[10px]">{formatSize(f.size)}</span>
+              </a>
+            ))}
+          </div>
+        )}
+
+        {/* fileInfos가 없으면 fileNames 폴백 */}
+        {fileInfos.length === 0 && fileNames.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
+            {fileNames.map((name, i) => (
+              <div key={`fn-${i}`} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                bg-blue-500/80 text-white text-xs">
+                <span>{fileIcon(name)}</span>
+                <span className="truncate max-w-[120px]">{name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 텍스트 메시지 */}
+        {log.message && (
+          <div className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-md
+            text-sm leading-relaxed">
+            {linkify(log.message)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// 에이전트 메시지 버블
+function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean }) {
+  const content = log.message.replace(/^\[.*?\]\s*/, '')
+  const artifactPaths = (log.data?.artifacts as string[]) ?? []
+  const needsInput = !!log.data?.needs_input
+
+  return (
+    <div>
+      <div className={`px-3 md:px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed
+        ${needsInput
+          ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 shadow-sm'
+          : isResponse
+            ? 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm'
+            : 'bg-gray-100 dark:bg-gray-800/60'
+        }`}>
+        {needsInput && (
+          <div className="flex items-center gap-1.5 mb-2 text-amber-600 dark:text-amber-400">
+            <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800/50">
+              답변 필요
+            </span>
+          </div>
+        )}
+        {isResponse ? (
+          <div className="prose dark:prose-invert prose-sm max-w-none">
+            <Markdown>{content}</Markdown>
+          </div>
+        ) : (
+          <span className="text-gray-700 dark:text-gray-300">{linkify(content)}</span>
+        )}
+      </div>
+
+      {/* 산출물 파일 카드 */}
+      {artifactPaths.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {artifactPaths.map((path, pi) => {
+            const name = path.split('/').pop() ?? path
+            return (
+              <a key={pi} href={`/api/artifacts/${path}`} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                  bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600
+                  text-xs text-gray-600 dark:text-gray-300
+                  hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <span>{fileIcon(name)}</span>
+                <span className="truncate max-w-[150px]">{name}</span>
+              </a>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 입력 중... 인디케이터
+function TypingIndicator({ agents }: { agents: Set<string> }) {
+  const names = Array.from(agents).map((id) => {
+    const p = AGENT_PROFILE[id]
+    return p?.pokemon || p?.name || id
+  })
+
+  let text = ''
+  if (names.length === 1) {
+    text = `${names[0]}이(가) 입력 중`
+  } else if (names.length === 2) {
+    text = `${names[0]}, ${names[1]}이(가) 입력 중`
+  } else {
+    text = `${names[0]} 외 ${names.length - 1}명이 입력 중`
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-2 pl-12">
+      <div className="flex gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+      <span className="text-xs text-gray-400">{text}</span>
+    </div>
+  )
+}

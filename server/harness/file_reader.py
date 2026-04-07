@@ -1,4 +1,5 @@
 # 파일 읽기 하네스 — PDF, DOCX, 텍스트 파일을 읽어서 텍스트로 반환
+from __future__ import annotations
 import re
 from pathlib import Path
 

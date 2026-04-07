@@ -1,4 +1,5 @@
 # 에이전트 경험 메모리 핵심 모듈 (AMEM-01~03)
+from __future__ import annotations
 # 에이전트별 JSON 파일로 경험을 저장하고, 작업 시작 시 관련 경험을 조회한다.
 import json
 import os

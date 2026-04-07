@@ -5,13 +5,13 @@ import type { LogEntry } from '../types'
 
 // 포켓몬 이미지 URL (PokeAPI 공식 아트워크)
 const POKEMON_IMG: Record<string, string> = {
-  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/150.png',
-  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/65.png',
-  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/38.png',
-  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png',
-  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/80.png',
-  orchestrator: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/4.png',
-  system: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/4.png',
+  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png',
+  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/65.png',
+  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/38.png',
+  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png',
+  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/80.png',
+  orchestrator: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png',
+  system: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png',
 }
 
 // 에이전트별 포켓몬 아바타/인격 정보
@@ -68,7 +68,7 @@ export function LogStream() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const [connState, setConnState] = useState<ConnState>('closed')
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // WebSocket 연결
   const connect = useCallback(() => {
@@ -129,7 +129,7 @@ export function LogStream() {
       const log = logs[i]
       const profile = AGENT_PROFILE[log.agent_id] ?? { name: log.agent_id, emoji: '🤖', color: 'bg-gray-500', role: '' }
       const style = EVENT_STYLE[log.event_type] ?? {}
-      const { tag, content } = parseMessage(log.message)
+      const { content } = parseMessage(log.message)
       const time = formatTime(log.timestamp)
       const isNewGroup = log.agent_id !== prevAgent || time !== prevTime
 

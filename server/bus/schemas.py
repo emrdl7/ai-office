@@ -4,8 +4,8 @@ from typing import Literal, Optional, Any
 from datetime import datetime
 import uuid
 
-MessageType = Literal['task_request', 'task_result', 'status_update']
-AgentId = Literal['claude', 'planner', 'developer', 'designer', 'qa', 'orchestrator']
+MessageType = Literal['task_request', 'task_result', 'status_update', 'conversation', 'opinion', 'question', 'answer']
+AgentId = Literal['teamlead', 'planner', 'developer', 'designer', 'qa', 'orchestrator', 'user']
 Priority = Literal['normal', 'high', 'urgent']
 Status = Literal['pending', 'processing', 'done', 'failed']
 
