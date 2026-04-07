@@ -579,10 +579,18 @@ class Office:
           remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
           if not remaining_in_group and current_group == '디자인':
             # Stitch 시안이 아직 없으면 생성
-            stitch_dir = self.workspace.task_dir / 'stitch'
-            has_stitch = stitch_dir.exists() and any(stitch_dir.iterdir()) if stitch_dir.exists() else False
+            # 전체 workspace에서 Stitch 시안 검색
+            has_stitch = False
+            workspace_root = self.workspace.task_dir.parent
+            for ws_dir in workspace_root.iterdir():
+              sd = ws_dir / 'stitch'
+              if sd.exists() and any(sd.iterdir()):
+                has_stitch = True
+                break
             if not has_stitch:
               await self._generate_stitch_mockup(all_results, user_input)
+            else:
+              await self._emit('designer', '이전에 생성된 Stitch 시안이 있습니다. 그대로 사용합니다. 🎨', 'response')
           continue
       except Exception:
         pass
