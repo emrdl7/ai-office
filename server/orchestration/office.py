@@ -693,6 +693,24 @@ class Office:
       # 다른 팀원 리액션 (가벼운 반응으로 실제 오피스 느낌)
       await self._team_reaction(agent_name, phase_name)
 
+      # 사용자 중간 지시 확인 — 최근 채팅에서 사용자 메시지 체크
+      user_directive = await self._check_user_directive()
+      if user_directive:
+        if user_directive.get('action') == 'stop':
+          await self._emit('teamlead', '작업을 중단합니다. 여기까지의 산출물은 저장되어 있습니다.', 'response')
+          self._state = OfficeState.COMPLETED
+          self._active_agent = ''
+          self._work_started_at = ''
+          return {
+            'state': self._state.value,
+            'response': '작업 중단',
+            'artifacts': phase_artifacts,
+          }
+        elif user_directive.get('message'):
+          # 사용자 지시를 다음 소단계 프롬프트에 반영
+          meeting_summary += f'\n\n[사용자 중간 지시]\n{user_directive["message"]}'
+          await self._emit('teamlead', f'말씀하신 내용 반영하여 다음 단계 진행하겠습니다.', 'response')
+
       # QA 검수 — 그룹의 마지막 소단계에서만 실행
       current_group = phase.get('group', phase_name)
       remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
@@ -965,6 +983,44 @@ class Office:
         self._state = OfficeState.WORKING
 
     return worker_results
+
+  async def _check_user_directive(self) -> dict | None:
+    '''소단계 사이에 사용자가 보낸 메시지가 있는지 확인한다.
+
+    Returns:
+      None — 사용자 메시지 없음
+      {'action': 'stop'} — 중단 요청
+      {'message': str} — 방향 전환/추가 지시
+    '''
+    from db.log_store import load_logs
+
+    recent = load_logs(limit=5)
+    for log in recent:
+      if log['agent_id'] != 'user':
+        continue
+      if log['event_type'] != 'message':
+        continue
+      msg = log['message'].strip()
+
+      # 이미 처리한 메시지인지 (작업 시작 전 메시지는 무시)
+      if not hasattr(self, '_last_checked_log_id'):
+        self._last_checked_log_id = ''
+      if log['id'] == self._last_checked_log_id:
+        return None
+      self._last_checked_log_id = log['id']
+
+      # 중단 요청
+      stop_keywords = ('중단', '멈춰', '그만', '스탑', 'stop', '취소')
+      if any(kw in msg.lower() for kw in stop_keywords):
+        return {'action': 'stop'}
+
+      # 새로운 지시 (작업 관련 메시지)
+      # "진행해", "ㅇㅇ" 등 단순 확인은 무시
+      skip_keywords = ('진행', 'ㅇㅇ', '응', '네', 'ok', 'yes', '확인')
+      if len(msg) > 5 and not any(msg.lower().strip() == kw for kw in skip_keywords):
+        return {'message': msg}
+
+    return None
 
   async def _team_reaction(self, worker: str, phase_name: str) -> None:
     '''소단계 완료 후 다른 팀원이 가볍게 리액션한다 (오피스 분위기).'''
