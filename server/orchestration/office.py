@@ -524,24 +524,12 @@ class Office:
         'assigned_to': 'designer',
         'group': '디자인',
       },
-      # 개발 — 3단계
+      # 퍼블리싱 — Stitch 시안 + 디자인 명세 기반 HTML/CSS/JS 통합
       {
-        'name': '개발-HTML구조',
-        'description': '시맨틱 HTML 구조를 작성하세요. 디자인 명세를 반영한 마크업.',
+        'name': '퍼블리싱',
+        'description': '디자인 시안(Stitch HTML)과 디자인 명세를 기반으로 완성된 퍼블리싱 파일을 작성하세요. 단일 index.html 파일에 HTML 구조 + CSS 스타일 + JS 인터랙션(메뉴, 슬라이더 등)을 모두 포함. 시맨틱 마크업, 반응형(모바일/태블릿/데스크탑), 접근성(WCAG 2.1 AA)을 반영.',
         'assigned_to': 'developer',
-        'group': '개발',
-      },
-      {
-        'name': '개발-CSS스타일링',
-        'description': '디자인 시스템을 반영한 CSS/스타일 코드를 작성하세요. 반응형 포함.',
-        'assigned_to': 'developer',
-        'group': '개발',
-      },
-      {
-        'name': '개발-인터랙션',
-        'description': 'JavaScript 인터랙션을 구현하세요. 메뉴, 슬라이더, 스크롤 애니메이션 등.',
-        'assigned_to': 'developer',
-        'group': '개발',
+        'group': '퍼블리싱',
       },
     ]
 
