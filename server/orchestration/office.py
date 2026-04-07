@@ -70,6 +70,7 @@ class Office:
     self._interrupted_task_id = None
     self._interrupted_confirmed = False
     self._active_agent = ''  # 현재 작업 중인 에이전트 ID
+    self._work_started_at = ''  # 작업 시작 ISO 타임스탬프
     self._last_review_feedback = ''
 
     # Groq 러너 (디자이너, QA용)
@@ -323,6 +324,7 @@ class Office:
 
       self._state = OfficeState.COMPLETED
       self._active_agent = ''
+      self._work_started_at = ''
       return {
         'state': self._state.value,
         'response': response,
@@ -589,6 +591,7 @@ class Office:
 
       self._state = OfficeState.WORKING
       self._active_agent = agent_name
+      self._work_started_at = datetime.now(timezone.utc).isoformat()
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
       await self._emit(agent_name, '', 'typing')
 

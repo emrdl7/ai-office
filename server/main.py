@@ -410,7 +410,12 @@ async def get_agents(request: Request):
       status = 'idle'
     else:
       status = 'waiting'
-    agents.append({'agent_id': agent_id, 'status': status, 'model': agent_models.get(agent_id, '')})
+    agents.append({
+      'agent_id': agent_id,
+      'status': status,
+      'model': agent_models.get(agent_id, ''),
+      'work_started_at': office._work_started_at if status in ('working', 'meeting') else '',
+    })
   return agents
 
 

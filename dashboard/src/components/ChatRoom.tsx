@@ -601,17 +601,13 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
 
 // 작업 중 인디케이터 — working/meeting 에이전트 표시 + 경과 시간
 function WorkingIndicator({ workingAgents }: { workingAgents: Agent[] }) {
-  const [elapsed, setElapsed] = useState(0)
+  const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
-    if (workingAgents.length === 0) {
-      setElapsed(0)
-      return
-    }
-    setElapsed(0)
-    const timer = setInterval(() => setElapsed((e) => e + 1), 1000)
+    if (workingAgents.length === 0) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [workingAgents.map((a) => a.agent_id + a.status).join(',')])
+  }, [workingAgents.length > 0])
 
   if (workingAgents.length === 0) return null
 
@@ -620,6 +616,9 @@ function WorkingIndicator({ workingAgents }: { workingAgents: Agent[] }) {
     return p?.pokemon || p?.name || a.agent_id
   })
 
+  // 서버에서 받은 작업 시작 시간 기반 경과 계산 (새로고침해도 유지)
+  const startedAt = workingAgents[0]?.work_started_at
+  const elapsed = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : 0
   const min = Math.floor(elapsed / 60)
   const sec = elapsed % 60
   const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`
