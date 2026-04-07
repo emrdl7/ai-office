@@ -484,20 +484,62 @@ class Office:
     '''프로젝트 전체 실행 — 기획 → 디자인 → 개발 단계별 진행.'''
 
     PHASES = [
+      # 기획 — 3단계로 분리
       {
-        'name': '기획',
-        'description': '정보구조(IA), 콘텐츠 요구사항, 프로젝트 범위를 정의',
+        'name': '기획-IA설계',
+        'description': '사용자 유형별 정보구조(IA) 트리를 설계하세요. GNB, 서브메뉴, 사용자 동선을 포함.',
         'assigned_to': 'planner',
+        'group': '기획',
       },
       {
-        'name': '디자인',
-        'description': '디자인 시스템(컬러/타이포/간격), 와이어프레임, 컴포넌트 명세를 작성',
+        'name': '기획-와이어프레임',
+        'description': '메인화면 와이어프레임을 설계하세요. 섹션 배치, 콘텐츠 영역, CTA 위치를 명시.',
+        'assigned_to': 'planner',
+        'group': '기획',
+      },
+      {
+        'name': '기획-콘텐츠요구사항',
+        'description': '각 섹션별 필요 콘텐츠, 데이터 소스, 갱신 주기를 정의하세요.',
+        'assigned_to': 'planner',
+        'group': '기획',
+      },
+      # 디자인 — 3단계
+      {
+        'name': '디자인-시스템',
+        'description': '디자인 시스템을 정의하세요. 컬러 팔레트(hex), 타이포그래피(폰트/사이즈), 간격 체계, 아이콘 스타일.',
         'assigned_to': 'designer',
+        'group': '디자인',
       },
       {
-        'name': '개발',
-        'description': '실제 동작하는 HTML/CSS/JS 코드를 작성하여 사이트를 구축',
+        'name': '디자인-레이아웃',
+        'description': '메인화면 레이아웃을 설계하세요. 반응형(모바일/태블릿/데스크탑) 브레이크포인트별 구성.',
+        'assigned_to': 'designer',
+        'group': '디자인',
+      },
+      {
+        'name': '디자인-컴포넌트',
+        'description': '주요 UI 컴포넌트 명세를 작성하세요. 헤더, 히어로, 카드, 네비게이션, 푸터의 상세 스펙.',
+        'assigned_to': 'designer',
+        'group': '디자인',
+      },
+      # 개발 — 3단계
+      {
+        'name': '개발-HTML구조',
+        'description': '시맨틱 HTML 구조를 작성하세요. 디자인 명세를 반영한 마크업.',
         'assigned_to': 'developer',
+        'group': '개발',
+      },
+      {
+        'name': '개발-CSS스타일링',
+        'description': '디자인 시스템을 반영한 CSS/스타일 코드를 작성하세요. 반응형 포함.',
+        'assigned_to': 'developer',
+        'group': '개발',
+      },
+      {
+        'name': '개발-인터랙션',
+        'description': 'JavaScript 인터랙션을 구현하세요. 메뉴, 슬라이더, 스크롤 애니메이션 등.',
+        'assigned_to': 'developer',
+        'group': '개발',
       },
     ]
 
@@ -592,33 +634,33 @@ class Office:
         data={'artifacts': [artifact_path]},
       ))
 
-      # QA 검수
-      qa_agent = self.agents['qa']
-      from orchestration.task_graph import TaskNode
-      node = TaskNode(
-        task_id=f'phase-{phase_name}',
-        description=phase['description'],
-        requirements=user_input,
-        assigned_to=agent_name,
-        depends_on=[],
-      )
-      node.artifact_paths = [filename]
-      qa_passed = await self._run_qa_check(qa_agent, node, content)
+      # 다른 팀원 리액션 (가벼운 반응으로 실제 오피스 느낌)
+      await self._team_reaction(agent_name, phase_name)
 
-      if not qa_passed:
-        # 보완 1회
-        revision_prompt = (
-          f'{phase_prompt}\n\n'
-          f'[QA 불합격 사유]\n{node.failure_reason}\n\n'
-          f'위 사유를 반영하여 수정하세요.'
+      # QA 검수 — 그룹의 마지막 소단계에서만 실행
+      current_group = phase.get('group', phase_name)
+      remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
+      if not remaining_in_group:
+        # 그룹 마지막 → QA 검수
+        self._state = OfficeState.QA_REVIEW
+        self._active_agent = 'qa'
+        await self._emit('qa', '', 'typing')
+        qa_agent = self.agents['qa']
+        from orchestration.task_graph import TaskNode
+        group_content = '\n\n'.join(v for k, v in all_results.items() if current_group in k)
+        node = TaskNode(
+          task_id=f'group-{current_group}',
+          description=f'{current_group} 전체 산출물',
+          requirements=user_input,
+          assigned_to=agent_name,
+          depends_on=[],
         )
-        content = await agent.handle(revision_prompt)
-        try:
-          self.workspace.write_artifact(filename, content)
-        except Exception:
-          pass
-        all_results[phase_name] = content
-        prev_phase_result = content
+        node.artifact_paths = [filename]
+        qa_passed = await self._run_qa_check(qa_agent, node, group_content)
+        if not qa_passed:
+          await self._emit('qa', f'{current_group} 검수 불합격: {node.failure_reason[:200]}', 'response')
+        else:
+          await self._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
 
     # 기획자 최종 취합
     await self._emit('planner', '', 'typing')
@@ -830,6 +872,62 @@ class Office:
         self._state = OfficeState.WORKING
 
     return worker_results
+
+  async def _team_reaction(self, worker: str, phase_name: str) -> None:
+    '''소단계 완료 후 다른 팀원이 가볍게 리액션한다 (오피스 분위기).'''
+    import random
+
+    # 리액션 풀 — 에이전트별 성격 반영
+    REACTIONS: dict[str, list[str]] = {
+      'teamlead': [
+        '좋습니다 👍', '잘 진행되고 있네요', '확인했습니다',
+        'ㅎㅎ 수고했어요', '깔끔하네요 ✨',
+      ],
+      'planner': [
+        '기획 의도 잘 반영됐네요', '이 방향 좋습니다 👏',
+        '다음 단계도 기대됩니다', 'ㅎㅎ 빠르네요',
+        '📋 체크리스트 확인 완료',
+      ],
+      'designer': [
+        '디자인적으로 괜찮아 보여요', '레이아웃 확인했습니다 🎨',
+        '컬러 밸런스 좋네요', '간격 체크할게요',
+        '🖌️ 디테일 살펴볼게요',
+      ],
+      'developer': [
+        '구현 가능합니다 💪', '기술적으로 문제없어요',
+        '이 구조면 개발 편하겠네요', 'ㅎㅎ 코드 짜기 좋은 명세',
+        '🔥 바로 착수할게요',
+      ],
+      'qa': [
+        '검수 준비 중... 👀', '꼼꼼히 볼게요',
+        '기준 대비 확인하겠습니다', '품질 체크 ✅',
+      ],
+    }
+
+    # 이모지/짤 풀
+    MEMES = [
+      '☕ 커피 한 잔 하면서 다음 단계 준비~',
+      '🎵 작업 BGM 틀어놓고~',
+      '💡 아이디어 떠올랐는데 나중에 공유할게요',
+      '🍕 야근 안 해도 되겠죠...?',
+      '🚀 순항 중!',
+      '😎 이 페이스면 일찍 끝나겠는데요',
+      '🎯 목표 달성까지 화이팅',
+    ]
+
+    # 작업자 외 팀원 중 1~2명이 리액션
+    others = [n for n in ('teamlead', 'planner', 'designer', 'developer', 'qa') if n != worker]
+    reactors = random.sample(others, min(random.choice([1, 1, 2]), len(others)))
+
+    for reactor in reactors:
+      pool = REACTIONS.get(reactor, ['👍'])
+      msg = random.choice(pool)
+      await self._emit(reactor, msg, 'response')
+
+    # 20% 확률로 누군가 짤/이모지 공유
+    if random.random() < 0.2:
+      meme_sender = random.choice(others)
+      await self._emit(meme_sender, random.choice(MEMES), 'response')
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
     '''QA 에이전트가 산출물을 검수한다 (내부 처리 — 채팅에 안 보임).'''
