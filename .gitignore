@@ -1,0 +1,19 @@
+# 의존성
+node_modules/
+
+# 빌드
+dashboard/dist/
+
+# 환경변수 (API 키)
+server/.env
+
+# 런타임 데이터
+server/data/
+workspace/
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.pyc
+server/uv.lock

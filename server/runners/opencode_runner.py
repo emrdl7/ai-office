@@ -6,7 +6,8 @@ import json
 import re
 from pathlib import Path
 
-OPENCODE_CLI = "/Users/johyeonchang/.opencode/bin/opencode"
+import os
+OPENCODE_CLI = os.environ.get('OPENCODE_CLI', 'opencode')
 TIMEOUT = 300.0
 PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 

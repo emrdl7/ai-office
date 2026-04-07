@@ -3,7 +3,8 @@ import asyncio
 import json
 from pathlib import Path
 
-CLAUDE_CLI = '/Users/johyeonchang/.claude/local/claude'
+import os
+CLAUDE_CLI = os.environ.get('CLAUDE_CLI', 'claude')
 LOG = Path('data/debug.log')
 
 
