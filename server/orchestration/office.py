@@ -617,13 +617,16 @@ class Office:
         for k, v in same_group_results:
           phase_prompt += f'[이전 작업: {k}]\n{v}\n\n'
 
-      # 다른 그룹의 산출물은 요약만 (마지막 소단계의 앞 3000자)
+      # 다른 그룹의 산출물은 LLM 요약 전달
       other_groups = set()
       for k, v in all_results.items():
         g = k.split('-')[0] if '-' in k else k
         if g != current_group and g not in other_groups:
           other_groups.add(g)
-          phase_prompt += f'[{g} 단계 산출물 요약]\n{v[:3000]}\n\n'
+          # 해당 그룹의 전체 산출물 취합
+          group_full = '\n\n'.join(val for key, val in all_results.items() if key.startswith(g))
+          summary = await self._summarize_for_handoff(g, group_full, phase_name)
+          phase_prompt += f'[{g} 단계 산출물 요약]\n{summary}\n\n'
 
       if reference_context and current_group == '기획':
         phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
@@ -1023,6 +1026,26 @@ class Office:
         meme = random.choice(available_memes)
         self._recent_reactions.append(meme)
         await self._emit(meme_sender, meme, 'response')
+
+  async def _summarize_for_handoff(self, group_name: str, content: str, target_phase: str) -> str:
+    '''다른 그룹의 산출물을 다음 단계에 전달하기 위해 핵심만 요약한다.'''
+    try:
+      summary = await run_claude_isolated(
+        f'당신은 프로젝트 관리자입니다. 아래 "{group_name}" 단계의 산출물을 '
+        f'"{target_phase}" 단계 담당자가 작업에 참고할 수 있도록 핵심만 요약하세요.\n\n'
+        f'요약 기준:\n'
+        f'- 다음 단계 작업에 필요한 핵심 결정사항, 스펙, 구조만 추출\n'
+        f'- 불필요한 서론, 배경 설명 제거\n'
+        f'- 구체적 수치(컬러 hex, 폰트, 간격, 레이아웃 구조 등)는 반드시 유지\n'
+        f'- 2000자 이내\n\n'
+        f'{content}',
+        model='claude-haiku-4-5-20251001',
+        timeout=60.0,
+      )
+      return summary
+    except Exception:
+      # 요약 실패 시 마지막 산출물의 앞부분이라도
+      return content[-3000:] if len(content) > 3000 else content
 
   async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
     '''디자인 산출물을 바탕으로 Stitch 시안을 생성한다.'''
