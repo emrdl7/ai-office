@@ -134,8 +134,12 @@ async def chat(
   async def _run():
     try:
       update_task_state(task_id, 'running')
-      task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
-      office.workspace = task_workspace
+      # interrupted/pending 작업 재개 시 원래 workspace가 이미 복원되어 있으면 덮어쓰지 않음
+      has_pending = (hasattr(office, '_interrupted_task_id') and office._interrupted_task_id) or \
+                    (hasattr(office, '_pending_project') and office._pending_project)
+      if not has_pending:
+        task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+        office.workspace = task_workspace
       office._current_task_id = task_id
 
       if to == 'all':
