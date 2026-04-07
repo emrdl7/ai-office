@@ -13,7 +13,7 @@ from orchestration.meeting import Meeting
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
 from runners.groq_runner import GroqRunner
 from runners.claude_runner import run_claude_isolated
-from runners.opencode_runner import run_opencode
+from runners.gemini_runner import run_gemini
 from bus.message_bus import MessageBus
 from bus.payloads import TaskRequestPayload, TaskResultPayload
 from log_bus.event_bus import EventBus, LogEvent
@@ -176,7 +176,7 @@ class Office:
     )
 
     try:
-      summary = await run_opencode(prompt=prompt, system=system)
+      summary = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}', model='claude-haiku-4-5-20251001', timeout=60.0)
       self._context_summary = summary.strip()
       # 각 에이전트의 대화 기록도 초기화
       for agent in self.agents.values():
@@ -870,7 +870,8 @@ class Office:
       f'assigned_to는 planner, designer, developer, qa 중 하나.'
     )
 
-    raw = await run_opencode(prompt=prompt, system=system)
+    from runners.gemini_runner import run_gemini
+    raw = await run_gemini(prompt=prompt, system=system)
     from runners.json_parser import parse_json
     result = parse_json(raw)
 
@@ -1255,7 +1256,8 @@ class Office:
       f'마크다운 형식으로 직접 작성하세요.'
     )
 
-    raw = await run_opencode(prompt=prompt, system=system)
+    from runners.gemini_runner import run_gemini
+    raw = await run_gemini(prompt=prompt, system=system)
     content = raw.strip()
     if content.startswith('```'):
       lines = content.split('\n')
