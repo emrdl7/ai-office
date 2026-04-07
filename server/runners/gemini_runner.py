@@ -83,9 +83,17 @@ async def _call_gemini(full_prompt: str, timeout: float) -> str:
 
 async def run_gemini(prompt: str, system: str = '', timeout: float = 600.0) -> str:
   '''Gemini CLI를 실행하고, 응답이 잘리면 이어서 작성하도록 재호출한다.'''
-  full_prompt = prompt
+  # Gemini CLI 행동 규칙 주입
+  rules = (
+    '[필수 규칙]\n'
+    '- 반드시 한국어로만 응답하세요. 영어를 사용하지 마세요.\n'
+    '- 파일을 생성하거나 도구를 호출하지 마세요. 텍스트로만 응답하세요.\n'
+    '- 코드를 작성해야 할 경우 마크다운 코드블록(```)으로 감싸서 텍스트로 출력하세요.\n'
+    '---\n\n'
+  )
+  full_prompt = rules + prompt
   if system:
-    full_prompt = f'{system}\n\n---\n\n{prompt}'
+    full_prompt = rules + system + '\n\n---\n\n' + prompt
 
   result = await _call_gemini(full_prompt, timeout)
 
