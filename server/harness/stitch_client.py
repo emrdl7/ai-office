@@ -5,7 +5,7 @@ from pathlib import Path
 
 BRIDGE_PATH = Path(__file__).parent / 'stitch_bridge.mjs'
 NODE_MODULES = Path(__file__).parent.parent.parent / 'node_modules'
-TIMEOUT = 120.0
+TIMEOUT = 300.0
 
 
 async def generate_design(prompt: str, output_dir: str) -> dict:
