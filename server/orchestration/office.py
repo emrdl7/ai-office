@@ -849,6 +849,13 @@ class Office:
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
     self._work_started_at = ''
+    self._pending_project = None
+    self._interrupted_instruction = None
+
+    # 현재 task를 completed로 마킹 (서버 재시작 시 "이어하겠습니다" 방지)
+    from db.task_store import update_task_state as _update_task
+    if hasattr(self, '_current_task_id') and self._current_task_id:
+      _update_task(self._current_task_id, 'completed')
 
     return {
       'state': self._state.value,
