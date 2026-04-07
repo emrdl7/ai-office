@@ -439,14 +439,35 @@ async def get_upload_file(task_id: str, filename: str):
 
 
 @app.get('/api/artifacts/{file_path:path}')
-async def get_artifact_content(file_path: str):
+async def get_artifact_content(file_path: str, request: Request):
   '''산출물 파일 내용을 반환한다.'''
+  from fastapi.responses import HTMLResponse, PlainTextResponse
   if '..' in file_path:
     raise HTTPException(status_code=400, detail='유효하지 않은 경로')
   target = WORKSPACE_ROOT / file_path
   if not target.exists() or not target.is_file():
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
   content = target.read_text(encoding='utf-8', errors='replace')
+
+  # 브라우저에서 직접 열면 마크다운을 HTML로 렌더링
+  accept = request.headers.get('accept', '')
+  if 'text/html' in accept and file_path.endswith('.md'):
+    html = f'''<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>{Path(file_path).name}</title>
+<style>
+  body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #e0e0e0; background: #1a1a2e; }}
+  pre {{ background: #16213e; padding: 16px; border-radius: 8px; overflow-x: auto; }}
+  code {{ background: #16213e; padding: 2px 6px; border-radius: 4px; }}
+  h1,h2,h3 {{ color: #64b5f6; }}
+  ul,ol {{ padding-left: 24px; }}
+  hr {{ border: none; border-top: 1px solid #333; }}
+</style>
+</head><body><pre style="white-space: pre-wrap; word-wrap: break-word;">{content}</pre></body></html>'''
+    return HTMLResponse(content=html)
+
+  # API 호출(JSON)
   return {'path': file_path, 'content': content}
 
 
