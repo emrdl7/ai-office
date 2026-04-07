@@ -382,7 +382,7 @@ async def get_agents(request: Request):
     'planner': 'Gemini CLI',
     'designer': f'Claude {CLAUDE_MODEL}',
     'developer': 'Gemini CLI',
-    'qa': f'Groq {GROQ_MODEL}',
+    'qa': 'Claude Haiku 4.5',
   }
 
   agents = []

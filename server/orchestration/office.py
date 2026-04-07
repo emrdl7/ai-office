@@ -194,7 +194,7 @@ class Office:
       'planner': 'Gemini CLI',
       'designer': 'Claude Sonnet',
       'developer': 'Gemini CLI',
-      'qa': f'Groq API — {GROQ_MODEL}',
+      'qa': 'Claude Haiku 4.5',
     }
 
     responded: list[str] = []

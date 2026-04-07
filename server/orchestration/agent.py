@@ -100,12 +100,14 @@ class Agent:
     await self._emit('', 'typing')
 
     # developer, planner → Gemini CLI
-    # designer → Claude Sonnet (CLI)
-    # qa → Groq(클라우드)
+    # designer → Claude Sonnet
+    # qa → Claude Haiku
     if self.name in ('developer', 'planner'):
       result = await run_gemini(prompt=full_prompt, system=system)
     elif self.name == 'designer':
       result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt)
+    elif self.name == 'qa':
+      result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt, model='claude-haiku-4-5-20251001')
     elif self.groq_runner:
       result = await self.groq_runner.generate(full_prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
     else:
@@ -176,6 +178,8 @@ class Agent:
       return await run_gemini(prompt=prompt, system=system)
     if self.name == 'designer':
       return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt)
+    if self.name == 'qa':
+      return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt, model='claude-haiku-4-5-20251001')
     if self.groq_runner:
       return await self.groq_runner.generate(prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
     raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')

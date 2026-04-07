@@ -38,7 +38,7 @@ def _build_system_info() -> str:
     f'기획자 모델: Gemini CLI\n'
     f'디자이너 모델: Claude Sonnet\n'
     f'개발자 모델: Gemini CLI\n'
-    f'QA 모델: Groq {GROQ_MODEL}\n\n'
+    f'QA 모델: Claude Haiku 4.5\n\n'
     f'중요 규칙:\n'
     f'- 당신의 모델명은 "Claude CLI"이다. "Claude Opus"나 다른 이름을 사용하지 마라.\n'
     f'- 자기소개 요청 시 당신 본인만 소개하라. 다른 팀원 소개를 대신 하지 마라.\n'
