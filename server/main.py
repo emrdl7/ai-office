@@ -156,13 +156,20 @@ async def chat(
         if parsed:
           attachments_text += f'\n[첨부파일: {f.filename}]\n{parsed}\n'
 
+  # 이전 작업 참조 정보 (채팅에 표시용)
+  base_task_data: dict = {}
+  if base_task_id:
+    base_task_data['base_task_id'] = base_task_id
+    base_task = get_task(base_task_id)
+    if base_task:
+      base_task_data['base_task_instruction'] = base_task['instruction'][:60]
+
   # 사용자 메시지를 이벤트 버스로 발행 (파일 URL 포함)
   await event_bus.publish(LogEvent(
     agent_id='user',
     event_type='message',
     message=message,
-    data={'to': to, 'attachments': file_names, 'files': file_urls,
-          **(({'base_task_id': base_task_id}) if base_task_id else {})},
+    data={'to': to, 'attachments': file_names, 'files': file_urls, **base_task_data},
   ))
 
   # 이전 작업 컨텍스트 수집

@@ -586,6 +586,8 @@ function renderMessages(logs: LogEntry[]) {
 function UserMessage({ log, time }: { log: LogEntry; time: string }) {
   const fileInfos = (log.data?.files as FileInfo[]) ?? []
   const fileNames = (log.data?.attachments as string[]) ?? []
+  const baseTaskId = (log.data?.base_task_id as string) ?? ''
+  const baseTaskInstruction = (log.data?.base_task_instruction as string) ?? ''
 
   return (
     <div className="flex justify-end py-1">
@@ -594,6 +596,16 @@ function UserMessage({ log, time }: { log: LogEntry; time: string }) {
           <span className="text-[10px] text-gray-400">{time}</span>
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">나</span>
         </div>
+
+        {/* 이전 작업 참조 태그 */}
+        {baseTaskId && (
+          <div className="flex justify-end mb-1.5">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg
+              bg-purple-500/80 text-white text-xs">
+              🔗 {baseTaskInstruction ? baseTaskInstruction.slice(0, 30) + '...' : '이전 작업 참조'}
+            </span>
+          </div>
+        )}
 
         {/* 이미지 썸네일 */}
         {fileInfos.filter((f) => f.isImage).map((f, i) => (
