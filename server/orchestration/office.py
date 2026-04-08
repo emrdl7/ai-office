@@ -384,7 +384,7 @@ class Office:
     self._active_agent = agent_name
 
     # 업무 수신 확인
-    profile_names = {'planner': '알라카짐', 'designer': '나인테일', 'developer': '리자몽', 'qa': '야도란'}
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
     await self._emit('teamlead', f'알겠습니다. {profile_names.get(agent_name, agent_name)}에게 맡기겠습니다.', 'response')
 
     prompt = analysis or user_input

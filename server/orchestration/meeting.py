@@ -15,21 +15,26 @@ class MeetingRecord:
   round: int
 
 
-# 에이전트 멘션 매핑 — 한국어/영어/포켓몬명 모두 인식
+# 에이전트 멘션 매핑 — 한국어/영어/미생 캐릭터명 모두 인식
 MENTION_MAP: dict[str, str] = {
-  # 팀장
-  'teamlead': 'teamlead', '팀장': 'teamlead', '팀장님': 'teamlead', '뮤츠': 'teamlead',
-  # 기획자
-  'planner': 'planner', '기획자': 'planner', '기획자님': 'planner', '알라카짐': 'planner',
+  # 팀장 — 오상식
+  'teamlead': 'teamlead', '팀장': 'teamlead', '팀장님': 'teamlead',
+  '오상식': 'teamlead', '상식': 'teamlead', '상식님': 'teamlead', '오과장': 'teamlead', '오과장님': 'teamlead',
+  # 기획자 — 장그래
+  'planner': 'planner', '기획자': 'planner', '기획자님': 'planner',
+  '장그래': 'planner', '그래': 'planner', '그래님': 'planner',
   'Planner': 'planner', 'PM': 'planner',
-  # 디자이너
-  'designer': 'designer', '디자이너': 'planner', '디자이너님': 'designer', '나인테일': 'designer',
+  # 디자이너 — 안영이
+  'designer': 'designer', '디자이너': 'designer', '디자이너님': 'designer',
+  '안영이': 'designer', '영이': 'designer', '영이님': 'designer',
   'Designer': 'designer',
-  # 개발자
-  'developer': 'developer', '개발자': 'developer', '개발자님': 'developer', '리자몽': 'developer',
+  # 개발자 — 김동식
+  'developer': 'developer', '개발자': 'developer', '개발자님': 'developer',
+  '김동식': 'developer', '동식': 'developer', '동식님': 'developer',
   'Developer': 'developer',
-  # QA
-  'qa': 'qa', 'QA': 'qa', '야도란': 'qa',
+  # QA — 한석율
+  'qa': 'qa', 'QA': 'qa',
+  '한석율': 'qa', '석율': 'qa', '석율님': 'qa',
 }
 
 

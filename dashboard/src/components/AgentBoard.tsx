@@ -3,31 +3,31 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent } from '../types'
 
-// 포켓몬 이미지 URL (PokeAPI 공식 아트워크)
-const POKEMON_IMG: Record<string, string> = {
-  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png',
-  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/65.png',
-  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/38.png',
-  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png',
-  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/80.png',
+// 미생 캐릭터 이니셜
+const CHAR_INITIAL: Record<string, string> = {
+  claude: '상', teamlead: '상',
+  planner: '그',
+  designer: '영',
+  developer: '동',
+  qa: '석',
 }
 
-// 포켓몬 이름 + 직급
-const AGENT_INFO: Record<string, { pokemon: string; role: string }> = {
-  claude: { pokemon: '뮤츠', role: '팀장' },
-  planner: { pokemon: '알라카짐', role: '기획자' },
-  designer: { pokemon: '나시', role: '디자이너' },
-  developer: { pokemon: '리자몽', role: '개발자' },
-  qa: { pokemon: '야도란', role: 'QA' },
+// 미생 캐릭터명 + 직급
+const AGENT_INFO: Record<string, { character: string; role: string }> = {
+  claude: { character: '오상식', role: '팀장' },
+  planner: { character: '장그래', role: '기획자' },
+  designer: { character: '안영이', role: '디자이너' },
+  developer: { character: '김동식', role: '개발자' },
+  qa: { character: '한석율', role: 'QA' },
 }
 
-// 포켓몬 배경 그라데이션
+// 캐릭터 배경 그라데이션
 const AGENT_GRADIENT: Record<string, string> = {
-  claude: 'from-purple-500 to-purple-700',
+  claude: 'from-slate-600 to-slate-800',
   planner: 'from-blue-500 to-blue-700',
-  designer: 'from-orange-400 to-pink-500',
-  developer: 'from-orange-500 to-red-600',
-  qa: 'from-yellow-500 to-amber-600',
+  designer: 'from-rose-400 to-pink-600',
+  developer: 'from-emerald-500 to-teal-700',
+  qa: 'from-amber-500 to-orange-600',
 }
 
 // 에이전트별 사용 모델
@@ -96,7 +96,7 @@ export function AgentBoard() {
       <ul className="space-y-1.5" role="list" aria-label="에이전트 목록">
         {agents.map((agent) => {
           const styles = statusStyles(agent.status)
-          const info = AGENT_INFO[agent.agent_id] ?? { pokemon: agent.agent_id, role: '' }
+          const info = AGENT_INFO[agent.agent_id] ?? { character: agent.agent_id, role: '' }
           const gradient = AGENT_GRADIENT[agent.agent_id] ?? 'from-gray-500 to-gray-600'
           const msg = lastMessage(agent.agent_id)
           return (
@@ -105,21 +105,18 @@ export function AgentBoard() {
               className="px-3 py-2 rounded-lg
                 bg-gray-50 dark:bg-gray-800/50
                 border border-gray-200 dark:border-gray-700"
-              aria-label={`${info.pokemon}(${info.role}) — ${styles.label}`}
+              aria-label={`${info.character}(${info.role}) — ${styles.label}`}
             >
               <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0`}>
-                  <img
-                    src={POKEMON_IMG[agent.agent_id]}
-                    alt={info.pokemon}
-                    className="w-7 h-7 object-contain"
-                    loading="lazy"
-                  />
+                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm flex-shrink-0`}>
+                  <span className="text-white text-xs font-bold">
+                    {CHAR_INITIAL[agent.agent_id] || info.character[0]}
+                  </span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                      {info.pokemon}
+                      {info.character}
                     </span>
                     <span className="text-[10px] text-gray-400">({info.role})</span>
                   </div>

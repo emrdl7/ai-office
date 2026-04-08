@@ -3,25 +3,25 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 
-// 포켓몬 아바타
-const POKEMON_IMG: Record<string, string> = {
-  teamlead: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/150.png',
-  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/65.png',
-  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/38.png',
-  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/6.png',
-  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/80.png',
+// 미생 캐릭터 이니셜
+const CHAR_INITIAL: Record<string, string> = {
+  teamlead: '상',
+  planner: '그',
+  designer: '영',
+  developer: '동',
+  qa: '석',
 }
 
-export const AGENT_PROFILE: Record<string, { name: string; pokemon: string; color: string; role: string }> = {
-  teamlead: { name: '팀장', pokemon: '뮤츠', color: 'from-purple-500 to-purple-700', role: '총괄' },
-  planner: { name: '기획자', pokemon: '알라카짐', color: 'from-blue-500 to-blue-700', role: '기획/PM' },
-  designer: { name: '디자이너', pokemon: '나인테일', color: 'from-orange-400 to-pink-500', role: 'UI/UX' },
-  developer: { name: '개발자', pokemon: '리자몽', color: 'from-orange-500 to-red-600', role: '개발' },
-  qa: { name: 'QA', pokemon: '야도란', color: 'from-yellow-500 to-amber-600', role: '검수' },
-  user: { name: '나', pokemon: '', color: 'from-green-500 to-emerald-600', role: '' },
-  system: { name: '시스템', pokemon: '', color: 'from-gray-500 to-gray-600', role: '' },
-  meeting: { name: '회의', pokemon: '', color: 'from-gray-500 to-gray-600', role: '' },
-  orchestrator: { name: '시스템', pokemon: '', color: 'from-gray-500 to-gray-600', role: '' },
+export const AGENT_PROFILE: Record<string, { name: string; character: string; color: string; role: string }> = {
+  teamlead: { name: '팀장', character: '오상식', color: 'from-slate-600 to-slate-800', role: '총괄' },
+  planner: { name: '기획자', character: '장그래', color: 'from-blue-500 to-blue-700', role: '기획/PM' },
+  designer: { name: '디자이너', character: '안영이', color: 'from-rose-400 to-pink-600', role: 'UI/UX' },
+  developer: { name: '개발자', character: '김동식', color: 'from-emerald-500 to-teal-700', role: '개발' },
+  qa: { name: 'QA', character: '한석율', color: 'from-amber-500 to-orange-600', role: '검수' },
+  user: { name: '나', character: '', color: 'from-green-500 to-emerald-600', role: '' },
+  system: { name: '시스템', character: '', color: 'from-gray-500 to-gray-600', role: '' },
+  meeting: { name: '회의', character: '', color: 'from-gray-500 to-gray-600', role: '' },
+  orchestrator: { name: '시스템', character: '', color: 'from-gray-500 to-gray-600', role: '' },
 }
 
 // 상태별 온라인 표시
@@ -74,35 +74,35 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const logs = useStore((s) => s.logs)
 
-  // 에이전트별 상태 코멘트 (캐릭터 성격 반영)
+  // 에이전트별 상태 코멘트 (미생 캐릭터 성격 반영)
   const STATUS_COMMENTS: Record<string, Record<string, string>> = {
     teamlead: {
       idle: '지시 대기 중',
-      working: '상황 판단 중...',
+      working: '상황 판단 중... 자, 정리해보지',
       meeting: '회의 진행 중',
       waiting: '팀원 작업 지켜보는 중',
     },
     planner: {
-      idle: '다음 기획 구상 중',
-      working: '기획안 작성 중... 집중!',
+      idle: '다음 수를 읽는 중',
+      working: '기획안 작성 중... 한 수만 더',
       meeting: '전략 방향 정리 중',
       waiting: '다른 팀원 결과 기다리는 중',
     },
     designer: {
-      idle: '영감 충전 중',
-      working: '디자인 작업 중... 1px도 양보 없다',
+      idle: '레퍼런스 분석 중',
+      working: '디자인 작업 중... 타협 없이',
       meeting: 'UX 관점에서 검토 중',
       waiting: '기획안 검토하면서 대기',
     },
     developer: {
       idle: '코드 리뷰 중',
-      working: '코드 작성 중... 🔥',
+      working: '묵묵히 코드 작성 중...',
       meeting: '기술 스택 검토 중',
       waiting: '디자인 명세 기다리는 중',
     },
     qa: {
       idle: '검수 대기',
-      working: '꼼꼼히 검수 중...',
+      working: '냉철하게 검수 중...',
       meeting: '품질 기준 정리 중',
       waiting: '산출물 도착 기다리는 중',
     },
@@ -203,19 +203,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   {/* 아바타 */}
                   <div className="relative flex-shrink-0">
                     <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile.color}
-                      flex items-center justify-center overflow-hidden`}>
-                      {POKEMON_IMG[agent.agent_id] ? (
-                        <img
-                          src={POKEMON_IMG[agent.agent_id]}
-                          alt={profile.pokemon}
-                          className="w-7 h-7 object-contain scale-[1.6]"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span className="text-white text-xs font-bold">
-                          {profile.name[0]}
-                        </span>
-                      )}
+                      flex items-center justify-center`}>
+                      <span className="text-white text-xs font-bold">
+                        {CHAR_INITIAL[agent.agent_id] || profile.name[0]}
+                      </span>
                     </div>
                     {/* 온라인 상태 표시 */}
                     <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full
@@ -225,7 +216,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   {/* 이름 + 모델 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{profile.pokemon || profile.name}</span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{profile.character || profile.name}</span>
                       <span className="text-[10px] text-gray-500">{profile.role}</span>
                       <span className={`text-[10px] ${statusLabel(agent.status).color}`}>
                         {statusLabel(agent.status).text}

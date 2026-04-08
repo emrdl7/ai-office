@@ -6,13 +6,13 @@ import { AGENT_PROFILE } from './Sidebar'
 import type { Agent, LogEntry, Task, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
-// 포켓몬 아바타 이미지
-const POKEMON_IMG: Record<string, string> = {
-  teamlead: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/150.png',
-  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/65.png',
-  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/38.png',
-  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/6.png',
-  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/80.png',
+// 미생 캐릭터 이니셜
+const CHAR_INITIAL: Record<string, string> = {
+  teamlead: '상',
+  planner: '그',
+  designer: '영',
+  developer: '동',
+  qa: '석',
 }
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
@@ -251,7 +251,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const profile = AGENT_PROFILE[activeChannel]
   const channelTitle = activeChannel === 'all'
     ? '# 팀 채널'
-    : `${profile?.pokemon || profile?.name || activeChannel}`
+    : `${profile?.character || profile?.name || activeChannel}`
 
   return (
     <>
@@ -270,11 +270,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          {activeChannel !== 'all' && POKEMON_IMG[activeChannel] && (
+          {activeChannel !== 'all' && CHAR_INITIAL[activeChannel] && (
             <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile?.color}
-              flex items-center justify-center overflow-hidden`}>
-              <img src={POKEMON_IMG[activeChannel]} alt={profile?.pokemon}
-                className="w-7 h-7 object-contain scale-[1.6]" />
+              flex items-center justify-center`}>
+              <span className="text-white text-xs font-bold">{CHAR_INITIAL[activeChannel]}</span>
             </div>
           )}
           <div>
@@ -327,7 +326,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
               <p className="text-sm">
                 {activeChannel === 'all'
                   ? '팀 채널입니다. 팀원들과 대화하세요.'
-                  : `${profile?.pokemon || profile?.name}에게 메시지를 보내세요.`}
+                  : `${profile?.character || profile?.name}에게 메시지를 보내세요.`}
               </p>
             </div>
           ) : (
@@ -438,7 +437,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             onKeyDown={handleKeyDown}
             placeholder={activeChannel === 'all'
               ? '팀에게 메시지 보내기...'
-              : `${profile?.pokemon || profile?.name}에게 메시지 보내기...`}
+              : `${profile?.character || profile?.name}에게 메시지 보내기...`}
             rows={1}
             className="w-full px-4 pt-3 pb-10 text-sm resize-none bg-transparent
               text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500
@@ -498,7 +497,7 @@ function renderMessages(logs: LogEntry[]) {
   for (let i = 0; i < logs.length; i++) {
     const log = logs[i]
     const profile = AGENT_PROFILE[log.agent_id] ?? {
-      name: log.agent_id, pokemon: log.agent_id, color: 'from-gray-500 to-gray-600', role: '',
+      name: log.agent_id, character: log.agent_id, color: 'from-gray-500 to-gray-600', role: '',
     }
     const time = formatTime(log.timestamp)
     const isNewGroup = log.agent_id !== prevAgent || time !== prevTime
@@ -523,17 +522,16 @@ function renderMessages(logs: LogEntry[]) {
         <div key={log.id ?? i} className="flex gap-2 md:gap-3 py-1.5">
           <div className="flex-shrink-0 mt-0.5">
             <div className={`w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br ${profile.color}
-              flex items-center justify-center overflow-hidden shadow-sm`}>
-              {POKEMON_IMG[log.agent_id]
-                ? <img src={POKEMON_IMG[log.agent_id]} alt={profile.pokemon}
-                    className="w-7 h-7 object-contain scale-[1.6]" loading="lazy" />
-                : <span className="text-white text-xs font-bold">{profile.name[0]}</span>}
+              flex items-center justify-center shadow-sm`}>
+              <span className="text-white text-xs font-bold">
+                {CHAR_INITIAL[log.agent_id] || profile.name[0]}
+              </span>
             </div>
           </div>
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
             <div className="flex items-baseline gap-2 mb-0.5">
               <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                {profile.pokemon || profile.name}</span>
+                {profile.character || profile.name}</span>
               <span className="text-[10px] text-gray-400">{profile.role}</span>
               <span className="text-[10px] text-gray-400">{time}</span>
             </div>
@@ -690,7 +688,7 @@ function WorkingIndicator({ workingAgents }: { workingAgents: Agent[] }) {
 
   const names = workingAgents.map((a) => {
     const p = AGENT_PROFILE[a.agent_id]
-    return p?.pokemon || p?.name || a.agent_id
+    return p?.character || p?.name || a.agent_id
   })
 
   // 서버에서 받은 작업 시작 시간 기반 경과 계산 (새로고침해도 유지)

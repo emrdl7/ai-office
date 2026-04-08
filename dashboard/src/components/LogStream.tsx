@@ -3,26 +3,24 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import type { LogEntry } from '../types'
 
-// 포켓몬 이미지 URL (PokeAPI 공식 아트워크)
-const POKEMON_IMG: Record<string, string> = {
-  claude: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png',
-  planner: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/65.png',
-  designer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/38.png',
-  developer: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png',
-  qa: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/80.png',
-  orchestrator: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png',
-  system: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png',
+// 미생 캐릭터 이니셜
+const CHAR_INITIAL: Record<string, string> = {
+  claude: '상', teamlead: '상',
+  planner: '그',
+  designer: '영',
+  developer: '동',
+  qa: '석',
 }
 
-// 에이전트별 포켓몬 아바타/인격 정보
-const AGENT_PROFILE: Record<string, { name: string; pokemon: string; color: string; role: string; personality: string }> = {
-  claude: { name: '팀장', pokemon: '뮤츠', color: 'from-purple-500 to-purple-700', role: '분석·검수', personality: '냉철한 리더십' },
-  planner: { name: '기획자', pokemon: '알라카짐', color: 'from-blue-500 to-blue-700', role: '태스크 분해', personality: 'IQ 5000 전략가' },
-  designer: { name: '디자이너', pokemon: '나시', color: 'from-orange-400 to-pink-500', role: 'UI/UX 설계', personality: '우아한 미적 감각' },
-  developer: { name: '개발자', pokemon: '리자몽', color: 'from-orange-500 to-red-600', role: '코드 구현', personality: '불태우는 실행력' },
-  qa: { name: 'QA', pokemon: '야도란', color: 'from-yellow-500 to-amber-600', role: '품질 검수', personality: '집요한 꼼꼼함' },
-  orchestrator: { name: '시스템', pokemon: '파이리', color: 'from-gray-500 to-gray-600', role: '', personality: '' },
-  system: { name: '시스템', pokemon: '파이리', color: 'from-gray-500 to-gray-600', role: '', personality: '' },
+// 에이전트별 미생 캐릭터 프로필
+const AGENT_PROFILE: Record<string, { name: string; character: string; color: string; role: string; personality: string }> = {
+  claude: { name: '팀장', character: '오상식', color: 'from-slate-600 to-slate-800', role: '분석·검수', personality: '원칙주의 리더' },
+  planner: { name: '기획자', character: '장그래', color: 'from-blue-500 to-blue-700', role: '태스크 분해', personality: '끈기의 수읽기' },
+  designer: { name: '디자이너', character: '안영이', color: 'from-rose-400 to-pink-600', role: 'UI/UX 설계', personality: '외유내강 프로' },
+  developer: { name: '개발자', character: '김동식', color: 'from-emerald-500 to-teal-700', role: '코드 구현', personality: '묵묵한 실력파' },
+  qa: { name: 'QA', character: '한석율', color: 'from-amber-500 to-orange-600', role: '품질 검수', personality: '냉철한 분석가' },
+  orchestrator: { name: '시스템', character: '시스템', color: 'from-gray-500 to-gray-600', role: '', personality: '' },
+  system: { name: '시스템', character: '시스템', color: 'from-gray-500 to-gray-600', role: '', personality: '' },
 }
 
 // 이벤트 타입별 메시지 스타일
@@ -150,19 +148,16 @@ export function LogStream() {
         elements.push(
           <div key={log.id ?? i} className="flex gap-3 py-1.5 group">
             <div className="flex-shrink-0 mt-0.5">
-              <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${profile.color} flex items-center justify-center shadow-sm overflow-hidden`}>
-                <img
-                  src={POKEMON_IMG[log.agent_id]}
-                  alt={profile.pokemon}
-                  className="w-8 h-8 object-contain"
-                  loading="lazy"
-                />
+              <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${profile.color} flex items-center justify-center shadow-sm`}>
+                <span className="text-white text-sm font-bold">
+                  {CHAR_INITIAL[log.agent_id] || profile.name[0]}
+                </span>
               </div>
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                  {profile.pokemon}
+                  {profile.character}
                 </span>
                 <span className="text-[10px] text-gray-400">
                   ({profile.name})
