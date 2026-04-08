@@ -44,6 +44,16 @@ def save_log(log_dict: dict) -> None:
   c.close()
 
 
+def clear_logs() -> int:
+  '''모든 로그를 삭제하고 삭제된 건수를 반환한다.'''
+  c = _conn()
+  count = c.execute('SELECT COUNT(*) FROM chat_logs').fetchone()[0]
+  c.execute('DELETE FROM chat_logs')
+  c.commit()
+  c.close()
+  return count
+
+
 def load_logs(limit: int = 200) -> list[dict]:
   '''최근 로그를 반환한다.'''
   c = _conn()

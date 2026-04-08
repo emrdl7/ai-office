@@ -603,6 +603,14 @@ async def get_file(task_id: str, file_path: str):
   return {'path': file_path, 'content': content}
 
 
+@app.delete('/api/logs')
+async def clear_logs_api():
+  '''채팅 로그를 모두 삭제한다.'''
+  from db.log_store import clear_logs
+  count = clear_logs()
+  return {'deleted': count}
+
+
 @app.get('/api/logs/history')
 async def get_log_history(request: Request, limit: int = 100):
   '''최근 로그 기록을 반환한다 (DASH-03 새로고침 복구용).
