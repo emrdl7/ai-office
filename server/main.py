@@ -72,6 +72,42 @@ class TaskResponse(BaseModel):
   status: str  # 'accepted'
 
 
+def _build_prev_context(base_task_id: str) -> str:
+  '''이전 작업의 instruction + 모든 단계별 산출물을 수집하여 컨텍스트 문자열로 반환한다.'''
+  if not base_task_id:
+    return ''
+  prev_task = get_task(base_task_id)
+  if not prev_task:
+    return ''
+
+  parts: list[str] = []
+  parts.append(f'[이전 작업 지시]\n{prev_task["instruction"]}')
+
+  # 해당 workspace의 모든 *-result.md 파일을 단계별로 수집
+  task_dir = WORKSPACE_ROOT / base_task_id
+  if task_dir.exists():
+    for md_file in sorted(task_dir.rglob('*result*.md')):
+      # uploads/ 폴더는 제외
+      if 'uploads' in str(md_file):
+        continue
+      try:
+        content = md_file.read_text(encoding='utf-8', errors='replace').strip()
+        if len(content) < 50:
+          continue
+        # 단계명 추출: task_id/단계명/파일명
+        rel = md_file.relative_to(task_dir)
+        stage = rel.parts[0] if len(rel.parts) > 1 else 'final'
+        parts.append(f'[이전 산출물: {stage}]\n{content}')
+      except Exception:
+        continue
+
+  combined = '\n\n'.join(parts)
+  # 총 6000자 한도
+  if len(combined) > 6000:
+    combined = combined[:6000] + '\n...(이하 생략)'
+  return f'\n[이전 작업 참고]\n{combined}'
+
+
 @app.get('/health')
 async def health():
   '''서버 상태 확인'''
@@ -87,6 +123,7 @@ async def chat(
   message: str = Form(default=''),
   to: str = Form(default='all'),
   files: list[UploadFile] = File(default=[]),
+  base_task_id: str = Form(default=''),
 ):
   '''메신저 채팅 — 팀 채널 또는 특정 팀원에게 메시지 전송 (파일 첨부 지원)'''
   from harness.file_reader import read_file
@@ -124,12 +161,18 @@ async def chat(
     agent_id='user',
     event_type='message',
     message=message,
-    data={'to': to, 'attachments': file_names, 'files': file_urls},
+    data={'to': to, 'attachments': file_names, 'files': file_urls,
+          **(({'base_task_id': base_task_id}) if base_task_id else {})},
   ))
+
+  # 이전 작업 컨텍스트 수집
+  prev_context = _build_prev_context(base_task_id)
 
   full_message = message
   if attachments_text:
     full_message = f'{message}\n\n[첨부된 참조 자료]\n{attachments_text}'
+  if prev_context:
+    full_message = f'{full_message}\n{prev_context}'
 
   async def _run():
     try:
@@ -213,17 +256,8 @@ async def create_task(
   file_names = ','.join(f.filename or '' for f in files if f.filename)
   save_task(task_id, instruction, 'idle', attachments=file_names)
 
-  # 이전 작업 컨텍스트 수집 — 해당 태스크의 최종 산출물만 포함
-  prev_context = ''
-  if base_task_id:
-    prev_task = get_task(base_task_id)
-    if prev_task:
-      prev_context = f'\n[이전 작업 지시]\n{prev_task["instruction"]}\n'
-      task_final = WORKSPACE_ROOT / base_task_id / 'final' / 'result.md'
-      if task_final.exists() and task_final.stat().st_size > 100:
-        prev_context += f'\n[이전 최종 산출물]\n{task_final.read_text(errors="replace")}\n'
-      if prev_context.strip():
-        prev_context = f'\n[이전 작업 참고]\n{prev_context}'
+  # 이전 작업 컨텍스트 수집 — 공통 함수로 모든 단계별 산출물 포함
+  prev_context = _build_prev_context(base_task_id)
 
   # 첨부파일 저장 + 내용 파싱
   attachments_text = ''
