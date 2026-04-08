@@ -464,7 +464,11 @@ class Office:
 
     prompt = analysis or user_input
     # 이전 대화 요약 + 참조 자료를 컨텍스트로 전달
-    ctx_parts = []
+    ctx_parts = [
+      '[작업 모드] 이 작업은 당신 혼자 수행하는 단독 작업입니다. '
+      '다른 팀원이 참여하지 않았으므로 "각 팀 결과를 취합" 등 허위 표현을 절대 쓰지 마세요. '
+      '당신이 직접 분석/작성한 내용만 사실 그대로 서술하세요.'
+    ]
     if self._context_summary:
       ctx_parts.append(f'[이전 대화 요약]\n{self._context_summary}')
     if reference_context:
