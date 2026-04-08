@@ -453,6 +453,15 @@ class Office:
     profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
     await self._emit('teamlead', f'알겠습니다. {profile_names.get(agent_name, agent_name)}에게 맡기겠습니다.', 'response')
 
+    # 담당자 착수 메시지
+    start_messages = {
+      'planner': '네, 기획 관점에서 분석 시작하겠습니다.',
+      'designer': '네, 디자인 관점에서 검토 시작하겠습니다.',
+      'developer': '네, 확인하겠습니다.',
+      'qa': '네, 검수 기준 잡고 시작하겠습니다.',
+    }
+    await self._emit(agent_name, start_messages.get(agent_name, '네, 시작하겠습니다.'), 'response')
+
     prompt = analysis or user_input
     # 이전 대화 요약 + 참조 자료를 컨텍스트로 전달
     ctx_parts = []
@@ -831,6 +840,9 @@ class Office:
         f'{format_instruction}\n'
         f'중요: 반드시 모든 섹션을 끝까지 완성하세요. 절대 중간에 끊지 마세요.'
       )
+
+      # 담당자 착수 메시지
+      await self._emit(agent_name, f'{phase_name} 작업 착수합니다.', 'response')
 
       content = await agent.handle(phase_prompt)
 
