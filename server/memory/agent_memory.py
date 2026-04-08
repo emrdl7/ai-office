@@ -43,6 +43,7 @@ class AgentMemory:
 
     # 상세 경험 최대 보관 수 (D-07 재량)
     MAX_DETAIL_COUNT = 20
+    MAX_SUMMARY_LENGTH = 500
 
     def __init__(
         self,
@@ -152,10 +153,11 @@ class AgentMemory:
             f'주요태그={top_tags}'
         )
 
-        # 기존 summary에 누적
+        # 기존 summary에 누적 (최대 길이 제한으로 최신 유지)
         existing_summary = data.get('summary', '')
         if existing_summary:
-            data['summary'] = existing_summary + '\n' + summary_text
+            combined = existing_summary + '\n' + summary_text
+            data['summary'] = combined[-self.MAX_SUMMARY_LENGTH:]
         else:
             data['summary'] = summary_text
 

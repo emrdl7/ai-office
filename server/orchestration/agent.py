@@ -4,13 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from runners.groq_runner import GroqRunner, MODEL as GROQ_DEFAULT_MODEL
+from runners.groq_runner import GroqRunner
 from runners.gemini_runner import run_gemini
-
-# 에이전트별 Groq 모델 매핑 (기본: llama-3.3-70b)
-AGENT_GROQ_MODEL: dict[str, str] = {
-  'planner': 'meta-llama/llama-4-scout-17b-16e-instruct',
-}
 from runners.claude_runner import run_claude_isolated
 from log_bus.event_bus import EventBus, LogEvent
 from memory.agent_memory import AgentMemory, MemoryRecord
@@ -70,13 +65,14 @@ class Agent:
         + '\n'.join(past_warnings)
       )
 
-    # Layer 3: 이전 경험 주입
-    experiences = self.memory.load_relevant(task_type=self.name, limit=5)
+    # Layer 3: 이전 경험 주입 (limit 3, feedback 길이 제한)
+    experiences = self.memory.load_relevant(task_type=self.name, limit=3)
     if experiences:
       lines = []
       for exp in experiences:
         status_str = '성공' if exp.success else '실패'
-        lines.append(f'- [{status_str}] {exp.feedback} (태그: {", ".join(exp.tags)})')
+        feedback_short = exp.feedback[:80]
+        lines.append(f'- [{status_str}] {feedback_short}')
       prompt += '\n\n## 이전 경험\n' + '\n'.join(lines)
 
     # 학습된 품질 규칙 주입 (자가개선 프레임워크)
@@ -125,23 +121,13 @@ class Agent:
     # 입력 중... 표시
     await self._emit('', 'typing')
 
-    # developer, planner → Gemini CLI
-    # designer → Claude Sonnet
-    # qa → Claude Haiku
-    if self.name in ('developer', 'planner'):
-      try:
-        result = await run_gemini(prompt=full_prompt, system=system)
-      except Exception:
-        # Gemini rate limit 시 Sonnet으로 fallback
-        result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt)
-    elif self.name == 'designer':
-      result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt)
-    elif self.name == 'qa':
-      result = await run_claude_isolated(f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt, model='claude-haiku-4-5-20251001')
-    elif self.groq_runner:
-      result = await self.groq_runner.generate(full_prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
-    else:
-      raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')
+    # 팀장 제외 전 구성원: Sonnet(업무) + Gemini fallback
+    try:
+      result = await run_claude_isolated(
+        f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt
+      )
+    except Exception:
+      result = await run_gemini(prompt=full_prompt, system=system)
 
     # 마크다운 코드 펜스 제거
     content = result.strip()
@@ -204,18 +190,13 @@ class Agent:
 
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
-    if self.name in ('developer', 'planner'):
-      try:
-        return await run_gemini(prompt=prompt, system=system)
-      except Exception:
-        return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt)
-    if self.name == 'designer':
-      return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt)
-    if self.name == 'qa':
-      return await run_claude_isolated(f'{system}\n\n---\n\n{prompt}' if system else prompt, model='claude-haiku-4-5-20251001')
-    if self.groq_runner:
-      return await self.groq_runner.generate(prompt, system=system, model=AGENT_GROQ_MODEL.get(self.name, ''))
-    raise RuntimeError(f'{self.name}: 사용 가능한 러너가 없습니다')
+    # 팀장 제외 전 구성원: Sonnet(업무) + Gemini fallback
+    try:
+      return await run_claude_isolated(
+        f'{system}\n\n---\n\n{prompt}' if system else prompt
+      )
+    except Exception:
+      return await run_gemini(prompt=prompt, system=system)
 
   def record_experience(self, task_id: str, success: bool, feedback: str, tags: list[str] | None = None) -> None:
     '''경험을 메모리에 기록한다.'''

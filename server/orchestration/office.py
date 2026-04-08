@@ -84,6 +84,7 @@ class Office:
     self._active_project_title: str = ''
     self._base_task_id: str = ''  # 🔗 이전 작업 참조 (main.py에서 설정)
     self._user_mid_feedback: list[str] = []  # 작업 중 사용자 피드백 축적
+    self._phase_feedback: list[dict] = []   # 팀원 리액션/인수인계 피드백
 
     # Groq 러너 (디자이너, QA용)
     self.groq_runner = GroqRunner()
@@ -214,10 +215,10 @@ class Office:
     '''
     from orchestration.meeting import MENTION_MAP
     agent_model_map = {
-      'planner': 'Gemini CLI',
-      'designer': 'Claude Sonnet',
-      'developer': 'Gemini CLI',
-      'qa': 'Claude Haiku 4.5',
+      'planner': 'Claude Sonnet(업무) / Haiku(대화)',
+      'designer': 'Claude Sonnet(업무) / Haiku(대화)',
+      'developer': 'Claude Sonnet(업무) / Haiku(대화)',
+      'qa': 'Claude Sonnet(업무) / Haiku(대화)',
     }
 
     # ── 라운드 1: 각 에이전트 순차 발언 (이전 발언 컨텍스트 포함) ──
@@ -534,14 +535,8 @@ class Office:
     profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
     await self._emit('teamlead', f'알겠습니다. {profile_names.get(agent_name, agent_name)}에게 맡기겠습니다.', 'response')
 
-    # 담당자 착수 메시지
-    start_messages = {
-      'planner': '네, 기획 관점에서 분석 시작하겠습니다.',
-      'designer': '네, 디자인 관점에서 검토 시작하겠습니다.',
-      'developer': '네, 확인하겠습니다.',
-      'qa': '네, 검수 기준 잡고 시작하겠습니다.',
-    }
-    await self._emit(agent_name, start_messages.get(agent_name, '네, 시작하겠습니다.'), 'response')
+    # 담당자 업무 수령 확인
+    await self._task_acknowledgment(agent_name, analysis or user_input)
 
     prompt = analysis or user_input
     # 사용자 중간 피드백이 있으면 프롬프트에 주입
@@ -833,6 +828,9 @@ class Office:
       project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
       PHASES = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
 
+    # 팀원 피드백 초기화
+    self._phase_feedback = []
+
     # 프로젝트 메트릭 수집 시작
     _project_started_at = datetime.now(timezone.utc).isoformat()
     _phase_metrics: list[PhaseMetrics] = []
@@ -840,6 +838,8 @@ class Office:
     all_results: dict[str, str] = {}
     phase_artifacts: list[str] = []
     prev_phase_result = ''
+    _prev_group = ''
+    _prev_agent = ''
 
     for phase in PHASES:
       phase_name = phase['name']
@@ -971,8 +971,22 @@ class Office:
         f'중요: 반드시 모든 섹션을 끝까지 완성하세요. 절대 중간에 끊지 마세요.'
       )
 
+      # 팀원 피드백 주입
+      if self._phase_feedback:
+        feedback_lines = [f'- {fb["from"]}: {fb["content"][:100]}' for fb in self._phase_feedback[-5:]]
+        phase_prompt += f'\n[팀원 피드백 — 가능한 반영할 것]\n' + '\n'.join(feedback_lines) + '\n\n'
+
+      # 그룹 전환 시 인수인계 코멘트
+      if _prev_group and current_group != _prev_group and _prev_agent != agent_name:
+        await self._handoff_comment(_prev_agent, agent_name, phase_name)
+      _prev_group = current_group
+      _prev_agent = agent_name
+
       # 담당자 포부 한마디 + 착수 메시지
       await self._phase_intro(agent_name, phase_name)
+
+      # 업무 수령 확인
+      await self._task_acknowledgment(agent_name, phase_name)
 
       # 사용자 중간 피드백이 있으면 프롬프트에 주입
       if self._user_mid_feedback:
@@ -1374,11 +1388,9 @@ class Office:
     )
 
     try:
-      from runners.gemini_runner import run_gemini
-      raw = await run_gemini(prompt=prompt, system=system)
-    except Exception:
-      # Gemini rate limit 시 Sonnet으로 fallback
       raw = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}')
+    except Exception:
+      raw = await run_gemini(prompt=prompt, system=system)
     from runners.json_parser import parse_json
     result = parse_json(raw)
 
@@ -1539,103 +1551,126 @@ class Office:
     return None
 
   async def _team_reaction(self, worker: str, phase_name: str) -> None:
-    '''소단계 완료 후 다른 팀원이 가볍게 리액션한다 (오피스 분위기).'''
+    '''소단계 완료 후 다른 팀원이 AI 생성 리액션을 한다 (오피스 분위기).'''
     import random
 
-    # 리액션 풀 — 에이전트별 성격 반영 (대량 + 상황별)
-    REACTIONS: dict[str, list[str]] = {
-      'teamlead': [
-        '좋습니다 👍', '잘 진행되고 있네요', '확인했습니다', 'ㅎㅎ 수고했어요',
-        '깔끔하네요 ✨', '이 속도면 괜찮겠는데요', '방향 잘 잡혔습니다',
-        '한 단계 완료! 다음도 부탁합니다', '기대 이상이네요', '멋지게 나왔네요 👏',
-        '팀워크 좋습니다', '이러다 칼퇴하는 거 아닙니까 ㅎㅎ', '완벽합니다',
-        '프로의 냄새가 나는군요', '착착 진행되니까 보기 좋네요',
-      ],
-      'planner': [
-        '기획 의도 잘 반영됐네요', '이 방향 좋습니다 👏', '다음 단계도 기대됩니다',
-        'ㅎㅎ 빠르네요', '📋 체크리스트 확인 완료', '사용자 관점에서 딱이에요',
-        '요구사항 대비 잘 맞아떨어지네요', 'IA 구조와 일관성 좋습니다',
-        '이 흐름이면 사용자 동선 문제없을 듯', '벤치마킹 결과를 잘 녹였네요',
-        '기획서에 이거 반영해둘게요 📝', '전환율 올라갈 듯 ㅎㅎ',
-        '과업지시서 요구사항 충족!', '구조가 탄탄하네요', '논리적이라 좋습니다',
-      ],
-      'designer': [
-        '디자인적으로 괜찮아 보여요', '레이아웃 확인했습니다 🎨', '컬러 밸런스 좋네요',
-        '간격 체크할게요', '🖌️ 디테일 살펴볼게요', '비주얼 완성도 높네요',
-        '여백 처리가 센스 있어요', '타이포 위계가 잘 잡혔네요',
-        'ㅎㅎ 이거 실제로 보면 예쁠 듯', '접근성도 고려됐네요 👍',
-        'UI 패턴이 익숙해서 사용자 학습 비용 낮겠네요', '그리드 시스템 깔끔!',
-        '모바일에서도 잘 나올 것 같아요 📱', '브랜드 톤 잘 살렸습니다',
-        'CTA 배치 좋아요, 눈에 잘 띄네요',
-      ],
-      'developer': [
-        '구현 가능합니다 💪', '기술적으로 문제없어요', '이 구조면 개발 편하겠네요',
-        'ㅎㅎ 코드 짜기 좋은 명세', '🔥 바로 착수할게요', '컴포넌트 분리하기 좋겠네요',
-        '시맨틱 마크업으로 갈게요', '반응형 구현 문제없어 보입니다',
-        'Next.js로 하면 더 좋을 듯 ㅎㅎ', 'API 연동도 깔끔하게 되겠네요',
-        '성능 최적화도 같이 챙길게요 ⚡', '이거 빌드하면 진짜 멋지겠다',
-        '코드 리뷰 기대됩니다', 'SEO도 같이 잡아볼게요', '라이트하우스 100점 가능?',
-      ],
-      'qa': [
-        '검수 준비 중... 👀', '꼼꼼히 볼게요', '기준 대비 확인하겠습니다',
-        '품질 체크 ✅', '요구사항 매칭 중...', '이상 없어 보이는데 한번 더 볼게요',
-        '빠짐없이 다 들어갔네요', '테스트 시나리오 만들어볼게요',
-        'ㅎㅎ 할 게 없으면 좋겠지만... 찾아볼게요', '크로스 브라우징도 체크할게요',
-        '접근성 검수도 포함합니다', '엣지 케이스 한번 살펴볼게요',
-      ],
-    }
-
-    # 잡담/이모지 풀
-    MEMES = [
-      '☕ 커피 한 잔 하면서 다음 단계 준비~', '🎵 작업 BGM 틀어놓고~',
-      '💡 아이디어 떠올랐는데 나중에 공유할게요', '🍕 야근 안 해도 되겠죠...?',
-      '🚀 순항 중!', '😎 이 페이스면 일찍 끝나겠는데요', '🎯 목표 달성까지 화이팅',
-      '🙌 팀워크 최고', '✌️ 오늘 컨디션 좋네요', '🍜 점심 뭐 먹죠?',
-      '🏃 스프린트 완주까지 조금만 더!', '🎪 이 프로젝트 끝나면 회식 각?',
-      '🌟 오늘 MVP는 누구?', '📚 참고 자료 공유해둘게요', '🔋 충전 완료!',
-      '🎨 이거 포트폴리오에 넣어야겠다 ㅎㅎ', '💻 코딩하기 좋은 날씨네요',
-      '🤔 잠깐 생각 좀...', '🎉 한 고비 넘겼다!', '☕ 아아 한 잔 더...',
-    ]
-
-    # 중복 방지 — 최근 사용한 리액션 추적
-    if not hasattr(self, '_recent_reactions'):
-      self._recent_reactions: list[str] = []
+    profile_names = {'teamlead': '오상식 팀장', 'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
 
     # 작업자 외 팀원 중 1~2명이 리액션
     others = [n for n in ('teamlead', 'planner', 'designer', 'developer', 'qa') if n != worker]
     reactors = random.sample(others, min(random.choice([1, 1, 2]), len(others)))
 
+    first_reaction_text = ''
     for reactor in reactors:
-      # 30% 확률로 Haiku 기반 문맥 리액션 사용
-      if random.random() < 0.3:
-        ctx_msg = await self._contextual_reaction(reactor, phase_name, worker)
-        if ctx_msg:
-          self._recent_reactions.append(ctx_msg)
-          if len(self._recent_reactions) > 30:
-            self._recent_reactions = self._recent_reactions[-15:]
-          await self._emit(reactor, ctx_msg, 'response')
-          continue
+      try:
+        prompt = (
+          f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
+          f'{profile_names.get(worker, worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
+          f'동료로서 리액션 한마디 해주세요.\n'
+          f'업무 관점에서 전문적 의견이 있으면 포함하세요.\n'
+          f'20자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.\n'
+          f'예: "구조 잘 잡혔네요 👍", "접근성도 체크해볼게요 🔍"'
+        )
+        response = await run_claude_isolated(
+          prompt,
+          model='claude-haiku-4-5-20251001',
+          timeout=15.0,
+        )
+        text = response.strip().split('\n')[0][:30]
+        if text:
+          await self._emit(reactor, text, 'response')
+          if not first_reaction_text:
+            first_reaction_text = text
+          # 업무 관련 피드백 수집
+          if any(kw in text for kw in ('체크', '확인', '검토', '반영', '수정', '추가', '고려', '필요', '개선')):
+            self._phase_feedback.append({
+              'from': profile_names.get(reactor, reactor),
+              'phase': phase_name,
+              'content': text,
+            })
+      except Exception:
+        pass
 
-      pool = REACTIONS.get(reactor, ['👍'])
-      # 최근 사용하지 않은 것 중에서 선택
-      available = [r for r in pool if r not in self._recent_reactions]
-      if not available:
-        self._recent_reactions = []  # 풀 소진 시 리셋
-        available = pool
-      msg = random.choice(available)
-      self._recent_reactions.append(msg)
-      if len(self._recent_reactions) > 30:
-        self._recent_reactions = self._recent_reactions[-15:]
-      await self._emit(reactor, msg, 'response')
-
-    # 30% 확률로 누군가 잡담/이모지 공유
+    # 30% 확률로 AI 생성 잡담
     if random.random() < 0.3:
       meme_sender = random.choice(others)
-      available_memes = [m for m in MEMES if m not in self._recent_reactions]
-      if available_memes:
-        meme = random.choice(available_memes)
-        self._recent_reactions.append(meme)
-        await self._emit(meme_sender, meme, 'response')
+      try:
+        response = await run_claude_isolated(
+          f'당신은 {profile_names.get(meme_sender, meme_sender)}입니다.\n'
+          f'팀이 "{phase_name}" 작업을 진행 중입니다.\n'
+          f'동료들에게 가볍게 잡담 한마디 해주세요 (커피, 날씨, 야근, 회식 등).\n'
+          f'15자 이내, 이모지 1개, 메신저 톤. 마크다운 금지.',
+          model='claude-haiku-4-5-20251001',
+          timeout=15.0,
+        )
+        meme = response.strip().split('\n')[0][:25]
+        if meme:
+          await self._emit(meme_sender, meme, 'response')
+      except Exception:
+        pass
+
+    # 대화 체인: 첫 리액터 리액션 후 30% 확률로 다른 에이전트가 응답
+    if first_reaction_text and random.random() < 0.3:
+      chain_candidates = [n for n in others if n != reactors[0]]
+      if chain_candidates:
+        chain_responder = random.choice(chain_candidates)
+        try:
+          response = await run_claude_isolated(
+            f'당신은 {profile_names.get(chain_responder, chain_responder)}입니다.\n'
+            f'동료 {profile_names.get(reactors[0], reactors[0])}이(가) "{first_reaction_text}"라고 했습니다.\n'
+            f'이에 대해 가볍게 한마디 응답하세요. 15자 이내, 메신저 톤. 마크다운 금지.',
+            model='claude-haiku-4-5-20251001',
+            timeout=15.0,
+          )
+          chain_text = response.strip().split('\n')[0][:25]
+          if chain_text:
+            await self._emit(chain_responder, chain_text, 'response')
+        except Exception:
+          pass
+
+  async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None:
+    '''그룹 전환 시 이전 담당자가 다음 담당자에게 인수인계 코멘트를 남긴다.'''
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    from_name = profile_names.get(from_agent, from_agent)
+    to_name = profile_names.get(to_agent, to_agent)
+    try:
+      response = await run_claude_isolated(
+        f'당신은 {from_name}입니다.\n'
+        f'다음 단계 "{phase_name}"을(를) {to_name}이(가) 담당합니다.\n'
+        f'전문가로서 인수인계 시 주의사항이나 팁을 한마디 전달하세요.\n'
+        f'"@{to_name} [팁/주의사항]" 형태로. 40자 이내, 메신저 톤. 마크다운 금지.',
+        model='claude-haiku-4-5-20251001',
+        timeout=15.0,
+      )
+      text = response.strip().split('\n')[0][:60]
+      if text:
+        await self._emit(from_agent, text, 'response')
+        # 인수인계 코멘트도 피드백에 수집
+        self._phase_feedback.append({
+          'from': from_name,
+          'phase': phase_name,
+          'content': text,
+        })
+    except Exception:
+      pass
+
+  async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None:
+    '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.'''
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    try:
+      response = await run_claude_isolated(
+        f'당신은 {profile_names.get(agent_name, agent_name)}입니다.\n'
+        f'팀장이 "{phase_name}" 작업을 지시했습니다.\n'
+        f'"네, 확인했습니다. [간단한 계획 한 줄]" 형태로 수령 확인하세요.\n'
+        f'30자 이내, 메신저 톤. 마크다운 금지.',
+        model='claude-haiku-4-5-20251001',
+        timeout=15.0,
+      )
+      text = response.strip().split('\n')[0][:50]
+      if text:
+        await self._emit(agent_name, text, 'response')
+    except Exception:
+      await self._emit(agent_name, '네, 확인했습니다. 시작하겠습니다.', 'response')
 
   async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
     '''Haiku로 해당 캐릭터가 할 법한 문맥 리액션 한마디 생성 (15자 이내).'''
@@ -1933,11 +1968,9 @@ class Office:
     )
 
     try:
-      from runners.gemini_runner import run_gemini
-      raw = await run_gemini(prompt=prompt, system=system)
-    except Exception:
-      # Gemini rate limit 시 Sonnet으로 fallback
       raw = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}')
+    except Exception:
+      raw = await run_gemini(prompt=prompt, system=system)
     content = raw.strip()
     if content.startswith('```'):
       lines = content.split('\n')
