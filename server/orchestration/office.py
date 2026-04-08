@@ -567,19 +567,39 @@ class Office:
         self.workspace.write_artifact(file_path, result)
       except Exception:
         pass
-      await self._emit('teamlead', '보완 확인했습니다. 최종 완료합니다.', 'response')
+
+    # 팀장 최종 보고 — 사용자에게 결과 요약 + 산출물 링크
+    report_prompt = (
+      f'[사용자 원본 요구사항]\n{prompt[:500]}\n\n'
+      f'[완성된 산출물 요약]\n{result[:3000]}\n\n'
+      f'팀장으로서 사용자에게 최종 보고하세요.\n'
+      f'- 누가 어떤 작업을 했는지 (이 경우 {profile_names.get(agent_name, agent_name)}이 단독 수행)\n'
+      f'- 핵심 결과 요약 (3~5줄)\n'
+      f'- 추가 검토가 필요한 사항이 있으면 언급\n'
+      f'간결하게 보고하세요.'
+    )
+    teamlead_agent = self.agents.get('teamlead')
+    try:
+      report = await teamlead_agent.handle(report_prompt) if teamlead_agent else ''
+    except Exception:
+      report = ''
+
+    if report:
+      await self.event_bus.publish(LogEvent(
+        agent_id='teamlead',
+        event_type='response',
+        message=report,
+        data={'artifacts': saved_paths},
+      ))
     else:
-      await self._emit('teamlead', '검수 통과. 잘 마무리됐습니다.', 'response')
-
-    # 결과를 채팅에 공유
-    summary = '\n'.join(result.strip().split('\n')[:8])
-
-    await self.event_bus.publish(LogEvent(
-      agent_id=agent_name,
-      event_type='response',
-      message=summary,
-      data={'artifacts': saved_paths},
-    ))
+      # 보고 생성 실패 시 fallback
+      summary = '\n'.join(result.strip().split('\n')[:8])
+      await self.event_bus.publish(LogEvent(
+        agent_id='teamlead',
+        event_type='response',
+        message=f'{profile_names.get(agent_name, agent_name)} 작업 완료했습니다.\n\n{summary}',
+        data={'artifacts': saved_paths},
+      ))
 
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
