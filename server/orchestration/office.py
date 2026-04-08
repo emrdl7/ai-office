@@ -574,8 +574,9 @@ class Office:
     if self._context_summary:
       briefing = f'{analysis}\n\n[이전 논의 요약]\n{self._context_summary}'
 
-    # 프로젝트 유형 분류
-    project_type = await classify_project_type(user_input)
+    # 프로젝트 유형 분류 — 대화 맥락 포함
+    type_context = self._context_summary or analysis
+    project_type = await classify_project_type(user_input, context=type_context[:500])
     phases = get_phases(project_type)
     participants = get_meeting_participants(project_type)
 

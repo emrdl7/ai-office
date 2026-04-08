@@ -181,30 +181,34 @@ _PROJECT_TYPE_PROMPT = '''\
 사용자의 프로젝트 요청을 아래 6가지 유형 중 하나로 분류하세요.
 
 **유형 판별 기준:**
-- web_development: 사이트, 앱, 웹페이지, 랜딩페이지, 퍼블리싱, HTML/CSS 관련
-- market_research: 시장조사, 경쟁사 분석, 벤치마킹, 트렌드, 산업 분석 관련
+- web_development: 사이트/앱/웹페이지를 **새로 만들거나 리뉴얼**하는 경우에만
+- market_research: 시장조사, 경쟁사 분석, 벤치마킹, 트렌드, 산업 분석, 리스크 분석, 심층 분석 관련
 - content_creation: 블로그, SNS, 보도자료, 카피, 콘텐츠, 글쓰기 관련
 - data_analysis: 데이터, 통계, 분석, 대시보드, KPI, 지표 관련
 - business_planning: 사업계획, IR, 투자, 전략, 제안서, BM 관련
 - general: 위 어디에도 해당하지 않는 경우
 
+**주의:** "분석해줘", "검토해줘", "리스크 도출", "수정 요청" 등은 web_development가 아니라 market_research 또는 general이다.
+웹사이트가 주제여도 **분석/검토/조사**가 목적이면 market_research로 분류하라.
+
 반드시 첫 줄에 아래 형식으로만 답하세요 (다른 텍스트 없이):
 [TYPE:유형명]
 
-사용자 요청:
+{context}사용자 요청:
 "{user_input}"
 '''
 
 _VALID_TYPES = {t.value for t in ProjectType}
 
 
-async def classify_project_type(user_input: str) -> ProjectType:
+async def classify_project_type(user_input: str, context: str = '') -> ProjectType:
   '''사용자 입력에서 프로젝트 유형을 LLM으로 분류한다.
 
   Haiku 모델을 사용하여 빠르고 저비용으로 분류한다.
   파싱 실패 시 GENERAL로 폴백한다.
   '''
-  prompt = _PROJECT_TYPE_PROMPT.replace('{user_input}', user_input[:1000])
+  context_section = f'[대화 맥락]\n{context}\n\n' if context else ''
+  prompt = _PROJECT_TYPE_PROMPT.replace('{user_input}', user_input[:1000]).replace('{context}', context_section)
 
   try:
     response = await run_claude_isolated(
