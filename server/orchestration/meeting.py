@@ -35,6 +35,9 @@ MENTION_MAP: dict[str, str] = {
   # QA — 한석율
   'qa': 'qa', 'QA': 'qa',
   '한석율': 'qa', '석율': 'qa', '석율님': 'qa',
+  # 사용자(마스터)
+  '마스터': 'user', '사장': 'user', '사장님': 'user', 'master': 'user',
+  'Master': 'user', '보스': 'user', '대표': 'user', '대표님': 'user',
 }
 
 

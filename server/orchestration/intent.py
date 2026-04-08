@@ -88,7 +88,13 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
     f'간단한 대화나 질문이면 CONVERSATION, '
     f'한 명이 처리할 수 있는 새 작업이면 QUICK_TASK, '
     f'여러 팀원이 필요한 새 프로젝트면 PROJECT, '
-    f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT입니다.'
+    f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT입니다.\n\n'
+    f'**중요: 일상 대화 속 숨겨진 업무 지시를 놓치지 마라**\n'
+    f'- "아 맞다 그 사이트 배너 좀 바꿔야 하는데" → QUICK_TASK\n'
+    f'- "점심 먹으면서 생각했는데 랜딩페이지 리뉴얼 해야 할 것 같아" → PROJECT\n'
+    f'- "그거 조사 좀 해봐" → QUICK_TASK\n'
+    f'- "~해줘/해주세요/만들어/수정해/바꿔/분석해/검토해" 등 동사가 있으면 업무 가능성이 높다\n'
+    f'- 반대로, 감탄/인사/질문/잡담만 있으면 CONVERSATION이다'
   )
 
   # 명시적 팀 참여 키워드 → 무조건 PROJECT (LLM 판단보다 우선)

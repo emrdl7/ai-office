@@ -82,6 +82,7 @@ class Office:
     self._active_project_id: str | None = None
     self._active_project_title: str = ''
     self._base_task_id: str = ''  # 🔗 이전 작업 참조 (main.py에서 설정)
+    self._user_mid_feedback: list[str] = []  # 작업 중 사용자 피드백 축적
 
     # Groq 러너 (디자이너, QA용)
     self.groq_runner = GroqRunner()
@@ -204,12 +205,13 @@ class Office:
       pass
 
   async def _team_chat(self, user_input: str) -> None:
-    '''팀 채널 대화 — 각 팀원이 자기가 반응할지 스스로 판단한다.
+    '''팀 채널 대화 — 멀티라운드. 팀원끼리 서로 반응하고 대화한다.
 
-    필요 없으면 [PASS]로 넘기고, 할 말이 있을 때만 응답한다.
-    아무도 안 답하면 랜덤 한 명이 대표로 답변한다.
+    라운드 1: 각 에이전트가 발언 (이전 팀원 발언을 컨텍스트로 전달)
+    라운드 2: @멘션 기반 후속 대화 (최대 2개)
+    업무 감지: [TASK_DETECTED:설명] 출력 시 팀장이 업무 흐름으로 전환
     '''
-    from runners.groq_runner import MODEL as GROQ_MODEL
+    from orchestration.meeting import MENTION_MAP
     agent_model_map = {
       'planner': 'Gemini CLI',
       'designer': 'Claude Sonnet',
@@ -217,26 +219,41 @@ class Office:
       'qa': 'Claude Haiku 4.5',
     }
 
+    # ── 라운드 1: 각 에이전트 순차 발언 (이전 발언 컨텍스트 포함) ──
+    team_conversation: list[tuple[str, str]] = []  # (name, content)
     responded: list[str] = []
+
     for name in ('planner', 'designer', 'developer', 'qa'):
       agent = self.agents.get(name)
       if not agent:
         continue
       system = agent._build_system_prompt(task_hint=user_input)
       my_model = agent_model_map.get(name, '알 수 없음')
+
+      # 이전 팀원 발언 컨텍스트 구성
+      prev_talk = ''
+      if team_conversation:
+        prev_lines = [f'[{n}] {c}' for n, c in team_conversation]
+        prev_talk = f'\n\n[팀원 대화]\n' + '\n'.join(prev_lines) + '\n'
+
       prompt = (
         f'팀 채팅방에서 사용자(팀장의 상사)가 이렇게 말했습니다:\n\n'
         f'"{user_input}"\n\n'
         f'당신은 {name}입니다. 당신이 사용하는 AI 모델/러너는 "{my_model}"입니다.\n'
-        f'모델이나 자기소개를 물어보면 이 정보를 기반으로 답하세요.\n\n'
+        f'모델이나 자기소개를 물어보면 이 정보를 기반으로 답하세요.\n'
+        f'{prev_talk}\n'
         f'이 메시지에 당신이 반응해야 하는지 판단하세요.\n\n'
         f'판단 기준:\n'
         f'- 당신의 전문 영역과 관련이 있는가?\n'
         f'- 당신을 지목했거나 당신이 대답해야 자연스러운가?\n'
+        f'- 다른 팀원이 한 말에 동의/반응/농담으로 이어갈 수 있는가?\n'
         f'- 전체 인사(안녕, 수고 등)라도 모두가 답할 필요는 없다\n\n'
         f'중요: 이건 업무 지시가 아니라 팀 채팅방의 일상 대화입니다.\n'
         f'- "제 역할이 아닙니다" 같은 업무 거부 반응을 하지 마세요.\n'
         f'- 잡담이면 동료처럼 자연스럽게 대화하거나 [PASS]하세요.\n'
+        f'- 다른 팀원의 말에 자연스럽게 반응해도 좋습니다. 농담, 이모지, 리액션 자유.\n'
+        f'- 다른 팀원에게 @멘션으로 말을 걸 수도 있습니다. (예: @안영이 맞아요 ㅎㅎ)\n'
+        f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n'
         f'- 할 말이 없으면 반드시 [PASS]만 출력하세요.\n\n'
         f'반응할 필요가 없으면 [PASS] 이 한 단어만 출력하세요. 이유를 설명하지 마세요.\n'
         f'반응할 필요가 있으면 짧게 1~2문장으로 답하세요 (메신저 대화처럼, 마크다운 금지).'
@@ -248,13 +265,72 @@ class Office:
           timeout=30.0,
         )
         content = response.strip()
-        # [PASS]면 넘기기
         if '[PASS]' in content.upper() or content.strip().upper() == 'PASS':
           continue
+        # 업무 감지 체크
+        if '[TASK_DETECTED:' in content:
+          import re
+          task_match = re.search(r'\[TASK_DETECTED:(.+?)\]', content)
+          if task_match:
+            detected_task = task_match.group(1).strip()
+            # 업무 감지 부분 제거 후 대화 부분만 표시
+            chat_part = re.sub(r'\[TASK_DETECTED:.+?\]', '', content).strip()
+            if chat_part:
+              await self._emit(name, chat_part, 'response')
+              team_conversation.append((name, chat_part))
+              responded.append(name)
+            # 팀장이 업무 캐치 안내
+            await self._emit('teamlead', f'지금 말씀 중에 업무 요청이 있는 것 같네요. "{detected_task}" — 확인해보겠습니다.', 'response')
+            # 업무로 재분류
+            from orchestration.intent import classify_intent
+            re_intent = await classify_intent(detected_task)
+            if re_intent.intent != IntentType.CONVERSATION:
+              # 남은 팀원 발언 건너뛰고 업무 흐름으로 전환
+              return
+            continue
         responded.append(name)
+        team_conversation.append((name, content))
         await self._emit(name, content, 'response')
       except Exception:
         pass
+
+    # ── 라운드 2: @멘션 기반 후속 대화 (최대 2명) ──
+    import re
+    mention_responses = 0
+    for speaker_name, speech in team_conversation:
+      if mention_responses >= 2:
+        break
+      mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', speech)
+      for raw_mention in mentions:
+        if mention_responses >= 2:
+          break
+        target_id = MENTION_MAP.get(raw_mention)
+        if not target_id:
+          stripped = raw_mention.rstrip('님')
+          target_id = MENTION_MAP.get(stripped)
+        if not target_id or target_id == speaker_name or target_id == 'user' or target_id == 'teamlead':
+          continue
+        target_agent = self.agents.get(target_id)
+        if not target_agent:
+          continue
+        system = target_agent._build_system_prompt(task_hint=user_input)
+        followup_prompt = (
+          f'팀 채팅방에서 {speaker_name}이(가) 당신(@{target_id})을 멘션하며 이렇게 말했습니다:\n\n'
+          f'"{speech}"\n\n'
+          f'짧게 1~2문장으로 응답하세요 (메신저 대화처럼, 마크다운 금지).'
+        )
+        try:
+          resp = await run_claude_isolated(
+            f'{system}\n\n---\n\n{followup_prompt}',
+            model='claude-haiku-4-5-20251001',
+            timeout=30.0,
+          )
+          resp_text = resp.strip()
+          if resp_text and '[PASS]' not in resp_text.upper():
+            await self._emit(target_id, resp_text, 'response')
+            mention_responses += 1
+        except Exception:
+          pass
 
     # 아무도 안 답하면 랜덤 한 명이 답변 (왕따 방지)
     if not responded:
@@ -467,6 +543,10 @@ class Office:
     await self._emit(agent_name, start_messages.get(agent_name, '네, 시작하겠습니다.'), 'response')
 
     prompt = analysis or user_input
+    # 사용자 중간 피드백이 있으면 프롬프트에 주입
+    if self._user_mid_feedback:
+      feedback_text = '\n'.join(f'- {fb}' for fb in self._user_mid_feedback)
+      prompt += f'\n\n[사용자 피드백 — 반드시 반영할 것]\n{feedback_text}'
     # 이전 대화 요약 + 참조 자료를 컨텍스트로 전달
     role_scope = {
       'planner': '기획/전략/구조 설계',
@@ -487,6 +567,9 @@ class Office:
     if reference_context:
       ctx_parts.append(reference_context)
     result = await agent.handle(prompt, context='\n\n'.join(ctx_parts))
+
+    # 다른 팀원의 전문 의견 (40% 확률)
+    await self._work_commentary(agent_name, 'quick-task', result)
 
     # QA 검수 (최대 2회 재작업)
     qa_agent = self.agents.get('qa')
@@ -616,6 +699,7 @@ class Office:
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
     self._work_started_at = ''
+    self._user_mid_feedback = []  # 피드백 초기화
     return {
       'state': self._state.value,
       'response': result,
@@ -886,8 +970,13 @@ class Office:
         f'중요: 반드시 모든 섹션을 끝까지 완성하세요. 절대 중간에 끊지 마세요.'
       )
 
-      # 담당자 착수 메시지
-      await self._emit(agent_name, f'{phase_name} 작업 착수합니다.', 'response')
+      # 담당자 포부 한마디 + 착수 메시지
+      await self._phase_intro(agent_name, phase_name)
+
+      # 사용자 중간 피드백이 있으면 프롬프트에 주입
+      if self._user_mid_feedback:
+        feedback_text = '\n'.join(f'- {fb}' for fb in self._user_mid_feedback)
+        phase_prompt += f'\n\n[사용자 중간 피드백 — 반드시 반영할 것]\n{feedback_text}\n'
 
       content = await agent.handle(phase_prompt)
 
@@ -964,6 +1053,9 @@ class Office:
         data={'artifacts': [artifact_path]},
       ))
 
+      # 다른 팀원의 전문 의견 (40% 확률)
+      await self._work_commentary(agent_name, phase_name, content)
+
       # 다른 팀원 리액션 (가벼운 반응으로 실제 오피스 느낌)
       await self._team_reaction(agent_name, phase_name)
 
@@ -980,8 +1072,34 @@ class Office:
             'response': '작업 중단',
             'artifacts': phase_artifacts,
           }
+        elif user_directive.get('action') == 'mention_feedback':
+          # @멘션 피드백 → 해당 에이전트가 짧게 응답 + 작업 컨텍스트에 반영
+          from orchestration.meeting import MENTION_MAP
+          feedback_msg = user_directive['message']
+          for raw_mention in user_directive.get('mentions', []):
+            target_id = MENTION_MAP.get(raw_mention) or MENTION_MAP.get(raw_mention.rstrip('님'))
+            if not target_id or target_id == 'user':
+              continue
+            if target_id == 'teamlead':
+              await self._emit('teamlead', '네, 확인했습니다. 반영하겠습니다.', 'response')
+            else:
+              mention_agent = self.agents.get(target_id)
+              if mention_agent:
+                try:
+                  resp = await run_claude_isolated(
+                    f'{mention_agent._build_system_prompt()}\n\n---\n\n'
+                    f'작업 중인데 사용자가 이렇게 말했습니다:\n"{feedback_msg}"\n'
+                    f'짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
+                    model='claude-haiku-4-5-20251001', timeout=15.0,
+                  )
+                  await self._emit(target_id, resp.strip(), 'response')
+                except Exception:
+                  await self._emit(target_id, '네, 확인했습니다.', 'response')
+          self._user_mid_feedback.append(feedback_msg)
+          await self._emit('teamlead', f'말씀하신 내용 반영하여 다음 단계 진행하겠습니다.', 'response')
         elif user_directive.get('message'):
           # 사용자 지시를 다음 소단계 프롬프트에 반영
+          self._user_mid_feedback.append(user_directive['message'])
           meeting_summary += f'\n\n[사용자 중간 지시]\n{user_directive["message"]}'
           await self._emit('teamlead', f'말씀하신 내용 반영하여 다음 단계 진행하겠습니다.', 'response')
 
@@ -1157,6 +1275,7 @@ class Office:
     self._work_started_at = ''
     self._pending_project = None
     self._interrupted_instruction = None
+    self._user_mid_feedback = []  # 피드백 초기화
 
     # 현재 task를 completed로 마킹 (서버 재시작 시 "이어하겠습니다" 방지)
     from db.task_store import update_task_state as _update_task
@@ -1404,6 +1523,12 @@ class Office:
       if any(kw in msg.lower() for kw in stop_keywords):
         return {'action': 'stop'}
 
+      # @멘션 감지 → 해당 에이전트가 짧게 응답
+      import re as _re_directive
+      mentions = _re_directive.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
+      if mentions:
+        return {'action': 'mention_feedback', 'message': msg, 'mentions': mentions}
+
       # 새로운 지시 (작업 관련 메시지)
       # "진행해", "ㅇㅇ" 등 단순 확인은 무시
       skip_keywords = ('진행', 'ㅇㅇ', '응', '네', 'ok', 'yes', '확인')
@@ -1480,6 +1605,16 @@ class Office:
     reactors = random.sample(others, min(random.choice([1, 1, 2]), len(others)))
 
     for reactor in reactors:
+      # 30% 확률로 Haiku 기반 문맥 리액션 사용
+      if random.random() < 0.3:
+        ctx_msg = await self._contextual_reaction(reactor, phase_name, worker)
+        if ctx_msg:
+          self._recent_reactions.append(ctx_msg)
+          if len(self._recent_reactions) > 30:
+            self._recent_reactions = self._recent_reactions[-15:]
+          await self._emit(reactor, ctx_msg, 'response')
+          continue
+
       pool = REACTIONS.get(reactor, ['👍'])
       # 최근 사용하지 않은 것 중에서 선택
       available = [r for r in pool if r not in self._recent_reactions]
@@ -1500,6 +1635,159 @@ class Office:
         meme = random.choice(available_memes)
         self._recent_reactions.append(meme)
         await self._emit(meme_sender, meme, 'response')
+
+  async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
+    '''Haiku로 해당 캐릭터가 할 법한 문맥 리액션 한마디 생성 (15자 이내).'''
+    profile_names = {'teamlead': '오상식 팀장', 'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    try:
+      response = await run_claude_isolated(
+        f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
+        f'{worker}이(가) "{phase_name}" 작업을 완료했습니다.\n'
+        f'동료로서 가볍게 리액션 한마디 해주세요.\n'
+        f'15자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.\n'
+        f'예: "레이아웃 깔끔하네요 👍", "구현 문제없어 보여요 💪"',
+        model='claude-haiku-4-5-20251001',
+        timeout=15.0,
+      )
+      text = response.strip().split('\n')[0][:30]
+      return text if text else ''
+    except Exception:
+      return ''
+
+  async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None:
+    '''작업 완료 직후 관련 팀원 1명이 결과물 기반 전문 의견을 짧게 끼어든다.
+
+    발동 확률: 40%. 매번 나오면 지루하므로 확률적으로 동작한다.
+    '''
+    import random
+    if random.random() > 0.4:
+      return
+
+    # 작업자와 다른 관련 팀원 선정
+    commentary_map = {
+      'planner': ['designer', 'developer'],
+      'designer': ['developer', 'planner'],
+      'developer': ['designer', 'qa'],
+      'qa': ['developer', 'planner'],
+    }
+    candidates = commentary_map.get(worker, ['planner'])
+    commenter = random.choice(candidates)
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+
+    try:
+      response = await run_claude_isolated(
+        f'당신은 {profile_names.get(commenter, commenter)}입니다.\n'
+        f'{profile_names.get(worker, worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
+        f'결과물 미리보기:\n{result_preview[:300]}\n\n'
+        f'전문가 관점에서 짧게 한마디 의견을 주세요 (30자 이내, 메신저 톤, 마크다운 금지).\n'
+        f'예: "이 레이아웃 구현 문제없어 보입니다 👍", "접근성도 잘 잡혔네요 ✅"',
+        model='claude-haiku-4-5-20251001',
+        timeout=15.0,
+      )
+      text = response.strip().split('\n')[0][:50]
+      if text:
+        await self._emit(commenter, text, 'response')
+    except Exception:
+      pass
+
+  async def _phase_intro(self, agent_name: str, phase_name: str) -> None:
+    '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.'''
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    fallback_intros = {
+      'planner': '기획 구조 잡아볼게요 📋',
+      'designer': '디자인 방향 잡겠습니다 🎨',
+      'developer': '코드 작성 들어갑니다 💻',
+      'qa': '검수 기준 세우겠습니다 🔍',
+    }
+    try:
+      response = await run_claude_isolated(
+        f'당신은 {profile_names.get(agent_name, agent_name)}입니다.\n'
+        f'"{phase_name}" 작업을 시작합니다.\n'
+        f'동료들에게 작업 포부를 한마디 해주세요 (20자 이내, 메신저 톤, 이모지 1개, 마크다운 금지).\n'
+        f'예: "사용자 동선 꼼꼼히 잡아볼게요 🎯", "반응형까지 깔끔하게 가겠습니다 💪"',
+        model='claude-haiku-4-5-20251001',
+        timeout=10.0,
+      )
+      text = response.strip().split('\n')[0][:30]
+      if text:
+        await self._emit(agent_name, text, 'response')
+        return
+    except Exception:
+      pass
+    # 폴백
+    await self._emit(agent_name, fallback_intros.get(agent_name, '시작하겠습니다 🚀'), 'response')
+
+  async def handle_mid_work_input(self, user_input: str) -> None:
+    '''작업 진행 중 사용자가 보낸 메시지를 처리한다.
+
+    3가지 경우를 판단:
+    1. @멘션 피드백 → 해당 에이전트가 즉시 응답
+    2. 일반 대화/의견 → 팀장이 확인 + 작업 컨텍스트에 반영
+    3. 중단/방향전환 → 기존 _check_user_directive 로직
+    '''
+    import re
+    from orchestration.meeting import MENTION_MAP
+
+    msg = user_input.strip()
+
+    # 중단 요청 확인
+    stop_keywords = ('중단', '멈춰', '그만', '스탑', 'stop', '취소')
+    if any(kw in msg.lower() for kw in stop_keywords):
+      await self._emit('teamlead', '작업을 중단하겠습니다.', 'response')
+      self._state = OfficeState.IDLE
+      self._active_agent = ''
+      self._work_started_at = ''
+      return
+
+    # @멘션 파싱
+    mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율', 'teamlead': '오상식 팀장'}
+
+    if mentions:
+      for raw_mention in mentions:
+        target_id = MENTION_MAP.get(raw_mention)
+        if not target_id:
+          stripped = raw_mention.rstrip('님')
+          target_id = MENTION_MAP.get(stripped)
+        if not target_id or target_id == 'user':
+          continue
+
+        if target_id == 'teamlead':
+          # 팀장에게 멘션 → Claude가 응답
+          try:
+            response = await run_claude_isolated(
+              f'당신은 팀장 오상식입니다. 팀이 작업 중인데 사용자가 이렇게 말했습니다:\n'
+              f'"{msg}"\n짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
+              model='claude-haiku-4-5-20251001',
+              timeout=15.0,
+            )
+            await self._emit('teamlead', response.strip(), 'response')
+          except Exception:
+            await self._emit('teamlead', '네, 확인했습니다. 반영하겠습니다.', 'response')
+        else:
+          # 특정 에이전트에게 멘션
+          agent = self.agents.get(target_id)
+          if agent:
+            system = agent._build_system_prompt()
+            try:
+              response = await run_claude_isolated(
+                f'{system}\n\n---\n\n'
+                f'작업 중인데 사용자(상사)가 당신에게 이렇게 말했습니다:\n'
+                f'"{msg}"\n짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
+                model='claude-haiku-4-5-20251001',
+                timeout=15.0,
+              )
+              await self._emit(target_id, response.strip(), 'response')
+            except Exception:
+              await self._emit(target_id, '네, 확인했습니다. 반영하겠습니다.', 'response')
+
+      # 피드백을 작업 컨텍스트에 축적
+      self._user_mid_feedback.append(msg)
+      return
+
+    # @멘션 없는 일반 의견/피드백
+    self._user_mid_feedback.append(msg)
+    await self._emit('teamlead', f'말씀 확인했습니다. 작업에 반영하겠습니다.', 'response')
 
   async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
     '''이전 그룹의 산출물에서 다음 단계에 필요한 참조 가이드를 생성한다.

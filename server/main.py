@@ -197,6 +197,11 @@ async def chat(
         office._base_task_id = base_task_id
 
       if to == 'all':
+        # 작업 중 사용자 메시지 → 중간 참여 처리
+        if office._state not in (OfficeState.IDLE, OfficeState.COMPLETED, OfficeState.ESCALATED):
+          await office.handle_mid_work_input(full_message)
+          update_task_state(task_id, 'completed')
+          return
         # 팀 채널 → 팀장 판단 흐름
         result = await office.receive(full_message)
       else:
