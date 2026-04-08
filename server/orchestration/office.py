@@ -396,6 +396,50 @@ class Office:
       ctx_parts.append(reference_context)
     result = await agent.handle(prompt, context='\n\n'.join(ctx_parts))
 
+    # QA 검수 (최대 2회 재작업)
+    qa_agent = self.agents.get('qa')
+    if qa_agent and agent_name != 'qa':
+      for attempt in range(2):
+        self._state = OfficeState.QA_REVIEW
+        self._active_agent = 'qa'
+        await self._emit('qa', '산출물 검수를 시작합니다.', 'response')
+
+        qa_prompt = (
+          f'[원본 요구사항]\n{prompt}\n\n'
+          f'[작업 결과물]\n{result}\n\n'
+          f'위 요구사항 대비 결과물을 검수하세요.'
+        )
+        qa_result = await qa_agent.handle(qa_prompt)
+
+        # JSON 파싱으로 합격/불합격 판단
+        passed = True
+        failure_reason = ''
+        try:
+          import re
+          json_match = re.search(r'\{[^{}]*\}', qa_result, re.DOTALL)
+          if json_match:
+            qa_json = json.loads(json_match.group())
+            if qa_json.get('status') == 'fail':
+              passed = False
+              failure_reason = qa_json.get('failure_reason', 'QA 불합격')
+        except (json.JSONDecodeError, AttributeError):
+          if '불합격' in qa_result or 'fail' in qa_result.lower():
+            passed = False
+            failure_reason = qa_result[:300]
+
+        if passed:
+          await self._emit('qa', '검수 통과 ✅', 'response')
+          break
+        else:
+          await self._emit('qa', f'검수 불합격: {failure_reason[:200]}', 'response')
+          if attempt < 1:
+            # 재작업 요청
+            self._state = OfficeState.WORKING
+            self._active_agent = agent_name
+            await self._emit('teamlead', f'{profile_names.get(agent_name, agent_name)}, 보완 부탁합니다.', 'response')
+            revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{failure_reason}\n\n[이전 결과물]\n{result}'
+            result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
+
     # 결과를 채팅에 공유
     summary = '\n'.join(result.strip().split('\n')[:8])
     saved_paths = []
