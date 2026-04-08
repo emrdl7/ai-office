@@ -12,6 +12,7 @@ interface DashboardState {
   selectedTaskId: string
   activeChannel: ChannelId
   showArtifacts: boolean
+  searchQuery: string
   setAgents: (agents: Agent[]) => void
   setTasks: (tasks: Task[]) => void
   addLog: (log: LogEntry) => void
@@ -20,6 +21,8 @@ interface DashboardState {
   setSelectedTaskId: (id: string) => void
   setActiveChannel: (channel: ChannelId) => void
   toggleArtifacts: () => void
+  setSearchQuery: (query: string) => void
+  updateLogReactions: (logId: string, reactions: Record<string, string[]>) => void
 }
 
 const savedTheme = localStorage.getItem('ai-office-theme') as 'dark' | 'light' | null
@@ -34,6 +37,7 @@ export const useStore = create<DashboardState>((set) => ({
   selectedTaskId: '',
   activeChannel: 'all',
   showArtifacts: false,
+  searchQuery: '',
 
   setAgents: (agents) => set({ agents }),
   setTasks: (tasks) => set({ tasks }),
@@ -62,4 +66,11 @@ export const useStore = create<DashboardState>((set) => ({
   setSelectedTaskId: (selectedTaskId) => set({ selectedTaskId }),
   setActiveChannel: (activeChannel) => set({ activeChannel }),
   toggleArtifacts: () => set((state) => ({ showArtifacts: !state.showArtifacts })),
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  updateLogReactions: (logId, reactions) =>
+    set((state) => ({
+      logs: state.logs.map((l) =>
+        l.id === logId ? { ...l, data: { ...l.data, reactions } } : l
+      ),
+    })),
 }))

@@ -650,6 +650,27 @@ async def get_log_history(request: Request, limit: int = 100):
   return load_logs(limit=limit)
 
 
+@app.post('/api/logs/{log_id}/react')
+async def react_to_log(log_id: str, request: Request):
+  '''메시지에 이모지 리액션을 추가/토글한다.'''
+  from db.log_store import update_log_reactions
+  body = await request.json()
+  emoji = body.get('emoji', '👍')
+  user = body.get('user', 'user')
+  reactions = update_log_reactions(log_id, emoji, user)
+  if reactions is None:
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=404, content={'error': 'log not found'})
+  # 리액션 변경을 WebSocket으로 브로드캐스트
+  await event_bus.publish(LogEvent(
+    agent_id='system',
+    event_type='reaction_update',
+    message='',
+    data={'log_id': log_id, 'reactions': reactions},
+  ))
+  return {'reactions': reactions}
+
+
 @app.websocket('/ws/logs')
 async def log_stream(ws: WebSocket):
   '''실시간 에이전트 로그 스트림 (저장은 EventBus에서 처리)'''

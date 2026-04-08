@@ -24,11 +24,13 @@ class IntentResult:
     target_agent: str | None = None,
     direct_response: str | None = None,
     analysis: str = '',
+    chat_subtype: str = 'casual',
   ):
     self.intent = intent
     self.target_agent = target_agent      # QUICK_TASK일 때 담당 에이전트
     self.direct_response = direct_response  # CONVERSATION일 때 직접 답변
     self.analysis = analysis              # PROJECT일 때 분석 내용
+    self.chat_subtype = chat_subtype      # CONVERSATION일 때 'greeting'|'question'|'casual'
 
 
 def _build_system_info() -> str:
@@ -76,7 +78,9 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
     f'"{user_input}"\n\n'
     f'당신은 팀장입니다. 이 입력을 보고 어떻게 대응할지 판단하세요.\n\n'
     f'반드시 아래 형식으로 첫 줄에 판단을 적고, 그 아래에 내용을 적으세요:\n\n'
-    f'[CONVERSATION]\n직접 답변 내용\n\n'
+    f'[CONVERSATION:서브유형]\n직접 답변 내용\n\n'
+    f'서브유형은 greeting(인사/출퇴근), question(질문), casual(잡담/기타) 중 하나.\n'
+    f'예: [CONVERSATION:greeting], [CONVERSATION:question], [CONVERSATION:casual]\n\n'
     f'또는:\n\n'
     f'[QUICK_TASK:에이전트명]\n작업 지시 내용\n\n'
     f'또는:\n\n'
@@ -125,10 +129,17 @@ def _parse_intent_response(response: str) -> IntentResult:
   header = lines[0].strip()
   body = lines[1].strip() if len(lines) > 1 else ''
 
-  if header.startswith('[CONVERSATION]'):
+  if header.startswith('[CONVERSATION'):
+    # [CONVERSATION:greeting] 형태에서 서브유형 추출
+    chat_subtype = 'casual'
+    if ':' in header:
+      sub_part = header.split(':')[1].strip().rstrip(']').lower()
+      if sub_part in ('greeting', 'question', 'casual'):
+        chat_subtype = sub_part
     return IntentResult(
       intent=IntentType.CONVERSATION,
       direct_response=body or text,
+      chat_subtype=chat_subtype,
     )
 
   if header.startswith('[QUICK_TASK'):

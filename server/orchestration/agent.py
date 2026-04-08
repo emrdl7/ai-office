@@ -38,6 +38,7 @@ class Agent:
     self.memory = AgentMemory(name, memory_root=memory_root)
     self._system_prompt = self._load_prompt()
     self._conversation_history: list[dict[str, str]] = []
+    self._restore_conversation_history()
 
   def _load_prompt(self) -> str:
     '''agents/{name}.md에서 시스템 프롬프트를 로드한다.'''
@@ -45,6 +46,23 @@ class Agent:
     if path.exists():
       return path.read_text(encoding='utf-8')
     return ''
+
+  def _restore_conversation_history(self) -> None:
+    '''DB에서 최근 DM 대화 이력을 복원한다 (서버 재시작 시 연속성 유지).'''
+    try:
+      from db.log_store import load_logs
+      recent = load_logs(limit=50)
+      for log in recent:
+        if log['event_type'] not in ('message', 'response'):
+          continue
+        data = log.get('data') or {}
+        if log['agent_id'] == 'user' and data.get('to') == self.name:
+          self._conversation_history.append({'role': 'user', 'content': log['message']})
+        elif log['agent_id'] == self.name and data.get('dm'):
+          self._conversation_history.append({'role': 'assistant', 'content': log['message']})
+      self._conversation_history = self._conversation_history[-10:]
+    except Exception:
+      pass
 
   def _build_system_prompt(self, task_hint: str = '') -> str:
     '''시스템 프롬프트 + 전문 지식 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
@@ -170,7 +188,8 @@ class Agent:
       f'- 당신의 전문 영역({self.name}) 관점에서 의견을 말하세요\n'
       f'- 다른 팀원에게 질문이 있으면 "@에이전트명 질문내용" 형태로 적으세요\n'
       f'- 동의하지 않는 부분이 있으면 근거와 함께 반박하세요\n'
-      f'- 짧고 핵심적으로 발언하세요 (200자 이내)\n'
+      f'- 핵심적으로 발언하세요 (300~500자)\n'
+      f'- 다른 팀원 의견에 동의/반박할 때는 근거를 짧게 제시하세요\n'
     )
 
     await self._emit('', 'typing')

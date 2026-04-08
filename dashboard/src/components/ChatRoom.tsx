@@ -96,8 +96,10 @@ async function fetchAgents(): Promise<Agent[]> {
   return res.json()
 }
 
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '👀']
+
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
-  const { logs, addLog, setLogs, activeChannel } = useStore()
+  const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery, updateLogReactions } = useStore()
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
@@ -152,6 +154,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     ws.onmessage = (event) => {
       try {
         const log = JSON.parse(event.data) as LogEntry
+        if (log.event_type === 'reaction_update') {
+          const { log_id, reactions } = log.data ?? {}
+          if (log_id && reactions) updateLogReactions(log_id, reactions)
+          return
+        }
         if (log.event_type === 'project_update') {
           const title = log.message.replace(/^📂\s*(새 프로젝트|프로젝트 이어가기):\s*/, '')
           if (title) setActiveProject({ id: log.agent_id, title })
@@ -266,7 +273,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
-  const channelLogs = filterLogs(logs, activeChannel)
+  const [showSearch, setShowSearch] = useState(false)
+
+  const channelLogs = filterLogs(logs, activeChannel).filter(
+    (log) => !searchQuery || log.message.toLowerCase().includes(searchQuery.toLowerCase())
+  )
   const profile = AGENT_PROFILE[activeChannel]
   const channelTitle = activeChannel === 'all'
     ? '# 팀 채널'
@@ -305,6 +316,18 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery('') }}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer
+              ${showSearch ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+            aria-label="검색"
+            title="대화 검색"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+          <button
             onClick={() => setLogs([])}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
@@ -341,6 +364,23 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
           <span>📂</span>
           <span className="font-medium">{activeProject.title}</span>
+        </div>
+      )}
+
+      {/* 검색 바 */}
+      {showSearch && (
+        <div className="px-4 py-2 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="대화 검색..."
+            className="w-full px-3 py-1.5 text-sm rounded-lg
+              bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+              focus:outline-none focus:ring-2 focus:ring-blue-500
+              text-gray-800 dark:text-gray-200 placeholder-gray-400"
+            autoFocus
+          />
         </div>
       )}
 
@@ -523,6 +563,7 @@ function renderMessages(logs: LogEntry[]) {
   const elements: React.ReactNode[] = []
   let prevAgent = ''
   let prevTime = ''
+  let prevDate = ''
 
   for (let i = 0; i < logs.length; i++) {
     const log = logs[i]
@@ -535,6 +576,21 @@ function renderMessages(logs: LogEntry[]) {
     // 시스템/내부 이벤트 — 숨김
     if (isSystemEvent(log)) {
       continue
+    }
+
+    // 날짜 구분선
+    const currentDate = new Date(log.timestamp).toLocaleDateString('ko-KR', {
+      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+    })
+    if (currentDate !== prevDate) {
+      elements.push(
+        <div key={`date-${currentDate}`} className="flex items-center gap-3 py-4">
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+          <span className="text-xs text-gray-400 whitespace-nowrap">{currentDate}</span>
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+        </div>
+      )
+      prevDate = currentDate
     }
 
     // 사용자 메시지 (오른쪽)
@@ -664,12 +720,30 @@ function UserMessage({ log, time }: { log: LogEntry; time: string }) {
 
 // 에이전트 메시지 버블
 function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean }) {
+  const [showReactions, setShowReactions] = useState(false)
+  const { updateLogReactions } = useStore()
   const content = log.message.replace(/^\[.*?\]\s*/, '')
   const artifactPaths = (log.data?.artifacts as string[]) ?? []
   const needsInput = !!log.data?.needs_input
+  const reactions = (log.data?.reactions as Record<string, string[]>) ?? {}
+
+  async function handleReact(emoji: string) {
+    try {
+      const res = await fetch(`/api/logs/${log.id}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji, user: 'user' }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        updateLogReactions(log.id, data.reactions)
+      }
+    } catch { /* 무시 */ }
+    setShowReactions(false)
+  }
 
   return (
-    <div>
+    <div className="group relative">
       <div className={`px-3 md:px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed
         ${needsInput
           ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 shadow-sm'
@@ -692,6 +766,48 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
           <span className="text-gray-700 dark:text-gray-300">{linkify(content)}</span>
         )}
       </div>
+
+      {/* 리액션 버튼 — 호버 시 표시 */}
+      <button
+        onClick={() => setShowReactions(!showReactions)}
+        className="absolute -top-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity
+          p-1 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+          shadow-sm cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
+
+      {/* 리액션 팔레트 */}
+      {showReactions && (
+        <div className="absolute -top-8 right-0 flex gap-1 p-1 rounded-lg
+          bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg z-10">
+          {REACTION_EMOJIS.map((emoji) => (
+            <button key={emoji} onClick={() => handleReact(emoji)}
+              className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100
+                dark:hover:bg-gray-700 cursor-pointer text-sm transition-colors">
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 리액션 뱃지 */}
+      {Object.keys(reactions).length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {Object.entries(reactions).map(([emoji, users]) => (
+            <button key={emoji} onClick={() => handleReact(emoji)}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs
+                bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600
+                hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <span>{emoji}</span>
+              <span className="text-gray-500 dark:text-gray-400">{users.length}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 산출물 파일 카드 */}
       {artifactPaths.length > 0 && (

@@ -206,20 +206,85 @@ class Office:
     except Exception:
       pass
 
-  async def _team_chat(self, user_input: str) -> None:
+  async def _team_chat(self, user_input: str, chat_subtype: str = 'casual') -> None:
     '''팀 채널 대화 — 멀티라운드. 팀원끼리 서로 반응하고 대화한다.
 
     라운드 1: 각 에이전트가 발언 (이전 팀원 발언을 컨텍스트로 전달)
     라운드 2: @멘션 기반 후속 대화 (최대 2개)
     업무 감지: [TASK_DETECTED:설명] 출력 시 팀장이 업무 흐름으로 전환
+
+    chat_subtype: 'greeting'(인사) | 'question'(질문) | 'casual'(잡담)
     '''
+    import random
     from orchestration.meeting import MENTION_MAP
+
+    # greeting: 랜덤 1명만 짧은 한마디
+    if chat_subtype == 'greeting':
+      profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+      responder = random.choice(['planner', 'designer', 'developer', 'qa'])
+      try:
+        response = await run_claude_isolated(
+          f'당신은 {profile_names[responder]}입니다.\n'
+          f'팀장이 사용자에게 인사했습니다. 당신도 가볍게 한마디 하세요.\n'
+          f'10자 이내, 이모지 1개. 메신저 톤. 마크다운 금지.\n'
+          f'예: "좋은 아침이에요 ☀️", "화이팅입니다 💪"',
+          model='claude-haiku-4-5-20251001',
+          timeout=15.0,
+        )
+        text = response.strip().split('\n')[0][:20]
+        if text:
+          await self._emit(responder, text, 'response')
+      except Exception:
+        pass
+      return
+
+    # question: 관련 에이전트 1명만 답변 (나머지 PASS)
+    if chat_subtype == 'question':
+      for name in ('planner', 'designer', 'developer', 'qa'):
+        agent = self.agents.get(name)
+        if not agent:
+          continue
+        system = agent._build_system_prompt(task_hint=user_input)
+        prompt = (
+          f'팀 채팅방에서 사용자가 질문했습니다:\n\n"{user_input}"\n\n'
+          f'당신은 {name}입니다. 이 질문이 당신의 전문 영역과 관련이 있으면 답변하세요.\n'
+          f'관련 없으면 [PASS]만 출력하세요.\n'
+          f'답변은 2~3문장으로 짧게. 메신저 톤. 마크다운 금지.'
+        )
+        try:
+          resp = await run_claude_isolated(
+            f'{system}\n\n---\n\n{prompt}',
+            model='claude-haiku-4-5-20251001',
+            timeout=30.0,
+          )
+          content = resp.strip()
+          if content and '[PASS]' not in content.upper():
+            await self._emit(name, content, 'response')
+            break  # 1명만 답변
+        except Exception:
+          pass
+      return
     agent_model_map = {
       'planner': 'Claude Sonnet(업무) / Haiku(대화)',
       'designer': 'Claude Sonnet(업무) / Haiku(대화)',
       'developer': 'Claude Sonnet(업무) / Haiku(대화)',
       'qa': 'Claude Sonnet(업무) / Haiku(대화)',
     }
+
+    # 최근 대화 컨텍스트 로드
+    recent_context = ''
+    try:
+      from db.log_store import load_logs
+      recent = load_logs(limit=6)
+      ctx_lines = [
+        f'[{l["agent_id"]}] {l["message"][:100]}'
+        for l in recent
+        if l['event_type'] in ('message', 'response') and l['agent_id'] != 'system'
+      ]
+      if ctx_lines:
+        recent_context = '\n'.join(ctx_lines)
+    except Exception:
+      pass
 
     # ── 라운드 1: 각 에이전트 순차 발언 (이전 발언 컨텍스트 포함) ──
     team_conversation: list[tuple[str, str]] = []  # (name, content)
@@ -238,9 +303,12 @@ class Office:
         prev_lines = [f'[{n}] {c}' for n, c in team_conversation]
         prev_talk = f'\n\n[팀원 대화]\n' + '\n'.join(prev_lines) + '\n'
 
+      recent_section = f'\n[최근 대화]\n{recent_context}\n' if recent_context else ''
+
       prompt = (
-        f'팀 채팅방에서 사용자(팀장의 상사)가 이렇게 말했습니다:\n\n'
-        f'"{user_input}"\n\n'
+        f'팀 채팅방에서 대화가 이어지고 있습니다.\n\n'
+        f'{recent_section}'
+        f'[새 메시지 - 사용자]\n{user_input}\n\n'
         f'당신은 {name}입니다. 당신이 사용하는 AI 모델/러너는 "{my_model}"입니다.\n'
         f'모델이나 자기소개를 물어보면 이 정보를 기반으로 답하세요.\n'
         f'{prev_talk}\n'
@@ -248,12 +316,10 @@ class Office:
         f'판단 기준:\n'
         f'- 당신의 전문 영역과 관련이 있는가?\n'
         f'- 당신을 지목했거나 당신이 대답해야 자연스러운가?\n'
-        f'- 다른 팀원이 한 말에 동의/반응/농담으로 이어갈 수 있는가?\n'
-        f'- 전체 인사(안녕, 수고 등)라도 모두가 답할 필요는 없다\n\n'
+        f'- 다른 팀원이 한 말에 동의/반응/농담으로 이어갈 수 있는가?\n\n'
         f'중요: 이건 업무 지시가 아니라 팀 채팅방의 일상 대화입니다.\n'
         f'- "제 역할이 아닙니다" 같은 업무 거부 반응을 하지 마세요.\n'
-        f'- 잡담이면 동료처럼 자연스럽게 대화하거나 [PASS]하세요.\n'
-        f'- 다른 팀원의 말에 자연스럽게 반응해도 좋습니다. 농담, 이모지, 리액션 자유.\n'
+        f'- 동료처럼 자연스럽게 대화하세요. 농담, 이모지, 리액션 자유.\n'
         f'- 다른 팀원에게 @멘션으로 말을 걸 수도 있습니다. (예: @안영이 맞아요 ㅎㅎ)\n'
         f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n'
         f'- 할 말이 없으면 반드시 [PASS]만 출력하세요.\n\n'
@@ -365,18 +431,9 @@ class Office:
     self._active_agent = 'teamlead'
     self._work_started_at = datetime.now(timezone.utc).isoformat()
 
-    # 하루 첫 메시지면 출근 인사
+    # 하루 첫 메시지 여부 체크 (출근 인사는 CONVERSATION:greeting에서 처리)
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    if not hasattr(self, '_greeted_date') or self._greeted_date != today:
-      self._greeted_date = today
-      import random
-      greetings = [
-        '좋은 아침입니다! ☀️ 오늘도 화이팅하겠습니다.',
-        '안녕하세요! 오늘 하루도 잘 부탁드립니다. 💪',
-        '출근했습니다! 오늘 어떤 작업이 있을까요? 🚀',
-        '좋은 하루입니다! 팀원들 준비 완료했습니다. ✨',
-      ]
-      await self._emit('teamlead', random.choice(greetings), 'response')
+    is_first_today = not hasattr(self, '_greeted_date') or self._greeted_date != today
 
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
@@ -384,8 +441,10 @@ class Office:
 
     # 0-1. 중단된 작업이 있고 사용자가 재개를 요청하면 원래 instruction으로 재실행
     if hasattr(self, '_interrupted_instruction') and self._interrupted_instruction:
-      resume_keywords = ('진행', '이어서', '계속', '재개', '다시', 'ㅇㅇ', '응', '네', 'yes', 'ok')
-      if any(kw in user_input.lower() for kw in resume_keywords):
+      # 명시적 재개 표현만 허용 (단순 "네", "응" 같은 일상 표현은 제외)
+      resume_phrases = ('이전 작업', '이어서 진행', '계속 진행', '재개해', '아까 거', '중단된 거', '이어서 해', '계속해')
+      is_confirmed_resume = self._interrupted_confirmed and user_input.strip().lower() in ('네', '응', 'ㅇㅇ', 'yes', 'ok')
+      if any(phrase in user_input for phrase in resume_phrases) or is_confirmed_resume:
         if not self._interrupted_confirmed:
           # 첫 번째 응답: 확인 질문
           self._interrupted_confirmed = True
@@ -483,10 +542,22 @@ class Office:
     # 3. 의도별 분기
     if intent_result.intent == IntentType.CONVERSATION:
       response = intent_result.direct_response or ''
+
+      # 하루 첫 메시지면 출근 인사를 팀장 응답에 앞에 붙임
+      if is_first_today:
+        self._greeted_date = today
+        import random
+        greetings = [
+          '좋은 아침입니다! ☀️ ',
+          '안녕하세요! 오늘도 잘 부탁드립니다. 💪 ',
+          '출근했습니다! 🚀 ',
+        ]
+        response = random.choice(greetings) + response
+
       await self._emit('teamlead', response, 'response')
 
-      # 팀 채널 대화면 팀원들도 각자 반응
-      await self._team_chat(user_input)
+      # 서브유형별 팀원 반응 제어
+      await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype)
 
       self._state = OfficeState.COMPLETED
       self._active_agent = ''
@@ -1072,7 +1143,8 @@ class Office:
       await self._work_commentary(agent_name, phase_name, content)
 
       # 다른 팀원 리액션 (가벼운 반응으로 실제 오피스 느낌)
-      await self._team_reaction(agent_name, phase_name)
+      content_summary = '\n'.join(content.strip().split('\n')[:5])
+      await self._team_reaction(agent_name, phase_name, content_summary=content_summary)
 
       # 사용자 중간 지시 확인 — 최근 채팅에서 사용자 메시지 체크
       user_directive = await self._check_user_directive()
@@ -1550,7 +1622,7 @@ class Office:
 
     return None
 
-  async def _team_reaction(self, worker: str, phase_name: str) -> None:
+  async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None:
     '''소단계 완료 후 다른 팀원이 AI 생성 리액션을 한다 (오피스 분위기).'''
     import random
 
@@ -1560,14 +1632,16 @@ class Office:
     others = [n for n in ('teamlead', 'planner', 'designer', 'developer', 'qa') if n != worker]
     reactors = random.sample(others, min(random.choice([1, 1, 2]), len(others)))
 
+    summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
+
     first_reaction_text = ''
     for reactor in reactors:
       try:
         prompt = (
           f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
           f'{profile_names.get(worker, worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
-          f'동료로서 리액션 한마디 해주세요.\n'
-          f'업무 관점에서 전문적 의견이 있으면 포함하세요.\n'
+          f'{summary_section}'
+          f'동료로서 당신의 전문 관점에서 리액션 한마디 해주세요.\n'
           f'20자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.\n'
           f'예: "구조 잘 잡혔네요 👍", "접근성도 체크해볼게요 🔍"'
         )

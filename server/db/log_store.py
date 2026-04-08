@@ -54,6 +54,31 @@ def clear_logs() -> int:
   return count
 
 
+def update_log_reactions(log_id: str, emoji: str, user: str = 'user') -> dict | None:
+  '''로그에 이모지 리액션을 추가/토글한다.'''
+  c = _conn()
+  row = c.execute('SELECT data FROM chat_logs WHERE id = ?', (log_id,)).fetchone()
+  if not row:
+    c.close()
+    return None
+  data = json.loads(row['data']) if row['data'] else {}
+  reactions: dict[str, list[str]] = data.get('reactions', {})
+  if emoji in reactions:
+    if user in reactions[emoji]:
+      reactions[emoji].remove(user)
+      if not reactions[emoji]:
+        del reactions[emoji]
+    else:
+      reactions[emoji].append(user)
+  else:
+    reactions[emoji] = [user]
+  data['reactions'] = reactions
+  c.execute('UPDATE chat_logs SET data = ? WHERE id = ?', (json.dumps(data, ensure_ascii=False), log_id))
+  c.commit()
+  c.close()
+  return reactions
+
+
 def load_logs(limit: int = 200) -> list[dict]:
   '''최근 로그를 반환한다.'''
   c = _conn()
