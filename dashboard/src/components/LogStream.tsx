@@ -3,13 +3,13 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import type { LogEntry } from '../types'
 
-// 미생 캐릭터 이니셜
-const CHAR_INITIAL: Record<string, string> = {
-  claude: '상', teamlead: '상',
-  planner: '그',
-  designer: '영',
-  developer: '동',
-  qa: '석',
+// 미생 캐릭터 아바타 이미지
+const AVATAR_IMG: Record<string, string> = {
+  claude: '/avatars/teamlead.png', teamlead: '/avatars/teamlead.png',
+  planner: '/avatars/planner.png',
+  designer: '/avatars/designer.png',
+  developer: '/avatars/developer.png',
+  qa: '/avatars/qa.png',
 }
 
 // 에이전트별 미생 캐릭터 프로필
@@ -148,10 +148,11 @@ export function LogStream() {
         elements.push(
           <div key={log.id ?? i} className="flex gap-3 py-1.5 group">
             <div className="flex-shrink-0 mt-0.5">
-              <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${profile.color} flex items-center justify-center shadow-sm`}>
-                <span className="text-white text-sm font-bold">
-                  {CHAR_INITIAL[log.agent_id] || profile.name[0]}
-                </span>
+              <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${profile.color} flex items-center justify-center shadow-sm overflow-hidden`}>
+                {AVATAR_IMG[log.agent_id]
+                  ? <img src={AVATAR_IMG[log.agent_id]} alt={profile.character}
+                      className="w-full h-full object-cover" loading="lazy" />
+                  : <span className="text-white text-sm font-bold">{profile.name[0]}</span>}
               </div>
             </div>
             <div className="flex-1 min-w-0">

@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent } from '../types'
 
-// 미생 캐릭터 이니셜
-const CHAR_INITIAL: Record<string, string> = {
-  claude: '상', teamlead: '상',
-  planner: '그',
-  designer: '영',
-  developer: '동',
-  qa: '석',
+// 미생 캐릭터 아바타 이미지
+const AVATAR_IMG: Record<string, string> = {
+  claude: '/avatars/teamlead.png', teamlead: '/avatars/teamlead.png',
+  planner: '/avatars/planner.png',
+  designer: '/avatars/designer.png',
+  developer: '/avatars/developer.png',
+  qa: '/avatars/qa.png',
 }
 
 // 미생 캐릭터명 + 직급
@@ -108,10 +108,11 @@ export function AgentBoard() {
               aria-label={`${info.character}(${info.role}) — ${styles.label}`}
             >
               <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm flex-shrink-0`}>
-                  <span className="text-white text-xs font-bold">
-                    {CHAR_INITIAL[agent.agent_id] || info.character[0]}
-                  </span>
+                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm flex-shrink-0 overflow-hidden`}>
+                  {AVATAR_IMG[agent.agent_id]
+                    ? <img src={AVATAR_IMG[agent.agent_id]} alt={info.character}
+                        className="w-full h-full object-cover" loading="lazy" />
+                    : <span className="text-white text-xs font-bold">{info.character[0]}</span>}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-1.5">

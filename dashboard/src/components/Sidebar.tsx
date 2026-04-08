@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 
-// 미생 캐릭터 이니셜
-const CHAR_INITIAL: Record<string, string> = {
-  teamlead: '상',
-  planner: '그',
-  designer: '영',
-  developer: '동',
-  qa: '석',
+// 미생 캐릭터 아바타 이미지
+const AVATAR_IMG: Record<string, string> = {
+  teamlead: '/avatars/teamlead.png',
+  planner: '/avatars/planner.png',
+  designer: '/avatars/designer.png',
+  developer: '/avatars/developer.png',
+  qa: '/avatars/qa.png',
 }
 
 export const AGENT_PROFILE: Record<string, { name: string; character: string; color: string; role: string }> = {
@@ -203,10 +203,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   {/* 아바타 */}
                   <div className="relative flex-shrink-0">
                     <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile.color}
-                      flex items-center justify-center`}>
-                      <span className="text-white text-xs font-bold">
-                        {CHAR_INITIAL[agent.agent_id] || profile.name[0]}
-                      </span>
+                      flex items-center justify-center overflow-hidden`}>
+                      {AVATAR_IMG[agent.agent_id] ? (
+                        <img src={AVATAR_IMG[agent.agent_id]} alt={profile.character}
+                          className="w-full h-full object-cover" loading="lazy" />
+                      ) : (
+                        <span className="text-white text-xs font-bold">{profile.name[0]}</span>
+                      )}
                     </div>
                     {/* 온라인 상태 표시 */}
                     <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full

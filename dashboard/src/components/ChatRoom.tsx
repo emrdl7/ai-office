@@ -6,13 +6,13 @@ import { AGENT_PROFILE } from './Sidebar'
 import type { Agent, LogEntry, Task, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
-// 미생 캐릭터 이니셜
-const CHAR_INITIAL: Record<string, string> = {
-  teamlead: '상',
-  planner: '그',
-  designer: '영',
-  developer: '동',
-  qa: '석',
+// 미생 캐릭터 아바타 이미지
+const AVATAR_IMG: Record<string, string> = {
+  teamlead: '/avatars/teamlead.png',
+  planner: '/avatars/planner.png',
+  designer: '/avatars/designer.png',
+  developer: '/avatars/developer.png',
+  qa: '/avatars/qa.png',
 }
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
@@ -270,10 +270,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          {activeChannel !== 'all' && CHAR_INITIAL[activeChannel] && (
+          {activeChannel !== 'all' && AVATAR_IMG[activeChannel] && (
             <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile?.color}
-              flex items-center justify-center`}>
-              <span className="text-white text-xs font-bold">{CHAR_INITIAL[activeChannel]}</span>
+              flex items-center justify-center overflow-hidden`}>
+              <img src={AVATAR_IMG[activeChannel]} alt={profile?.character}
+                className="w-full h-full object-cover" />
             </div>
           )}
           <div>
@@ -522,10 +523,11 @@ function renderMessages(logs: LogEntry[]) {
         <div key={log.id ?? i} className="flex gap-2 md:gap-3 py-1.5">
           <div className="flex-shrink-0 mt-0.5">
             <div className={`w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br ${profile.color}
-              flex items-center justify-center shadow-sm`}>
-              <span className="text-white text-xs font-bold">
-                {CHAR_INITIAL[log.agent_id] || profile.name[0]}
-              </span>
+              flex items-center justify-center shadow-sm overflow-hidden`}>
+              {AVATAR_IMG[log.agent_id]
+                ? <img src={AVATAR_IMG[log.agent_id]} alt={profile.character}
+                    className="w-full h-full object-cover" loading="lazy" />
+                : <span className="text-white text-xs font-bold">{profile.name[0]}</span>}
             </div>
           </div>
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
