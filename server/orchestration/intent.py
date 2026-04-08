@@ -91,6 +91,16 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
     f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT입니다.'
   )
 
+  # 명시적 팀 참여 키워드 → 무조건 PROJECT (LLM 판단보다 우선)
+  team_keywords = ['모두 참여', '팀 전체', '다 같이', '전원 참여', '다같이', '모두 다', '팀원 모두', '전부 참여']
+  if any(kw in user_input for kw in team_keywords):
+    response = await run_claude_isolated(prompt, timeout=120.0)
+    result = _parse_intent_response(response)
+    # QUICK_TASK였어도 PROJECT로 강제 승격
+    if result.intent in (IntentType.QUICK_TASK, IntentType.CONTINUE_PROJECT):
+      result.intent = IntentType.PROJECT
+    return result
+
   response = await run_claude_isolated(prompt, timeout=120.0)
   return _parse_intent_response(response)
 
