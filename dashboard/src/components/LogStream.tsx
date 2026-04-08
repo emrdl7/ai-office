@@ -144,7 +144,7 @@ export function LogStream() {
       }
 
       if (isNewGroup) {
-        // 새 그룹 — 포켓몬 아바타 + 이름 + 포켓몬명 + 시간
+        // 새 그룹 — 아바타 + 이름 + 시간
         elements.push(
           <div key={log.id ?? i} className="flex gap-3 py-1.5 group">
             <div className="flex-shrink-0 mt-0.5">
