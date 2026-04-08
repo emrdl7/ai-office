@@ -81,6 +81,7 @@ class Office:
     # 프로젝트 세션
     self._active_project_id: str | None = None
     self._active_project_title: str = ''
+    self._base_task_id: str = ''  # 🔗 이전 작업 참조 (main.py에서 설정)
 
     # Groq 러너 (디자이너, QA용)
     self.groq_runner = GroqRunner()
@@ -375,15 +376,24 @@ class Office:
         # 새 프로젝트 시작
         if self._active_project_id:
           archive_project(self._active_project_id)
-        new_pid = str(uuid.uuid4())
-        title = await generate_project_title(user_input)
+
+        # 🔗 이전 작업 참조가 있으면 해당 workspace를 프로젝트로 승격
+        ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
+        if self._base_task_id:
+          new_pid = self._base_task_id  # 이전 workspace 그대로 사용
+          base_task = get_task(self._base_task_id)
+          title = await generate_project_title(
+            base_task['instruction'] if base_task else user_input
+          )
+          self._base_task_id = ''  # 사용 후 초기화
+        else:
+          new_pid = str(uuid.uuid4())
+          title = await generate_project_title(user_input)
+
         create_project(new_pid, title)
         self._active_project_id = new_pid
         self._active_project_title = title
-        self.workspace = WorkspaceManager(
-          task_id=new_pid,
-          workspace_root=str(Path(__file__).parent.parent.parent / 'workspace'),
-        )
+        self.workspace = WorkspaceManager(task_id=new_pid, workspace_root=ws_root)
         if hasattr(self, '_current_task_id'):
           update_task_project(self._current_task_id, new_pid)
         await self._emit('system', f'📂 새 프로젝트: {title}', 'project_update')

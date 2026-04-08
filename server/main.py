@@ -192,6 +192,9 @@ async def chat(
         task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
         office.workspace = task_workspace
       office._current_task_id = task_id
+      # 🔗 이전 작업 참조 시 Office에 전달
+      if base_task_id:
+        office._base_task_id = base_task_id
 
       if to == 'all':
         # 팀 채널 → 팀장 판단 흐름
