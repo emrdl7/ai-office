@@ -440,8 +440,7 @@ class Office:
             revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{failure_reason}\n\n[이전 결과물]\n{result}'
             result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
 
-    # 결과를 채팅에 공유
-    summary = '\n'.join(result.strip().split('\n')[:8])
+    # 산출물 저장
     saved_paths = []
     try:
       file_path = 'quick-task/result.md'
@@ -449,6 +448,43 @@ class Office:
       saved_paths.append(f'{self.workspace.task_id}/{file_path}')
     except Exception:
       pass
+
+    # 팀장 최종 검수 (최대 1회 보완)
+    self._state = OfficeState.TEAMLEAD_REVIEW
+    self._active_agent = 'teamlead'
+    await self._emit('teamlead', '최종 검수하겠습니다.', 'response')
+
+    review_prompt = (
+      f'[사용자 원본 요구사항]\n{prompt}\n\n'
+      f'[최종 산출물]\n{result[:8000]}\n\n'
+      f'위 요구사항 대비 산출물의 완성도를 검수하세요.\n'
+      f'합격이면 첫 줄에 [PASS]를, 불합격이면 [FAIL]을 적고 이유를 적으세요.'
+    )
+    teamlead_agent = self.agents.get('teamlead')
+    review_response = await teamlead_agent.handle(review_prompt) if teamlead_agent else '[PASS]'
+    review_text = review_response.strip()
+
+    if '[PASS]' not in review_text[:100]:
+      # 불합격 → 1회 보완
+      feedback = review_text.replace('[FAIL]', '').strip()[:500]
+      await self._emit('teamlead', f'보완이 필요합니다: {feedback[:200]}', 'response')
+
+      self._state = OfficeState.WORKING
+      self._active_agent = agent_name
+      revision_prompt = f'{prompt}\n\n[팀장 보완 지시 — 반드시 반영할 것]\n{feedback}\n\n[이전 결과물]\n{result}'
+      result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
+
+      # 보완된 결과물 재저장
+      try:
+        self.workspace.write_artifact(file_path, result)
+      except Exception:
+        pass
+      await self._emit('teamlead', '보완 확인했습니다. 최종 완료합니다.', 'response')
+    else:
+      await self._emit('teamlead', '검수 통과. 잘 마무리됐습니다.', 'response')
+
+    # 결과를 채팅에 공유
+    summary = '\n'.join(result.strip().split('\n')[:8])
 
     await self.event_bus.publish(LogEvent(
       agent_id=agent_name,
