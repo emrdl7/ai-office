@@ -153,10 +153,13 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       try {
         const log = JSON.parse(event.data) as LogEntry
         if (log.event_type === 'project_update') {
-          // 프로젝트 세션 업데이트
           const title = log.message.replace(/^📂\s*(새 프로젝트|프로젝트 이어가기):\s*/, '')
           if (title) setActiveProject({ id: log.agent_id, title })
           addLog(log)
+          return
+        }
+        if (log.event_type === 'project_close') {
+          setActiveProject(null)
           return
         }
         if (log.event_type === 'typing') {

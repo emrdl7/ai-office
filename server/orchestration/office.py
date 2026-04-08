@@ -601,6 +601,14 @@ class Office:
         data={'artifacts': saved_paths},
       ))
 
+    # 프로젝트 세션 종료
+    if self._active_project_id:
+      from db.task_store import archive_project
+      archive_project(self._active_project_id)
+      await self._emit('system', '📂 프로젝트 완료', 'project_close')
+      self._active_project_id = None
+      self._active_project_title = ''
+
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
     self._work_started_at = ''
@@ -1131,6 +1139,14 @@ class Office:
           passed = await self._teamlead_final_review(user_input, None)
           if passed:
             break
+
+    # 프로젝트 세션 종료
+    if self._active_project_id:
+      from db.task_store import archive_project
+      archive_project(self._active_project_id)
+      await self._emit('system', '📂 프로젝트 완료', 'project_close')
+      self._active_project_id = None
+      self._active_project_title = ''
 
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
