@@ -17,6 +17,7 @@ dependencies = [
     "requests>=2.33.1",
     "sqlmodel>=0.0.22",
     "uvicorn[standard]>=0.34.0",
+    "weasyprint>=62.0",
 ]
 
 [dependency-groups]

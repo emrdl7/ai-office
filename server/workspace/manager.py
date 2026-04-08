@@ -6,7 +6,7 @@ from pathlib import Path
 # 지원하는 산출물 파일 형식 레지스트리 (ARTF-02)
 SUPPORTED_EXTENSIONS: dict[str, list[str]] = {
     'code': ['.py', '.ts', '.js', '.tsx', '.jsx', '.html', '.css', '.scss', '.sh'],
-    'doc': ['.md', '.txt', '.rst'],
+    'doc': ['.md', '.txt', '.rst', '.pdf'],
     'design': ['.json', '.yaml', '.yml'],
     'data': ['.csv', '.xml'],
 }

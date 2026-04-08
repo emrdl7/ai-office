@@ -468,6 +468,12 @@ async def get_artifact_content(file_path: str, request: Request):
   target = WORKSPACE_ROOT / file_path
   if not target.exists() or not target.is_file():
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
+
+  # .pdf 파일은 바이너리로 서빙 (read_text 전에 분기)
+  if file_path.endswith('.pdf'):
+    from fastapi.responses import FileResponse
+    return FileResponse(str(target), media_type='application/pdf', filename=target.name)
+
   content = target.read_text(encoding='utf-8', errors='replace')
 
   # .html 파일은 그대로 서빙

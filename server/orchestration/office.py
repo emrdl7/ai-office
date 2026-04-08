@@ -7,7 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from orchestration.intent import IntentType, classify_intent
+from orchestration.intent import IntentType, classify_intent, classify_project_type
+from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
@@ -437,8 +438,13 @@ class Office:
     if self._context_summary:
       briefing = f'{analysis}\n\n[이전 논의 요약]\n{self._context_summary}'
 
+    # 프로젝트 유형 분류
+    project_type = await classify_project_type(user_input)
+    phases = get_phases(project_type)
+    participants = get_meeting_participants(project_type)
+
     # 업무 수신 확인
-    await self._emit('teamlead', '알겠습니다. 확인하고 팀원들과 논의해보겠습니다.', 'response')
+    await self._emit('teamlead', f'알겠습니다. 확인하고 팀원들과 논의해보겠습니다. (프로젝트 유형: {project_type.value})', 'response')
 
     # 1. 회의 소집 — 방향 잡기
     self._state = OfficeState.MEETING
@@ -448,7 +454,7 @@ class Office:
       topic=user_input,
       briefing=briefing,
       agents=self.agents,
-      participants=['planner', 'designer', 'developer'],
+      participants=participants,
       event_bus=self.event_bus,
     )
     await meeting.run()
@@ -473,6 +479,8 @@ class Office:
         'meeting_summary': meeting_summary,
         'reference_context': reference_context,
         'briefing': briefing,
+        'project_type': project_type.value,
+        'phases': phases,
       }
       # DB에도 컨텍스트 저장 (서버 재시작 시 복구용)
       self._pending_task_id = getattr(self, '_current_task_id', '')
@@ -489,6 +497,7 @@ class Office:
     # 질문 없으면 바로 전체 진행
     return await self._execute_project(
       user_input, analysis, meeting_summary, reference_context, briefing,
+      phases=phases,
     )
 
   async def _continue_project(self, user_answer: str) -> dict[str, Any]:
@@ -499,6 +508,10 @@ class Office:
 
     # 사용자 답변을 컨텍스트에 추가
     meeting_summary = pending['meeting_summary'] + f'\n\n[사용자 확인사항]\n{user_answer}'
+
+    # 저장된 phases 복원
+    phases = pending.get('phases')
+
     self._pending_project = None
 
     return await self._execute_project(
@@ -507,6 +520,7 @@ class Office:
       meeting_summary,
       pending['reference_context'],
       pending['briefing'],
+      phases=phases,
     )
 
   async def _execute_project(
@@ -516,12 +530,22 @@ class Office:
     meeting_summary: str,
     reference_context: str,
     briefing: str,
+    phases: list[dict] | None = None,
   ) -> dict[str, Any]:
-    '''프로젝트 전체 실행 — 기획 → 디자인 → 개발 단계별 진행.'''
+    '''프로젝트 전체 실행 — 유형별 동적 단계로 진행.'''
 
-    # 프로젝트 유형 자동 판단 + 동적 PHASES 구성
-    project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
-    PHASES = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
+    # phases가 전달되지 않으면 기존 호환 로직 (웹 개발 기본)
+    if phases is not None:
+      PHASES = phases
+      # project_type은 phases의 output_format으로 추론
+      project_type = 'web_development'
+      for p in phases:
+        if p.get('output_format', '').endswith('+pdf'):
+          project_type = 'document'
+          break
+    else:
+      project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
+      PHASES = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
 
     # 프로젝트 메트릭 수집 시작
     _project_started_at = datetime.now(timezone.utc).isoformat()
@@ -632,10 +656,32 @@ class Office:
       if reference_context and current_group == '기획':
         phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
 
+      # output_format에 따른 작성 지침
+      _of = phase.get('output_format', 'md')
+      if _of in ('html', 'html+pdf'):
+        format_instruction = (
+          '마크다운으로 분석/설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
+          '완성된 HTML 문서(<!DOCTYPE html>로 시작)를 포함하세요. '
+          'HTML에는 CSS 스타일을 인라인으로 포함하여 보기 좋은 보고서 형태로 만드세요.'
+        )
+      elif _of == 'html_slide+pdf':
+        format_instruction = (
+          '마크다운으로 설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
+          '슬라이드 형식의 HTML 문서를 포함하세요. '
+          '각 슬라이드는 <section> 태그로 구분하고, CSS로 페이지 단위 스타일을 적용하세요.'
+        )
+      elif _of == 'md+code':
+        format_instruction = (
+          '마크다운 형식으로 작성하세요. '
+          '분석에 사용한 Python 코드가 있으면 ```python 코드블록으로 포함하세요.'
+        )
+      else:
+        format_instruction = '마크다운 형식으로 작성하세요.'
+
       phase_prompt += (
         f'위 내용을 바탕으로 {phase_name} 작업을 수행하세요.\n'
         f'실무에서 바로 활용할 수 있는 수준으로 상세하게 작성하세요.\n'
-        f'마크다운 형식으로 작성하세요.\n'
+        f'{format_instruction}\n'
         f'중요: 반드시 모든 섹션을 끝까지 완성하세요. 절대 중간에 끊지 마세요.'
       )
 
@@ -649,26 +695,54 @@ class Office:
       except Exception:
         pass
 
-      # 퍼블리싱 단계: 코드블록에서 HTML 추출 → .html 파일로 저장 → URL 제공
-      if current_group == '퍼블리싱':
-        import re
-        html_match = re.search(r'```(?:html)?\s*\n(<!DOCTYPE[\s\S]*?)\n```', content, re.IGNORECASE)
+      # output_format에 따른 산출물 추출 및 저장
+      output_format = phase.get('output_format', 'md')
+      import re as _re
+
+      # 퍼블리싱 단계 또는 html/html+pdf 포맷: 코드블록에서 HTML 추출
+      if current_group == '퍼블리싱' or output_format in ('html', 'html+pdf', 'html_slide+pdf'):
+        html_match = _re.search(r'```(?:html)?\s*\n(<!DOCTYPE[\s\S]*?)\n```', content, _re.IGNORECASE)
         if not html_match:
-          # DOCTYPE 없이 <html>로 시작하는 경우
-          html_match = re.search(r'```(?:html)?\s*\n(<html[\s\S]*?)\n```', content, re.IGNORECASE)
+          html_match = _re.search(r'```(?:html)?\s*\n(<html[\s\S]*?)\n```', content, _re.IGNORECASE)
         if html_match:
           html_code = html_match.group(1)
+          html_filename = f'{phase_name}/index.html' if current_group == '퍼블리싱' else f'{phase_name}/result.html'
           try:
-            self.workspace.write_artifact(f'{phase_name}/index.html', html_code)
-            phase_artifacts.append(f'{self.workspace.task_id}/{phase_name}/index.html')
-            # 채팅에 URL 공유
-            html_url = f'/api/artifacts/{self.workspace.task_id}/{phase_name}/index.html'
+            html_file_path = self.workspace.write_artifact(html_filename, html_code)
+            phase_artifacts.append(f'{self.workspace.task_id}/{html_filename}')
+            html_url = f'/api/artifacts/{self.workspace.task_id}/{html_filename}'
             await self.event_bus.publish(LogEvent(
-              agent_id='developer',
+              agent_id=agent_name,
               event_type='response',
-              message=f'퍼블리싱 완료! 웹 화면을 확인하세요 👇\n{html_url}',
-              data={'artifacts': [f'{self.workspace.task_id}/{phase_name}/index.html']},
+              message=f'{phase_name} HTML 산출물 생성 완료 👇\n{html_url}',
+              data={'artifacts': [f'{self.workspace.task_id}/{html_filename}']},
             ))
+            # PDF 변환
+            if '+pdf' in output_format:
+              try:
+                from harness.pdf_converter import html_to_pdf
+                pdf_path = html_to_pdf(html_file_path)
+                pdf_rel = f'{phase_name}/result.pdf'
+                phase_artifacts.append(f'{self.workspace.task_id}/{pdf_rel}')
+                await self.event_bus.publish(LogEvent(
+                  agent_id=agent_name,
+                  event_type='response',
+                  message=f'{phase_name} PDF 생성 완료 📄',
+                  data={'artifacts': [f'{self.workspace.task_id}/{pdf_rel}']},
+                ))
+              except Exception:
+                pass
+          except Exception:
+            pass
+
+      # md+code 포맷: Python/JS 코드블록 추출
+      if output_format == 'md+code':
+        code_blocks = _re.findall(r'```(?:python|py)\s*\n([\s\S]*?)\n```', content)
+        for i, code in enumerate(code_blocks):
+          code_filename = f'{phase_name}/code_{i}.py'
+          try:
+            self.workspace.write_artifact(code_filename, code)
+            phase_artifacts.append(f'{self.workspace.task_id}/{code_filename}')
           except Exception:
             pass
 
