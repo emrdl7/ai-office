@@ -191,7 +191,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       const res = await fetch('/api/tasks')
       if (res.ok) {
         const tasks: Task[] = await res.json()
-        setCompletedTasks(tasks.filter((t) => t.state === 'completed').slice(0, 10))
+        setCompletedTasks(tasks.filter((t) => t.state === 'completed').reverse().slice(0, 10))
       }
     } catch { /* 무시 */ }
     setShowTaskPicker(true)
