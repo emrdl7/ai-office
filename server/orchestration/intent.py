@@ -10,9 +10,10 @@ AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
 
 class IntentType(str, Enum):
-  CONVERSATION = 'conversation'  # 대화, 질문, 인사
-  QUICK_TASK = 'quick_task'      # 한 명이 처리할 수 있는 단순 작업
-  PROJECT = 'project'            # 여러 팀원이 협업해야 하는 프로젝트
+  CONVERSATION = 'conversation'          # 대화, 질문, 인사
+  QUICK_TASK = 'quick_task'              # 한 명이 처리할 수 있는 단순 작업
+  PROJECT = 'project'                    # 여러 팀원이 협업해야 하는 프로젝트
+  CONTINUE_PROJECT = 'continue_project'  # 기존 프로젝트 이어가기
 
 
 class IntentResult:
@@ -47,12 +48,13 @@ def _build_system_info() -> str:
   )
 
 
-async def classify_intent(user_input: str, recent_context: str = '') -> IntentResult:
+async def classify_intent(user_input: str, recent_context: str = '', active_project_title: str = '') -> IntentResult:
   '''팀장(Claude)이 사용자 입력의 의도를 분류한다.
 
   Args:
     user_input: 사용자 입력
     recent_context: 최근 대화 맥락 (지시어 해석용)
+    active_project_title: 현재 진행 중인 프로젝트 제목 (있으면)
 
   Returns:
     IntentResult — 의도 유형, 담당 에이전트, 직접 답변 등
@@ -63,6 +65,8 @@ async def classify_intent(user_input: str, recent_context: str = '') -> IntentRe
   context_section = ''
   if recent_context:
     context_section = f'[최근 대화 맥락]\n{recent_context}\n\n'
+  if active_project_title:
+    context_section += f'[현재 진행 중인 프로젝트: {active_project_title}]\n\n'
 
   prompt = (
     f'{teamlead_prompt}\n\n'
@@ -78,10 +82,13 @@ async def classify_intent(user_input: str, recent_context: str = '') -> IntentRe
     f'[QUICK_TASK:에이전트명]\n작업 지시 내용\n\n'
     f'또는:\n\n'
     f'[PROJECT]\n프로젝트 분석 내용\n\n'
+    f'또는 (진행 중인 프로젝트와 연관된 추가 작업 요청일 때):\n\n'
+    f'[CONTINUE_PROJECT:에이전트명]\n이어서 할 작업 내용\n\n'
     f'에이전트명은 planner, designer, developer, qa 중 하나입니다.\n'
     f'간단한 대화나 질문이면 CONVERSATION, '
-    f'한 명이 처리할 수 있으면 QUICK_TASK, '
-    f'여러 팀원이 필요하면 PROJECT입니다.'
+    f'한 명이 처리할 수 있는 새 작업이면 QUICK_TASK, '
+    f'여러 팀원이 필요한 새 프로젝트면 PROJECT, '
+    f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT입니다.'
   )
 
   response = await run_claude_isolated(prompt, timeout=120.0)
@@ -122,6 +129,18 @@ def _parse_intent_response(response: str) -> IntentResult:
       analysis=body,
     )
 
+  if header.startswith('[CONTINUE_PROJECT'):
+    agent = 'planner'
+    if ':' in header:
+      agent_part = header.split(':')[1].strip().rstrip(']')
+      if agent_part in ('planner', 'designer', 'developer', 'qa'):
+        agent = agent_part
+    return IntentResult(
+      intent=IntentType.CONTINUE_PROJECT,
+      target_agent=agent,
+      analysis=body,
+    )
+
   if header.startswith('[PROJECT]'):
     return IntentResult(
       intent=IntentType.PROJECT,
@@ -138,6 +157,22 @@ def _parse_intent_response(response: str) -> IntentResult:
     intent=IntentType.PROJECT,
     analysis=text,
   )
+
+
+async def generate_project_title(user_input: str) -> str:
+  '''사용자 입력에서 프로젝트 제목을 자동 생성한다 (10자 이내).'''
+  prompt = (
+    f'사용자의 작업 요청을 보고 프로젝트 제목을 10자 이내 한국어로 생성하세요.\n'
+    f'예시: "제주도 여행 기획", "JDC 홈페이지 리뉴얼", "매출 데이터 분석"\n'
+    f'첫 줄에 제목만 적으세요. 따옴표 없이.\n\n'
+    f'사용자 요청: "{user_input[:500]}"'
+  )
+  try:
+    response = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=15.0)
+    title = response.strip().split('\n')[0].strip().strip('"\'')
+    return title[:20] if title else user_input[:15]
+  except Exception:
+    return user_input[:15]
 
 
 # ── 프로젝트 유형 분류 ──────────────────────────────────────────

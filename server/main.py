@@ -177,10 +177,11 @@ async def chat(
   async def _run():
     try:
       update_task_state(task_id, 'running')
-      # interrupted/pending 작업 재개 시 원래 workspace가 이미 복원되어 있으면 덮어쓰지 않음
+      # workspace는 Office.receive()에서 프로젝트 세션에 따라 설정됨
+      # DM이나 fallback용 기본 workspace만 설정
       has_pending = (hasattr(office, '_interrupted_task_id') and office._interrupted_task_id) or \
                     (hasattr(office, '_pending_project') and office._pending_project)
-      if not has_pending:
+      if not has_pending and to != 'all':
         task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
         office.workspace = task_workspace
       office._current_task_id = task_id
@@ -601,6 +602,18 @@ async def get_file(task_id: str, file_path: str):
     content = target.read_bytes().decode('latin-1')
 
   return {'path': file_path, 'content': content}
+
+
+@app.get('/api/project/active')
+async def get_active_project_api(request: Request):
+  '''현재 활성 프로젝트 정보를 반환한다.'''
+  office: Office = request.app.state.office
+  if office._active_project_id:
+    return {
+      'project_id': office._active_project_id,
+      'title': office._active_project_title,
+    }
+  return {'project_id': '', 'title': ''}
 
 
 @app.delete('/api/logs')

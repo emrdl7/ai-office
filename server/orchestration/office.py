@@ -2,6 +2,7 @@
 from __future__ import annotations
 # 팀장이 판단하고, 팀원이 협업하고, 회의를 통해 프로젝트를 진행한다.
 import json
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -77,6 +78,9 @@ class Office:
     self._active_agent = ''  # 현재 작업 중인 에이전트 ID
     self._work_started_at = ''  # 작업 시작 ISO 타임스탬프
     self._last_review_feedback = ''
+    # 프로젝트 세션
+    self._active_project_id: str | None = None
+    self._active_project_title: str = ''
 
     # Groq 러너 (디자이너, QA용)
     self.groq_runner = GroqRunner()
@@ -100,7 +104,13 @@ class Office:
     자동 재실행하지 않고 사용자에게 선택권을 준다.
     "진행해" 등으로 응답하면 원래 instruction으로 다시 실행한다.
     '''
-    from db.task_store import get_resumable_tasks, update_task_state
+    from db.task_store import get_resumable_tasks, update_task_state, get_active_project
+
+    # 활성 프로젝트 복원
+    active = get_active_project()
+    if active:
+      self._active_project_id = active['project_id']
+      self._active_project_title = active['title']
 
     tasks = get_resumable_tasks()
     if not tasks:
@@ -336,14 +346,48 @@ class Office:
     except Exception:
       pass
 
-    intent_result = await classify_intent(user_input, recent_context=recent_context)
+    intent_result = await classify_intent(
+      user_input,
+      recent_context=recent_context,
+      active_project_title=self._active_project_title,
+    )
 
-    # 2. 업무 시작 시 이전 대화 압축
-    if intent_result.intent in (IntentType.QUICK_TASK, IntentType.PROJECT):
+    # 2. 업무 시작 시 프로젝트 세션 관리 + 이전 대화 압축
+    is_work = intent_result.intent in (IntentType.QUICK_TASK, IntentType.PROJECT, IntentType.CONTINUE_PROJECT)
+    if is_work:
       if self._task_count > 0:
         await self._compress_history()
       self._task_count += 1
       self._revision_count = 0
+
+      from db.task_store import create_project, update_task_project, archive_project
+      from orchestration.intent import generate_project_title
+
+      if intent_result.intent == IntentType.CONTINUE_PROJECT and self._active_project_id:
+        # 기존 프로젝트 이어가기 — workspace 재사용
+        self.workspace = WorkspaceManager(
+          task_id=self._active_project_id,
+          workspace_root=str(Path(__file__).parent.parent.parent / 'workspace'),
+        )
+        if hasattr(self, '_current_task_id'):
+          update_task_project(self._current_task_id, self._active_project_id)
+        await self._emit('system', f'📂 프로젝트 이어가기: {self._active_project_title}', 'project_update')
+      else:
+        # 새 프로젝트 시작
+        if self._active_project_id:
+          archive_project(self._active_project_id)
+        new_pid = str(uuid.uuid4())
+        title = await generate_project_title(user_input)
+        create_project(new_pid, title)
+        self._active_project_id = new_pid
+        self._active_project_title = title
+        self.workspace = WorkspaceManager(
+          task_id=new_pid,
+          workspace_root=str(Path(__file__).parent.parent.parent / 'workspace'),
+        )
+        if hasattr(self, '_current_task_id'):
+          update_task_project(self._current_task_id, new_pid)
+        await self._emit('system', f'📂 새 프로젝트: {title}', 'project_update')
 
     # 3. 의도별 분기
     if intent_result.intent == IntentType.CONVERSATION:
@@ -362,7 +406,7 @@ class Office:
         'artifacts': [],
       }
 
-    if intent_result.intent == IntentType.QUICK_TASK:
+    if intent_result.intent in (IntentType.QUICK_TASK, IntentType.CONTINUE_PROJECT):
       return await self._handle_quick_task(
         user_input,
         intent_result.target_agent or 'developer',

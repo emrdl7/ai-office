@@ -26,12 +26,27 @@ def _conn() -> sqlite3.Connection:
       updated_at TEXT NOT NULL
     )
   ''')
-  # context_json 컬럼 추가 (이미 있으면 무시)
-  try:
-    conn.execute('ALTER TABLE tasks ADD COLUMN context_json TEXT DEFAULT ""')
-    conn.commit()
-  except sqlite3.OperationalError:
-    pass  # 이미 존재
+  # 마이그레이션 — 이미 있으면 무시
+  for alter in [
+    'ALTER TABLE tasks ADD COLUMN context_json TEXT DEFAULT ""',
+    'ALTER TABLE tasks ADD COLUMN project_id TEXT DEFAULT ""',
+  ]:
+    try:
+      conn.execute(alter)
+      conn.commit()
+    except sqlite3.OperationalError:
+      pass
+
+  # 프로젝트 세션 테이블
+  conn.execute('''
+    CREATE TABLE IF NOT EXISTS projects (
+      project_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  ''')
   conn.commit()
   return conn
 
@@ -99,6 +114,63 @@ def get_task(task_id: str) -> Optional[dict]:
   else:
     d['context'] = None
   return d
+
+
+def update_task_project(task_id: str, project_id: str) -> None:
+  '''태스크에 프로젝트 ID를 연결한다.'''
+  c = _conn()
+  c.execute('UPDATE tasks SET project_id=? WHERE task_id=?', (project_id, task_id))
+  c.commit()
+  c.close()
+
+
+def create_project(project_id: str, title: str) -> None:
+  '''새 프로젝트 세션을 생성한다.'''
+  now = datetime.now(timezone.utc).isoformat()
+  c = _conn()
+  c.execute(
+    'INSERT OR IGNORE INTO projects (project_id, title, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    (project_id, title, 'active', now, now),
+  )
+  c.commit()
+  c.close()
+
+
+def update_project_title(project_id: str, title: str) -> None:
+  '''프로젝트 제목을 업데이트한다.'''
+  now = datetime.now(timezone.utc).isoformat()
+  c = _conn()
+  c.execute('UPDATE projects SET title=?, updated_at=? WHERE project_id=?', (title, now, project_id))
+  c.commit()
+  c.close()
+
+
+def get_active_project() -> Optional[dict]:
+  '''가장 최근 활성 프로젝트를 반환한다.'''
+  c = _conn()
+  row = c.execute(
+    "SELECT project_id, title, state, created_at, updated_at FROM projects "
+    "WHERE state='active' ORDER BY updated_at DESC LIMIT 1"
+  ).fetchone()
+  c.close()
+  return dict(row) if row else None
+
+
+def archive_project(project_id: str) -> None:
+  '''프로젝트를 아카이브한다.'''
+  now = datetime.now(timezone.utc).isoformat()
+  c = _conn()
+  c.execute("UPDATE projects SET state='archived', updated_at=? WHERE project_id=?", (now, project_id))
+  c.commit()
+  c.close()
+
+
+def list_projects() -> list[dict]:
+  '''모든 프로젝트를 최신순으로 반환한다.'''
+  c = _conn()
+  rows = c.execute('SELECT project_id, title, state, created_at, updated_at FROM projects ORDER BY updated_at DESC').fetchall()
+  c.close()
+  return [dict(r) for r in rows]
 
 
 def get_resumable_tasks() -> list[dict]:

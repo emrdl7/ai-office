@@ -113,6 +113,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const [baseTaskId, setBaseTaskId] = useState('')
   const [showTaskPicker, setShowTaskPicker] = useState(false)
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])
+  const [activeProject, setActiveProject] = useState<{ id: string; title: string } | null>(null)
   const sendLock = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -135,6 +136,14 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           if (Array.isArray(data) && data.length > 0) setLogs(data)
         })
         .catch(() => {})
+      // 활성 프로젝트 복원
+      fetch('/api/project/active')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.project_id) setActiveProject({ id: data.project_id, title: data.title })
+          else setActiveProject(null)
+        })
+        .catch(() => {})
     }
     ws.onclose = () => {
       setConnected(false)
@@ -143,6 +152,13 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     ws.onmessage = (event) => {
       try {
         const log = JSON.parse(event.data) as LogEntry
+        if (log.event_type === 'project_update') {
+          // 프로젝트 세션 업데이트
+          const title = log.message.replace(/^📂\s*(새 프로젝트|프로젝트 이어가기):\s*/, '')
+          if (title) setActiveProject({ id: log.agent_id, title })
+          addLog(log)
+          return
+        }
         if (log.event_type === 'typing') {
           // 입력 중 표시 → 5초 후 자동 해제
           setTypingAgents((prev) => new Set(prev).add(log.agent_id))
@@ -314,6 +330,16 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
         </div>
       </header>
+
+      {/* 활성 프로젝트 표시 */}
+      {activeProject && (
+        <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/20
+          border-b border-blue-100 dark:border-blue-800
+          flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+          <span>📂</span>
+          <span className="font-medium">{activeProject.title}</span>
+        </div>
+      )}
 
       {/* 대화 영역 */}
       <div
