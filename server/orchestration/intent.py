@@ -47,8 +47,12 @@ def _build_system_info() -> str:
   )
 
 
-async def classify_intent(user_input: str) -> IntentResult:
+async def classify_intent(user_input: str, recent_context: str = '') -> IntentResult:
   '''팀장(Claude)이 사용자 입력의 의도를 분류한다.
+
+  Args:
+    user_input: 사용자 입력
+    recent_context: 최근 대화 맥락 (지시어 해석용)
 
   Returns:
     IntentResult — 의도 유형, 담당 에이전트, 직접 답변 등
@@ -56,10 +60,15 @@ async def classify_intent(user_input: str) -> IntentResult:
   teamlead_prompt = _load_teamlead_prompt()
   system_info = _build_system_info()
 
+  context_section = ''
+  if recent_context:
+    context_section = f'[최근 대화 맥락]\n{recent_context}\n\n'
+
   prompt = (
     f'{teamlead_prompt}\n\n'
     f'{system_info}\n\n'
     f'---\n\n'
+    f'{context_section}'
     f'사용자가 다음과 같이 말했습니다:\n\n'
     f'"{user_input}"\n\n'
     f'당신은 팀장입니다. 이 입력을 보고 어떻게 대응할지 판단하세요.\n\n'

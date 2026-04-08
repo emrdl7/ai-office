@@ -322,8 +322,21 @@ class Office:
     # 1. 파일 참조 해석
     reference_context = resolve_references(user_input)
 
-    # 2. 팀장 판단
-    intent_result = await classify_intent(user_input)
+    # 2. 팀장 판단 — 최근 대화 맥락을 함께 전달 ("그거 조사해봐" 같은 지시어 해석용)
+    recent_context = ''
+    try:
+      from db.log_store import load_logs
+      recent_logs = load_logs(limit=20)
+      chat_lines = []
+      for log in recent_logs:
+        if log['event_type'] in ('response', 'message') and log['agent_id'] != 'system':
+          chat_lines.append(f'[{log["agent_id"]}] {log["message"][:150]}')
+      if chat_lines:
+        recent_context = '\n'.join(chat_lines[-10:])
+    except Exception:
+      pass
+
+    intent_result = await classify_intent(user_input, recent_context=recent_context)
 
     # 2. 업무 시작 시 이전 대화 압축
     if intent_result.intent in (IntentType.QUICK_TASK, IntentType.PROJECT):
