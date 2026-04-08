@@ -319,9 +319,8 @@ class Office:
           self._interrupted_confirmed = False
           # 원래 workspace 복원 (이미 완료된 단계 산출물 유지)
           if original_task_id:
-            from workspace.manager import WorkspaceManager
-            WORKSPACE_ROOT = Path(__file__).parent.parent.parent / 'workspace'
-            self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=str(WORKSPACE_ROOT))
+            ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
+            self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=ws_root)
           return await self.receive(original)
       else:
         # 다른 입력이면 중단 작업 폐기
