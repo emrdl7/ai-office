@@ -20,6 +20,7 @@ from bus.message_bus import MessageBus
 from bus.payloads import TaskRequestPayload, TaskResultPayload
 from log_bus.event_bus import EventBus, LogEvent
 from workspace.manager import WorkspaceManager
+from db.task_store import get_task
 from harness.file_reader import resolve_references
 from harness.code_runner import run_code
 from harness.rejection_analyzer import record_rejection, get_past_rejections
