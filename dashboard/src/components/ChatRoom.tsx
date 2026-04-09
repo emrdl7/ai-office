@@ -70,7 +70,7 @@ function linkify(text: string) {
       return (
         <span
           key={i}
-          className="text-blue-400 font-semibold bg-blue-500/10 rounded px-0.5"
+          className="mention-highlight font-semibold rounded px-0.5"
         >
           {part}
         </span>
