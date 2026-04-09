@@ -402,7 +402,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           ) : (
             <>
               {renderMessages(channelLogs)}
-              <WorkingIndicator workingAgents={workingAgents} />
+              <WorkingIndicator workingAgents={workingAgents} typingAgents={typingAgents} />
               <div ref={bottomRef} />
             </>
           )}
@@ -833,49 +833,80 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
   )
 }
 
-// 작업 중 인디케이터 — working/meeting 에이전트 표시 + 경과 시간
-function WorkingIndicator({ workingAgents }: { workingAgents: Agent[] }) {
+// 작업 중 / 입력 중 인디케이터
+function WorkingIndicator({ workingAgents, typingAgents }: { workingAgents: Agent[]; typingAgents: Set<string> }) {
   const [now, setNow] = useState(Date.now())
 
+  const hasWorking = workingAgents.length > 0
+  const hasTyping = typingAgents.size > 0
+
   useEffect(() => {
-    if (workingAgents.length === 0) return
+    if (!hasWorking) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [workingAgents.length > 0])
+  }, [hasWorking])
 
-  if (workingAgents.length === 0) return null
+  if (!hasWorking && !hasTyping) return null
 
-  const names = workingAgents.map((a) => {
-    const p = AGENT_PROFILE[a.agent_id]
-    return p?.character || p?.name || a.agent_id
+  // 작업 중 표시 (업무 모드)
+  if (hasWorking) {
+    const names = workingAgents.map((a) => {
+      const p = AGENT_PROFILE[a.agent_id]
+      return p?.character || p?.name || a.agent_id
+    })
+
+    const startedAt = workingAgents[0]?.work_started_at
+    const elapsed = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : 0
+    const min = Math.floor(elapsed / 60)
+    const sec = elapsed % 60
+    const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`
+
+    const statusText = workingAgents[0]?.status === 'meeting' ? '회의 중' : '작업 중'
+
+    let text = ''
+    if (names.length === 1) {
+      text = `${names[0]} ${statusText}`
+    } else if (names.length <= 3) {
+      text = `${names.join(', ')} ${statusText}`
+    } else {
+      text = `${names[0]} 외 ${names.length - 1}명 ${statusText}`
+    }
+
+    return (
+      <div className="flex items-center gap-2 py-2 pl-12">
+        <div className="flex gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+        <span className="text-xs text-gray-400">{text} ({timeStr})</span>
+      </div>
+    )
+  }
+
+  // 입력 중 표시 (대화 모드)
+  const typingNames = Array.from(typingAgents).map((id) => {
+    const p = AGENT_PROFILE[id]
+    return p?.character || p?.name || id
   })
 
-  // 서버에서 받은 작업 시작 시간 기반 경과 계산 (새로고침해도 유지)
-  const startedAt = workingAgents[0]?.work_started_at
-  const elapsed = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : 0
-  const min = Math.floor(elapsed / 60)
-  const sec = elapsed % 60
-  const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`
-
-  const statusText = workingAgents[0]?.status === 'meeting' ? '회의 중' : '작업 중'
-
-  let text = ''
-  if (names.length === 1) {
-    text = `${names[0]} ${statusText}`
-  } else if (names.length <= 3) {
-    text = `${names.join(', ')} ${statusText}`
+  let typingText = ''
+  if (typingNames.length === 1) {
+    typingText = `${typingNames[0]} 입력 중`
+  } else if (typingNames.length <= 3) {
+    typingText = `${typingNames.join(', ')} 입력 중`
   } else {
-    text = `${names[0]} 외 ${names.length - 1}명 ${statusText}`
+    typingText = `${typingNames[0]} 외 ${typingNames.length - 1}명 입력 중`
   }
 
   return (
     <div className="flex items-center gap-2 py-2 pl-12">
       <div className="flex gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
       </div>
-      <span className="text-xs text-gray-400">{text} ({timeStr})</span>
+      <span className="text-xs text-gray-400">{typingText}...</span>
     </div>
   )
 }
