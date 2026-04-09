@@ -758,6 +758,53 @@ async def log_stream(ws: WebSocket):
     event_bus.unsubscribe(q)
 
 
+# --- 건의게시판 API ---
+
+@app.get('/api/suggestions')
+async def list_suggestions_api(status: str = ''):
+  '''건의 목록을 반환한다.'''
+  from db.suggestion_store import list_suggestions
+  return list_suggestions(status)
+
+
+@app.post('/api/suggestions')
+async def create_suggestion_api(request: Request):
+  '''건의를 등록한다.'''
+  from db.suggestion_store import create_suggestion
+  body = await request.json()
+  result = create_suggestion(
+    agent_id=body.get('agent_id', 'user'),
+    title=body.get('title', ''),
+    content=body.get('content', ''),
+    category=body.get('category', 'general'),
+  )
+  return result
+
+
+@app.patch('/api/suggestions/{suggestion_id}')
+async def update_suggestion_api(suggestion_id: str, request: Request):
+  '''건의 상태/답변을 업데이트한다.'''
+  from db.suggestion_store import update_suggestion
+  body = await request.json()
+  success = update_suggestion(
+    suggestion_id,
+    status=body.get('status', ''),
+    response=body.get('response', ''),
+  )
+  if not success:
+    raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다')
+  return {'success': True}
+
+
+@app.delete('/api/suggestions/{suggestion_id}')
+async def delete_suggestion_api(suggestion_id: str):
+  '''건의를 삭제한다.'''
+  from db.suggestion_store import delete_suggestion
+  if not delete_suggestion(suggestion_id):
+    raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다')
+  return {'deleted': suggestion_id}
+
+
 # --- 자가개선 API ---
 
 @app.get('/api/improvement/report')

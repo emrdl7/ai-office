@@ -183,11 +183,52 @@ class Agent:
     except Exception:
       pass
 
+    # ── 건의 자동 등록: 도구/정보 부족 감지 ──
+    try:
+      self._detect_and_suggest(content, prompt)
+    except Exception:
+      pass
+
     # 대화 기록 추가
     self._conversation_history.append({'role': 'user', 'content': prompt})
     self._conversation_history.append({'role': 'assistant', 'content': content})
 
     return content
+
+  def _detect_and_suggest(self, content: str, prompt: str) -> None:
+    '''산출물에서 도구/정보 부족 신호를 감지하여 건의를 자동 등록한다.'''
+    from db.suggestion_store import create_suggestion
+
+    # 감지 패턴: 에이전트가 "할 수 없다", "접근할 수 없다" 등을 언급
+    lack_signals = [
+      ('접근할 수 없', '도구 부족', '외부 리소스 접근 도구가 필요합니다'),
+      ('확인할 수 없', '정보 부족', '필요한 정보를 확인할 도구가 없습니다'),
+      ('실제 데이터가 없', '데이터 부족', '실제 데이터 접근 도구가 필요합니다'),
+      ('API에 접근', '도구 부족', '외부 API 호출 도구가 필요합니다'),
+      ('직접 확인이 불가', '도구 부족', '직접 확인할 수 있는 도구가 필요합니다'),
+      ('추정입니다', '정보 부족', '정확한 정보를 가져올 도구가 필요합니다'),
+      ('가정하고', '정보 부족', '실제 데이터 확인이 필요합니다'),
+    ]
+
+    for signal, category, base_msg in lack_signals:
+      if signal in content:
+        # 중복 방지: 같은 에이전트가 같은 카테고리로 최근 등록했는지 체크
+        from db.suggestion_store import list_suggestions
+        recent = list_suggestions()
+        already = any(
+          s['agent_id'] == self.name and s['category'] == category
+          and s['status'] == 'pending'
+          for s in recent[:10]
+        )
+        if not already:
+          task_summary = prompt[:100].replace('\n', ' ')
+          create_suggestion(
+            agent_id=self.name,
+            title=f'{base_msg}',
+            content=f'작업 "{task_summary}..." 수행 중 {signal}는 상황이 발생했습니다. {base_msg}',
+            category=category,
+          )
+        break  # 하나만 등록
 
   async def speak(self, topic: str, context: str = '') -> str:
     '''회의에서 자기 관점으로 의견을 제시한다.

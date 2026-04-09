@@ -12,6 +12,7 @@ interface DashboardState {
   selectedTaskId: string
   activeChannel: ChannelId
   showArtifacts: boolean
+  showSuggestions: boolean
   searchQuery: string
   setAgents: (agents: Agent[]) => void
   setTasks: (tasks: Task[]) => void
@@ -21,6 +22,7 @@ interface DashboardState {
   setSelectedTaskId: (id: string) => void
   setActiveChannel: (channel: ChannelId) => void
   toggleArtifacts: () => void
+  setShowSuggestions: (show: boolean) => void
   setSearchQuery: (query: string) => void
   updateLogReactions: (logId: string, reactions: Record<string, string[]>) => void
 }
@@ -37,6 +39,7 @@ export const useStore = create<DashboardState>((set) => ({
   selectedTaskId: '',
   activeChannel: 'all',
   showArtifacts: false,
+  showSuggestions: false,
   searchQuery: '',
 
   setAgents: (agents) => set({ agents }),
@@ -66,6 +69,7 @@ export const useStore = create<DashboardState>((set) => ({
   setSelectedTaskId: (selectedTaskId) => set({ selectedTaskId }),
   setActiveChannel: (activeChannel) => set({ activeChannel }),
   toggleArtifacts: () => set((state) => ({ showArtifacts: !state.showArtifacts })),
+  setShowSuggestions: (showSuggestions) => set({ showSuggestions }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   updateLogReactions: (logId, reactions) =>
     set((state) => ({

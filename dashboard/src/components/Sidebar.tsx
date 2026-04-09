@@ -240,6 +240,20 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           })}
         </ul>
       </div>
+
+      {/* 건의게시판 버튼 */}
+      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800">
+        <button
+          onClick={() => useStore.getState().setShowSuggestions(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
+            text-sm text-gray-600 dark:text-gray-400
+            hover:bg-gray-100 dark:hover:bg-gray-800
+            cursor-pointer transition-colors"
+        >
+          <span>📋</span>
+          <span>건의게시판</span>
+        </button>
+      </div>
     </aside>
   )
 }
