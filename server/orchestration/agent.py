@@ -10,7 +10,7 @@ from runners.claude_runner import run_claude_isolated
 from log_bus.event_bus import EventBus, LogEvent
 from memory.agent_memory import AgentMemory, MemoryRecord
 from harness.rejection_analyzer import get_past_rejections
-from improvement.prompt_evolver import PromptEvolver
+from improvement.prompt_evolver import PromptEvolver, PromptRule
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 _prompt_evolver = PromptEvolver()
@@ -189,6 +189,12 @@ class Agent:
     except Exception:
       pass
 
+    # ── 약속 감지 → 학습 규칙으로 자동 등록 ──
+    try:
+      self._capture_commitments(content, prompt)
+    except Exception:
+      pass
+
     # 대화 기록 추가
     self._conversation_history.append({'role': 'user', 'content': prompt})
     self._conversation_history.append({'role': 'assistant', 'content': content})
@@ -229,6 +235,53 @@ class Agent:
             category=category,
           )
         break  # 하나만 등록
+
+  def _capture_commitments(self, content: str, prompt: str) -> None:
+    '''응답에서 약속/다짐 패턴을 감지하여 학습 규칙으로 영구 등록한다.
+
+    "명심하겠습니다", "앞으로 ~하겠습니다" 같은 약속을 감지하면
+    PromptEvolver에 규칙으로 저장 → 다음 호출 시 시스템 프롬프트에 자동 주입.
+    '''
+    import re
+
+    # 약속 패턴: "앞으로 ~하겠습니다", "~하지 않겠습니다", "명심하겠습니다"
+    commitment_patterns = [
+      r'앞으로\s+(.{5,60}?(?:하겠습니다|않겠습니다|할게요|할 것입니다))',
+      r'다음부터\s+(.{5,60}?(?:하겠습니다|않겠습니다|할게요))',
+      r'(.{5,60}?(?:명심하겠습니다|기억하겠습니다|유의하겠습니다))',
+    ]
+
+    for pattern in commitment_patterns:
+      match = re.search(pattern, content)
+      if match:
+        commitment = match.group(1).strip() if match.group(1) else match.group(0).strip()
+        # 너무 짧거나 의미 없는 건 무시
+        if len(commitment) < 8:
+          continue
+
+        # 중복 체크: 같은 규칙이 이미 있는지
+        existing = _prompt_evolver.load_rules(self.name)
+        if any(commitment[:20] in r.rule for r in existing):
+          continue
+
+        # 학습 규칙으로 등록
+        from datetime import datetime, timezone
+        rule = PromptRule(
+          id=f'commit-{datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")}',
+          created_at=datetime.now(timezone.utc).isoformat(),
+          source='self_commitment',
+          category='behavior',
+          rule=commitment,
+          evidence=f'본인 발언에서 감지: "{content[:100]}..."',
+          priority='high',
+          active=True,
+        )
+        existing.append(rule)
+        # 최대 규칙 수 유지
+        if len(existing) > 10:
+          existing = existing[-10:]
+        _prompt_evolver.save_rules(self.name, existing)
+        break
 
   async def speak(self, topic: str, context: str = '') -> str:
     '''회의에서 자기 관점으로 의견을 제시한다.
