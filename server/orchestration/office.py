@@ -1142,6 +1142,27 @@ class Office:
           except Exception:
             pass
 
+      # 퍼블리싱 완료 시 멀티페이지 사이트 빌더 실행
+      if current_group == '퍼블리싱' and self._current_project_type in ('web_development', 'website'):
+        try:
+          ia_content = next((v for k, v in all_results.items() if 'IA' in k), '')
+          design_content = '\n'.join(v for k, v in all_results.items() if '디자인' in k)
+          if ia_content:
+            from harness.site_builder import build_multipage_site
+            site_result = await build_multipage_site(
+              ia_content=ia_content,
+              design_specs=design_content,
+              stitch_html=content if '<html' in content.lower() else None,
+              workspace_dir=self.workspace.task_dir,
+              project_brief=user_input[:500],
+            )
+            if site_result.get('pages'):
+              for page_path in site_result['pages']:
+                phase_artifacts.append(f'{self.workspace.task_id}/{page_path}')
+              await self._emit('developer', f'멀티페이지 사이트 생성 완료 ({len(site_result["pages"])}페이지) 🌐', 'response')
+        except Exception:
+          pass
+
       all_results[phase_name] = content
       prev_phase_result = content
 
@@ -1285,6 +1306,9 @@ class Office:
           revision_count=_phase_revision_count,
           group=current_group,
         ))
+
+        # ── 크로스리뷰 — 다른 역할이 해당 그룹 산출물을 간단히 검토 ──
+        await self._cross_review(current_group, all_results)
 
         # 디자인 그룹 완료 시 → 웹 개발 프로젝트만 Stitch 시안 생성
         if current_group == '디자인' and self._current_project_type in ('web_development', 'website'):
@@ -1461,6 +1485,49 @@ class Office:
     if exported:
       files_text = ', '.join(exported[:5])
       await self._emit('system', f'📦 산출물 내보내기 완료: {files_text}', 'response')
+
+  # 그룹별 크로스리뷰 매핑: 그룹 → (리뷰어, 관점)
+  _CROSS_REVIEW_MAP: dict[str, tuple[str, str]] = {
+    '기획': ('designer', 'UX/사용자 경험 관점에서 기획 산출물을 검토'),
+    '디자인': ('developer', '기술 구현 가능성 관점에서 디자인 산출물을 검토'),
+    '퍼블리싱': ('designer', '디자인 명세 준수 여부를 검토'),
+  }
+
+  async def _cross_review(self, group_name: str, all_results: dict[str, str]) -> None:
+    '''그룹 완료 후 다른 역할의 에이전트가 간단히 크로스리뷰한다.'''
+    review_config = self._CROSS_REVIEW_MAP.get(group_name)
+    if not review_config:
+      return
+
+    reviewer_name, perspective = review_config
+    reviewer = self.agents.get(reviewer_name)
+    if not reviewer:
+      return
+
+    # 해당 그룹의 산출물 수집
+    group_content = '\n\n'.join(
+      f'[{k}]\n{v[:2000]}' for k, v in all_results.items() if group_name in k or k.startswith(group_name)
+    )
+    if not group_content:
+      return
+
+    try:
+      await self._emit(reviewer_name, '', 'typing')
+      review_prompt = (
+        f'{perspective}하세요.\n\n'
+        f'[{group_name} 산출물]\n{group_content[:6000]}\n\n'
+        f'핵심 피드백을 2~3줄로 간결하게. 문제 없으면 "문제 없습니다" 한 줄.'
+      )
+      result = await run_claude_isolated(
+        review_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+      )
+      feedback = result.strip()
+      if feedback and '문제 없' not in feedback:
+        await self._emit(reviewer_name, f'[{group_name} 크로스리뷰] {feedback[:300]}', 'response')
+      else:
+        await self._emit(reviewer_name, f'{group_name} 산출물 확인했습니다 ✅', 'response')
+    except Exception:
+      pass
 
   async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str:
     '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''

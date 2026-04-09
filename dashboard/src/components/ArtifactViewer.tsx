@@ -77,6 +77,8 @@ export function ArtifactViewer() {
 
   const isMarkdown = selectedPath.endsWith('.md')
 
+  const [exporting, setExporting] = useState<string>('')
+
   // 다운로드 핸들러
   function handleDownload() {
     if (!fileData) return
@@ -87,6 +89,23 @@ export function ArtifactViewer() {
     a.download = selectedPath.split('/').pop() || 'download.md'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // 내보내기 핸들러
+  async function handleExport(fmt: string) {
+    const taskId = selectedPath.split('/')[0]
+    if (!taskId) return
+    setExporting(fmt)
+    try {
+      const res = await fetch(`/api/exports/${taskId}/${fmt}`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        // 생성된 파일 다운로드
+        const dlUrl = `/api/artifacts/${data.path}`
+        window.open(dlUrl, '_blank')
+      }
+    } catch { /* */ }
+    finally { setExporting('') }
   }
 
   if (artifacts.length === 0) {
@@ -107,7 +126,7 @@ export function ArtifactViewer() {
         <h2 className="text-xs font-semibold uppercase tracking-wider opacity-60">
           {finalFiles.length > 0 ? '최종 산출물' : '산출물'}
         </h2>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           {fileData && (
             <button
               onClick={handleDownload}
@@ -117,9 +136,22 @@ export function ArtifactViewer() {
                 cursor-pointer transition-colors"
               aria-label="다운로드"
             >
-              ⬇ 다운로드
+              ⬇ MD
             </button>
           )}
+          {selectedPath && ['pdf', 'docx', 'zip'].map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => handleExport(fmt)}
+              disabled={!!exporting}
+              className="text-xs px-2 py-1 rounded
+                bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400
+                hover:bg-gray-100 dark:hover:bg-gray-700
+                disabled:opacity-40 cursor-pointer transition-colors"
+            >
+              {exporting === fmt ? '...' : fmt.toUpperCase()}
+            </button>
+          ))}
         </div>
       </div>
 
