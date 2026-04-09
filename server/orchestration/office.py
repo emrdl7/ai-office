@@ -390,10 +390,6 @@ class Office:
     # 의도 분류 전에는 typing만 표시 (작업중 X)
     await self._emit('teamlead', '', 'typing')
 
-    # 하루 첫 메시지 여부 체크 (출근 인사는 CONVERSATION:greeting에서 처리)
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    is_first_today = not hasattr(self, '_greeted_date') or self._greeted_date != today
-
     # 서버 재시작 후 첫 대화 시 이전 맥락 복원
     if not self._context_summary:
       try:
@@ -525,17 +521,6 @@ class Office:
     # 3. 의도별 분기
     if intent_result.intent == IntentType.CONVERSATION:
       response = intent_result.direct_response or ''
-
-      # 하루 첫 메시지면 출근 인사를 팀장 응답에 앞에 붙임
-      if is_first_today:
-        self._greeted_date = today
-        import random
-        greetings = [
-          '좋은 아침입니다! ☀️ ',
-          '안녕하세요! 오늘도 잘 부탁드립니다. 💪 ',
-          '출근했습니다! 🚀 ',
-        ]
-        response = random.choice(greetings) + response
 
       await self._emit('teamlead', response, 'response')
 
