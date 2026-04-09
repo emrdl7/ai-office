@@ -440,31 +440,20 @@ class Office:
     if hasattr(self, '_pending_project') and self._pending_project:
       return await self._continue_project(user_input)
 
-    # 0-1. 중단된 작업이 있고 사용자가 재개를 요청하면 원래 instruction으로 재실행
+    # 0-1. 중단된 작업이 있고 사용자가 재개를 요청하면 바로 재실행
     if hasattr(self, '_interrupted_instruction') and self._interrupted_instruction:
-      # 명시적 재개 표현만 허용 (단순 "네", "응" 같은 일상 표현은 제외)
-      resume_phrases = ('이전 작업', '이어서 진행', '계속 진행', '재개해', '아까 거', '중단된 거', '이어서 해', '계속해')
-      is_confirmed_resume = self._interrupted_confirmed and user_input.strip().lower() in ('네', '응', 'ㅇㅇ', 'yes', 'ok')
-      if any(phrase in user_input for phrase in resume_phrases) or is_confirmed_resume:
-        if not self._interrupted_confirmed:
-          # 첫 번째 응답: 확인 질문
-          self._interrupted_confirmed = True
-          instruction_preview = self._interrupted_instruction[:80]
-          await self._emit('teamlead', f'@마스터 이전 작업 "{instruction_preview}..." 이어서 진행할까요?', 'response')
-          self._state = OfficeState.IDLE
-          return {'state': self._state.value, 'response': '', 'artifacts': []}
-        else:
-          # 두 번째 응답: 원래 task_id의 workspace 복원 후 재실행
-          original = self._interrupted_instruction
-          original_task_id = self._interrupted_task_id
-          self._interrupted_instruction = None
-          self._interrupted_task_id = None
-          self._interrupted_confirmed = False
-          # 원래 workspace 복원 (이미 완료된 단계 산출물 유지)
-          if original_task_id:
-            ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
-            self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=ws_root)
-          return await self.receive(original)
+      resume_phrases = ('이전 작업', '이어서 진행', '계속 진행', '재개해', '아까 거', '중단된 거', '이어서 해', '계속해', '진행해')
+      if any(phrase in user_input for phrase in resume_phrases):
+        # 바로 재실행 — 2단계 확인 불필요
+        original = self._interrupted_instruction
+        original_task_id = self._interrupted_task_id
+        self._interrupted_instruction = None
+        self._interrupted_task_id = None
+        self._interrupted_confirmed = False
+        if original_task_id:
+          ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
+          self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=ws_root)
+        return await self.receive(original)
       else:
         # 다른 입력이면 중단 작업 폐기
         self._interrupted_instruction = None
