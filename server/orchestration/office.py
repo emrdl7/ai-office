@@ -635,8 +635,8 @@ class Office:
       ctx_parts.append(reference_context)
     result = await agent.handle(prompt, context='\n\n'.join(ctx_parts))
 
-    # 다른 팀원의 전문 의견 (40% 확률)
-    await self._work_commentary(agent_name, 'quick-task', result)
+    # 보완 관점 의견 — 다른 역할 에이전트가 한마디
+    await self._quick_task_second_opinion(agent_name, prompt, result)
 
     # QA 검수 (최대 3회: 초기 + 2회 보완)
     qa_agent = self.agents.get('qa')
@@ -1736,6 +1736,44 @@ class Office:
       return text if text else ''
     except Exception:
       return ''
+
+  # QUICK_TASK 보완 의견 매핑: 담당자 → 보완 역할
+  _SECOND_OPINION_MAP: dict[str, tuple[str, str]] = {
+    'developer': ('planner', '기획/전략 관점에서 빠진 부분이 없는지'),
+    'planner':   ('developer', '기술적 정확성과 실현 가능성 관점에서'),
+    'designer':  ('developer', '기술 구현 관점에서'),
+  }
+
+  async def _quick_task_second_opinion(self, worker: str, prompt: str, result: str) -> None:
+    '''QUICK_TASK 결과에 대해 다른 역할의 에이전트가 보완 의견을 제시한다.'''
+    config = self._SECOND_OPINION_MAP.get(worker)
+    if not config:
+      return
+
+    reviewer_name, perspective = config
+    reviewer = self.agents.get(reviewer_name)
+    if not reviewer:
+      return
+
+    try:
+      await self._emit(reviewer_name, '', 'typing')
+      review_prompt = (
+        f'{perspective} 아래 산출물을 검토하세요.\n\n'
+        f'[원본 요청]\n{prompt[:500]}\n\n'
+        f'[산출물]\n{result[:3000]}\n\n'
+        f'보완할 점이 있으면 2~3줄로 짧게. 없으면 "특이사항 없습니다" 한 줄.\n'
+        f'메신저 톤, 마크다운 금지.'
+      )
+      resp = await run_claude_isolated(
+        review_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+      )
+      feedback = resp.strip()
+      if feedback and '특이사항 없' not in feedback:
+        await self._emit(reviewer_name, feedback[:300], 'response')
+      else:
+        await self._emit(reviewer_name, '확인했습니다 👍', 'response')
+    except Exception:
+      pass
 
   async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None:
     '''작업 완료 직후 관련 팀원 1명이 결과물 기반 전문 의견을 짧게 끼어든다.

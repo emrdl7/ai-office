@@ -245,7 +245,7 @@ class Agent:
     full = f'{system}\n\n---\n\n{prompt}' if system else prompt
 
     if self.name == 'qa':
-      return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=60.0)
+      return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=120.0)
 
     if self.name == 'planner':
       try:
