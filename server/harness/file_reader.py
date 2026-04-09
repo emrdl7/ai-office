@@ -61,6 +61,44 @@ def read_folder(path: str, max_chars: int = 8000) -> str:
   return '\n\n'.join(results) if results else f'(폴더에 읽을 수 있는 파일 없음: {path})'
 
 
+def web_search(query: str, max_results: int = 5) -> str:
+  '''DuckDuckGo로 웹 검색하여 결과를 텍스트로 반환한다 (API 키 불필요).'''
+  import urllib.request, urllib.parse
+
+  try:
+    url = f'https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}'
+    req = urllib.request.Request(url, headers={
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+      html = resp.read().decode('utf-8', errors='replace')
+
+    # 결과 추출: 제목 + URL + 스니펫
+    results = re.findall(
+      r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?'
+      r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
+      html, re.DOTALL,
+    )
+
+    if not results:
+      return ''
+
+    lines = []
+    for i, (raw_url, raw_title, raw_snippet) in enumerate(results[:max_results]):
+      title = re.sub(r'<[^>]+>', '', raw_title).strip()
+      snippet = re.sub(r'<[^>]+>', '', raw_snippet).strip()
+      # DuckDuckGo redirect URL에서 실제 URL 추출
+      actual_url = raw_url
+      url_match = re.search(r'uddg=([^&]+)', raw_url)
+      if url_match:
+        actual_url = urllib.parse.unquote(url_match.group(1))
+      lines.append(f'{i+1}. {title}\n   {actual_url}\n   {snippet}')
+
+    return '\n\n'.join(lines)
+  except Exception:
+    return ''
+
+
 def _fetch_web_page(url: str, max_chars: int = 8000) -> str:
   '''웹 페이지의 텍스트 콘텐츠를 가져온다 (HTML → 텍스트).'''
   import urllib.request
@@ -147,6 +185,22 @@ def resolve_references(instruction: str) -> str:
     읽어온 파일/URL 내용 텍스트. 경로가 없으면 빈 문자열.
   '''
   contents = []
+
+  # 검색 요청 감지: "~에 대해 검색해", "~을 검색해줘", "~ 찾아봐" 등
+  search_patterns = [
+    r'["\']?(.+?)["\']?\s*(?:에 대해|에대해|을|를)?\s*(?:검색|서치|search)해',
+    r'(.+?)\s*(?:검색|서치|search)해\s*(?:줘|주세요|봐)?',
+    r'(.+?)\s*(?:찾아|알아)\s*(?:봐|줘|주세요)',
+  ]
+  for sp in search_patterns:
+    match = re.search(sp, instruction)
+    if match:
+      query = match.group(1).strip()
+      if len(query) > 2:
+        result = web_search(query)
+        if result:
+          contents.append(f'[웹 검색: {query}]\n{result}')
+        break
 
   # URL 감지
   url_pattern = r'(https?://[^\s<\'"]+)'
