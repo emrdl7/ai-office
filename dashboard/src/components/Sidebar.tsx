@@ -30,6 +30,7 @@ function statusDot(status: string): string {
     case 'working': return 'bg-blue-400 animate-pulse'
     case 'meeting': return 'bg-purple-400 animate-pulse'
     case 'waiting': return 'bg-yellow-400'
+    case 'idle': return 'bg-green-400'
     default: return 'bg-gray-400'
   }
 }
@@ -39,6 +40,7 @@ function statusLabel(status: string): { text: string; color: string } {
     case 'working': return { text: '작업중', color: 'text-blue-400' }
     case 'meeting': return { text: '회의중', color: 'text-purple-400' }
     case 'waiting': return { text: '대기', color: 'text-yellow-400' }
+    case 'idle': return { text: '온라인', color: 'text-green-400' }
     default: return { text: '오프라인', color: 'text-gray-500' }
   }
 }
