@@ -61,6 +61,35 @@ def read_folder(path: str, max_chars: int = 8000) -> str:
   return '\n\n'.join(results) if results else f'(폴더에 읽을 수 있는 파일 없음: {path})'
 
 
+def _fetch_web_page(url: str, max_chars: int = 8000) -> str:
+  '''웹 페이지의 텍스트 콘텐츠를 가져온다 (HTML → 텍스트).'''
+  import urllib.request
+
+  try:
+    req = urllib.request.Request(url, headers={
+      'User-Agent': 'Mozilla/5.0 (compatible; AI-Office/1.0)',
+      'Accept': 'text/html,application/xhtml+xml,text/plain',
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+      content_type = resp.headers.get('Content-Type', '')
+      if 'image' in content_type or 'pdf' in content_type or 'octet-stream' in content_type:
+        return ''
+      raw = resp.read().decode('utf-8', errors='replace')
+
+    # HTML 태그 제거 → 텍스트 추출
+    if '<html' in raw.lower() or '<body' in raw.lower():
+      # script/style 제거
+      cleaned = re.sub(r'<(script|style)[^>]*>[\s\S]*?</\1>', '', raw, flags=re.IGNORECASE)
+      # 태그 제거
+      cleaned = re.sub(r'<[^>]+>', ' ', cleaned)
+      # 공백 정리
+      cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+      return cleaned[:max_chars]
+    return raw[:max_chars]
+  except Exception:
+    return ''
+
+
 def _fetch_github_repo(owner: str, repo: str) -> str:
   '''GitHub 저장소의 파일 구조 + README를 가져온다.'''
   import urllib.request, json as _json
@@ -119,14 +148,25 @@ def resolve_references(instruction: str) -> str:
   '''
   contents = []
 
-  # GitHub URL 감지 및 내용 가져오기
+  # URL 감지
+  url_pattern = r'(https?://[^\s<\'"]+)'
+  urls = re.findall(url_pattern, instruction)
   github_pattern = r'https?://github\.com/([^/\s]+)/([^/\s#?]+)'
-  github_matches = re.findall(github_pattern, instruction)
-  for owner, repo in github_matches:
-    repo = repo.rstrip('/')
-    content = _fetch_github_repo(owner, repo)
+
+  for url in urls:
+    # GitHub 저장소 → 전용 API로 처리
+    gh_match = re.match(github_pattern, url)
+    if gh_match:
+      owner, repo = gh_match.group(1), gh_match.group(2).rstrip('/')
+      content = _fetch_github_repo(owner, repo)
+      if content:
+        contents.append(f'[GitHub: {owner}/{repo}]\n{content}')
+      continue
+
+    # 일반 웹 URL → 페이지 내용 가져오기
+    content = _fetch_web_page(url)
     if content:
-      contents.append(f'[GitHub: {owner}/{repo}]\n{content}')
+      contents.append(f'[웹: {url[:80]}]\n{content}')
 
   # 로컬 파일 경로 처리
   paths = extract_paths(instruction)
