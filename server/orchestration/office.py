@@ -322,6 +322,7 @@ class Office:
         f'이미 나온 말을 다른 표현으로 반복하는 것은 금지.'
       )
       try:
+        await self._emit(name, '', 'typing')
         resp = await run_claude_isolated(
           f'{system}\n\n---\n\n{prompt}',
           model='claude-haiku-4-5-20251001',
