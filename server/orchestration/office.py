@@ -387,9 +387,8 @@ class Office:
     Returns:
       {'state': str, 'response': str, 'artifacts': list[str]}
     '''
-    self._state = OfficeState.TEAMLEAD_THINKING
-    self._active_agent = 'teamlead'
-    self._work_started_at = datetime.now(timezone.utc).isoformat()
+    # 의도 분류 전에는 typing만 표시 (작업중 X)
+    await self._emit('teamlead', '', 'typing')
 
     # 하루 첫 메시지 여부 체크 (출근 인사는 CONVERSATION:greeting에서 처리)
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -476,6 +475,10 @@ class Office:
     # 2. 업무 시작 시 프로젝트 세션 관리 + 이전 대화 압축
     is_work = intent_result.intent in (IntentType.QUICK_TASK, IntentType.PROJECT, IntentType.CONTINUE_PROJECT)
     if is_work:
+      # 업무일 때만 "작업중" 상태 전환
+      self._state = OfficeState.TEAMLEAD_THINKING
+      self._active_agent = 'teamlead'
+      self._work_started_at = datetime.now(timezone.utc).isoformat()
       if self._task_count > 0:
         await self._compress_history()
       self._task_count += 1
