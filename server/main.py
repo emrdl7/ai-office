@@ -473,9 +473,12 @@ async def get_agents(request: Request):
     else:
       status = 'waiting'
 
-    # 팀장은 항상 Claude CLI
     if agent_id == 'teamlead':
-      model = 'Claude CLI'
+      model = 'Claude Haiku'
+    elif agent_id == 'qa':
+      model = 'Claude Haiku'
+    elif agent_id == 'planner':
+      model = 'Gemini' if is_working else 'Claude Haiku'
     elif is_working:
       model = 'Claude Sonnet'
     else:

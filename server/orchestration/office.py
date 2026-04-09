@@ -85,6 +85,7 @@ class Office:
     self._base_task_id: str = ''  # 🔗 이전 작업 참조 (main.py에서 설정)
     self._user_mid_feedback: list[str] = []  # 작업 중 사용자 피드백 축적
     self._phase_feedback: list[dict] = []   # 팀원 리액션/인수인계 피드백
+    self._current_project_type: str = ''    # 현재 프로젝트 유형 (phase_registry)
 
     # Groq 러너 (디자이너, QA용)
     self.groq_runner = GroqRunner()
@@ -637,30 +638,39 @@ class Office:
     # 다른 팀원의 전문 의견 (40% 확률)
     await self._work_commentary(agent_name, 'quick-task', result)
 
-    # QA 검수 (최대 2회 재작업)
+    # QA 검수 (최대 3회: 초기 + 2회 보완)
     qa_agent = self.agents.get('qa')
+    accumulated_feedback: list[str] = []
     if qa_agent and agent_name != 'qa':
-      for attempt in range(2):
+      for attempt in range(3):
         self._state = OfficeState.QA_REVIEW
         self._active_agent = 'qa'
         await self._emit('qa', '산출물 검수를 시작합니다.', 'response')
 
+        feedback_section = ''
+        if accumulated_feedback:
+          feedback_section = '\n[이전 QA 피드백 이력]\n' + '\n'.join(f'- {fb}' for fb in accumulated_feedback) + '\n\n'
+
         qa_prompt = (
           f'[원본 요구사항]\n{prompt}\n\n'
+          f'{feedback_section}'
           f'[작업 결과물]\n{result}\n\n'
-          f'위 요구사항 대비 결과물을 검수하세요.'
+          f'위 요구사항 대비 결과물을 검수하세요.\n'
+          f'반드시 JSON 형식으로 응답: {{"status":"success|fail","summary":"...","failure_reason":"...","severity":"critical|major|minor|none"}}'
         )
         qa_result = await qa_agent.handle(qa_prompt)
 
-        # JSON 파싱으로 합격/불합격 판단
+        # severity 기반 합격/불합격 판단
         passed = True
         failure_reason = ''
+        severity = 'none'
         try:
           import re
           json_match = re.search(r'\{[^{}]*\}', qa_result, re.DOTALL)
           if json_match:
             qa_json = json.loads(json_match.group())
-            if qa_json.get('status') == 'fail':
+            severity = qa_json.get('severity', 'none')
+            if qa_json.get('status') == 'fail' or severity in ('critical', 'major'):
               passed = False
               failure_reason = qa_json.get('failure_reason', 'QA 불합격')
         except (json.JSONDecodeError, AttributeError):
@@ -669,16 +679,20 @@ class Office:
             failure_reason = qa_result[:300]
 
         if passed:
-          await self._emit('qa', '검수 통과 ✅', 'response')
+          msg = '검수 통과 ✅'
+          if severity == 'minor':
+            msg = f'검수 통과 (경미한 보완 권장) ✅'
+          await self._emit('qa', msg, 'response')
           break
         else:
-          await self._emit('qa', f'검수 불합격: {failure_reason[:200]}', 'response')
-          if attempt < 1:
-            # 재작업 요청
+          await self._emit('qa', f'검수 불합격 [{severity}]: {failure_reason[:200]}', 'response')
+          accumulated_feedback.append(failure_reason[:200])
+          if attempt < 2:
             self._state = OfficeState.WORKING
             self._active_agent = agent_name
             await self._emit('teamlead', f'{profile_names.get(agent_name, agent_name)}, 보완 부탁합니다.', 'response')
-            revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{failure_reason}\n\n[이전 결과물]\n{result}'
+            all_feedback = '\n'.join(f'- {fb}' for fb in accumulated_feedback)
+            revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{all_feedback}\n\n[이전 결과물]\n{result}'
             result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
 
     # 산출물 저장
@@ -701,8 +715,10 @@ class Office:
       f'위 요구사항 대비 산출물의 완성도를 검수하세요.\n'
       f'합격이면 첫 줄에 [PASS]를, 불합격이면 [FAIL]을 적고 이유를 적으세요.'
     )
-    teamlead_agent = self.agents.get('teamlead')
-    review_response = await teamlead_agent.handle(review_prompt) if teamlead_agent else '[PASS]'
+    try:
+      review_response = await run_claude_isolated(review_prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
+    except Exception:
+      review_response = '[PASS]'
     review_text = review_response.strip()
 
     if '[PASS]' not in review_text[:100]:
@@ -761,6 +777,7 @@ class Office:
       await self._emit('system', '📂 프로젝트 완료', 'project_close')
       self._active_project_id = None
       self._active_project_title = ''
+      self._current_project_type = ''
 
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
@@ -888,7 +905,6 @@ class Office:
     # phases가 전달되지 않으면 기존 호환 로직 (웹 개발 기본)
     if phases is not None:
       PHASES = phases
-      # project_type은 phases의 output_format으로 추론
       project_type = 'web_development'
       for p in phases:
         if p.get('output_format', '').endswith('+pdf'):
@@ -897,6 +913,7 @@ class Office:
     else:
       project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
       PHASES = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
+    self._current_project_type = project_type
 
     # 팀원 피드백 초기화
     self._phase_feedback = []
@@ -961,9 +978,9 @@ class Office:
               if sd.exists() and any(sd.iterdir()):
                 has_stitch = True
                 break
-            if not has_stitch:
+            if not has_stitch and self._current_project_type in ('web_development', 'website'):
               await self._generate_stitch_mockup(all_results, user_input)
-            else:
+            elif has_stitch:
               await self._emit('designer', '이전에 생성된 Stitch 시안이 있습니다. 그대로 사용합니다. 🎨', 'response')
           continue
       except Exception:
@@ -1269,8 +1286,8 @@ class Office:
           group=current_group,
         ))
 
-        # 디자인 그룹 완료 시 → Stitch로 시안 생성
-        if current_group == '디자인':
+        # 디자인 그룹 완료 시 → 웹 개발 프로젝트만 Stitch 시안 생성
+        if current_group == '디자인' and self._current_project_type in ('web_development', 'website'):
           await self._generate_stitch_mockup(all_results, user_input)
 
     # 퍼블리싱이 포함된 프로젝트(사이트 구축)인지 판단
@@ -1356,6 +1373,7 @@ class Office:
       await self._emit('system', '📂 프로젝트 완료', 'project_close')
       self._active_project_id = None
       self._active_project_title = ''
+      self._current_project_type = ''
 
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
@@ -1415,168 +1433,13 @@ class Office:
       f'마크다운 형식 사용하지 마세요.'
     )
     try:
-      response = await run_claude_isolated(prompt, timeout=120.0)
+      response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
       text = response.strip()
       if text.upper().startswith('[SKIP]') or text.upper() == 'SKIP':
         return ''
       return text
     except Exception:
       return ''
-
-  async def _run_planner_distribute(
-    self,
-    user_input: str,
-    analysis: str,
-    meeting_summary: str,
-    reference_context: str,
-    task_graph: TaskGraph,
-  ) -> None:
-    '''기획자가 회의 내용을 바탕으로 태스크를 분배한다.'''
-    planner = self.agents['planner']
-    system = planner._build_system_prompt(task_hint=user_input)
-
-    ref_section = f'[참조 자료]\n{reference_context[:4000]}\n\n' if reference_context else ''
-
-    prompt = (
-      f'[사용자 지시]\n{user_input}\n\n'
-      f'[팀장 분석]\n{analysis}\n\n'
-      f'[팀 회의 내용]\n{meeting_summary}\n\n'
-      f'{ref_section}'
-      f'회의에서 나온 의견을 반영하여 구체적인 태스크를 분배하세요.\n\n'
-      f'[응답 형식]\n'
-      f'반드시 아래 JSON 형식으로 응답하세요:\n'
-      f'{{\n'
-      f'  "tasks": [\n'
-      f'    {{\n'
-      f'      "task_id": "task-1",\n'
-      f'      "description": "구체적 작업 내용 (최소 3문장)",\n'
-      f'      "requirements": "완료 기준",\n'
-      f'      "assigned_to": "developer",\n'
-      f'      "depends_on": []\n'
-      f'    }}\n'
-      f'  ]\n'
-      f'}}\n'
-      f'assigned_to는 planner, designer, developer, qa 중 하나.'
-    )
-
-    try:
-      raw = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}')
-    except Exception:
-      raw = await run_gemini(prompt=prompt, system=system)
-    from runners.json_parser import parse_json
-    result = parse_json(raw)
-
-    if result and isinstance(result, dict) and 'tasks' in result:
-      for task_data in result['tasks']:
-        task_id = task_data.get('task_id', f'task-{id(task_data)}')
-        deps = task_data.get('depends_on', [])
-        if isinstance(deps, str):
-          deps = [deps] if deps else []
-        elif not isinstance(deps, list):
-          deps = []
-        try:
-          payload = TaskRequestPayload(
-            task_id=task_id,
-            description=task_data.get('description', ''),
-            requirements=task_data.get('requirements', ''),
-            assigned_to=task_data.get('assigned_to', 'developer'),
-            depends_on=deps,
-          )
-          task_graph.add_task(payload)
-        except Exception:
-          continue
-    else:
-      # 파싱 실패 시 기본 태스크
-      fallback = TaskRequestPayload(
-        task_id='task-fallback',
-        description=user_input,
-        requirements=user_input,
-        assigned_to='developer',
-        depends_on=[],
-      )
-      task_graph.add_task(fallback)
-
-    # 내부 처리 완료 — 채팅에 표시 안 함
-
-  async def _execute_tasks(
-    self,
-    task_graph: TaskGraph,
-    reference_context: str,
-  ) -> dict[str, str]:
-    '''태스크 그래프에 따라 작업을 실행하고 QA 중간검수를 한다.'''
-    worker_results: dict[str, str] = {}
-
-    while True:
-      ready = task_graph.ready_tasks()
-      if not ready:
-        break
-
-      for node in ready:
-        task_graph.update_status(node.task_id, TaskStatus.PROCESSING)
-
-        # 에이전트 실행
-        agent = self.agents.get(node.assigned_to)
-        if not agent:
-          task_graph.update_status(node.task_id, TaskStatus.FAILED, failure_reason=f'{node.assigned_to} 에이전트 없음')
-          continue
-
-        ref_section = reference_context[:4000] if reference_context else ''
-        prompt = (
-          f'[작업 지시]\n{node.description}\n\n'
-          f'[원본 요구사항]\n{node.requirements}\n\n'
-          f'위 지시에 따라 실무에서 바로 활용할 수 있는 수준으로 상세하게 작성하세요.\n'
-          f'마크다운 형식으로 작성하세요. JSON으로 감싸지 마세요.'
-        )
-        content = await agent.handle(prompt, context=ref_section)
-
-        # workspace에 저장
-        filename = f'{node.task_id}/{node.task_id}.md'
-        saved_paths = []
-        try:
-          self.workspace.write_artifact(filename, content)
-          saved_paths.append(filename)
-        except Exception:
-          pass
-
-        worker_results[node.task_id] = (
-          f'[{node.assigned_to}] {node.description}\n결과:\n{content}\n'
-        )
-
-        # QA 중간검수
-        self._state = OfficeState.QA_REVIEW
-        qa_agent = self.agents['qa']
-        qa_passed = await self._run_qa_check(qa_agent, node, content)
-
-        if not qa_passed:
-          # 보완 (최대 2회 — 내부 처리)
-          for retry in range(1, 3):
-            revision_prompt = (
-              f'{node.requirements}\n\n'
-              f'[이전 제출물]\n{content[:2000]}\n\n'
-              f'[QA 불합격 사유]\n{node.failure_reason}\n\n'
-              f'위 불합격 사유를 반영하여 수정·보완하세요.'
-            )
-            content = await agent.handle(revision_prompt, context=ref_section)
-            try:
-              self.workspace.write_artifact(filename, content)
-            except Exception:
-              pass
-            worker_results[node.task_id] = f'[{node.assigned_to}] 보완완료:\n{content}\n'
-
-            qa_passed = await self._run_qa_check(qa_agent, node, content)
-            if qa_passed:
-              break
-
-        if qa_passed:
-          task_graph.update_status(node.task_id, TaskStatus.DONE, artifact_paths=saved_paths)
-          agent.record_experience(node.task_id, True, f'작업 완료: {node.description[:100]}', ['success'])
-        else:
-          task_graph.update_status(node.task_id, TaskStatus.FAILED, failure_reason=node.failure_reason)
-          agent.record_experience(node.task_id, False, f'QA 불합격: {node.failure_reason}', ['qa_fail'])
-
-        self._state = OfficeState.WORKING
-
-    return worker_results
 
   async def _check_user_directive(self) -> dict | None:
     '''소단계 사이에 사용자가 보낸 메시지가 있는지 확인한다.
@@ -2074,10 +1937,15 @@ class Office:
       f'[사용자 원본 요구사항]\n{user_input}\n\n'
       f'[최종 산출물]\n{final_content[:12000]}\n\n'
       f'위 요구사항 대비 산출물의 완성도를 검수하세요.\n\n'
+      f'[체크리스트]\n'
+      f'1. 요구사항의 핵심 항목이 모두 반영되었는가?\n'
+      f'2. 산출물이 실무에서 바로 활용 가능한 수준인가?\n'
+      f'3. 내용이 충분히 구체적이고 상세한가?\n'
+      f'4. 논리적 비약이나 누락된 부분이 없는가?\n\n'
       f'합격이면 첫 줄에 [PASS]를, 불합격이면 [FAIL]을 적고 이유를 적으세요.'
     )
 
-    response = await run_claude_isolated(prompt, timeout=120.0)
+    response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
     text = response.strip()
 
     if text.startswith('[PASS]') or '[PASS]' in text[:100]:

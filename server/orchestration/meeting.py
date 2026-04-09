@@ -121,7 +121,7 @@ class Meeting:
       f'마크다운 형식 사용하지 마세요.'
     )
     try:
-      response = await run_claude_isolated(prompt, timeout=120.0)
+      response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
       return response.strip()
     except Exception:
       return '확인했습니다. 진행해 주세요.'

@@ -11,10 +11,22 @@
 ```json
 {
   "status": "success|fail",
-  "summary": "string",
-  "failure_reason": null
+  "summary": "검수 요약",
+  "failure_reason": "구체적 문제점 (fail일 때만)",
+  "severity": "critical|major|minor|none"
 }
 ```
+
+## severity 기준
+- **critical**: 핵심 요구사항 누락, 완전히 잘못된 내용, 산출물 미완성
+- **major**: 중요 항목 부실, 실무 활용 어려운 수준
+- **minor**: 사소한 보완 필요하지만 전체적으로 양호
+- **none**: 문제 없음
+
+## 판정 규칙
+- critical/major → 불합격 (status: fail)
+- minor → 경고 포함 합격 (status: success)
+- none → 합격 (status: success)
 
 ## 협업 규칙
 - 기획자로부터 `task_request` 메시지(assigned_to: qa)를 받아 검수를 시작한다

@@ -139,13 +139,8 @@ class Agent:
     # 입력 중... 표시
     await self._emit('', 'typing')
 
-    # 팀장 제외 전 구성원: Sonnet(업무) + Gemini fallback
-    try:
-      result = await run_claude_isolated(
-        f'{system}\n\n---\n\n{full_prompt}' if system else full_prompt
-      )
-    except Exception:
-      result = await run_gemini(prompt=full_prompt, system=system)
+    # 역할별 러너로 생성
+    result = await self._generate(full_prompt, system)
 
     # 마크다운 코드 펜스 제거
     content = result.strip()
@@ -208,12 +203,27 @@ class Agent:
     return result.strip()
 
   async def _generate(self, prompt: str, system: str = '') -> str:
-    '''에이전트에 맞는 러너로 텍스트를 생성한다.'''
-    # 팀장 제외 전 구성원: Sonnet(업무) + Gemini fallback
+    '''에이전트 역할에 맞는 러너로 텍스트를 생성한다.
+
+    러너 매핑:
+    - qa: Haiku (판단 전담)
+    - planner: Gemini 1차 → Sonnet 폴백
+    - developer, designer: Sonnet 1차 → Gemini 폴백
+    '''
+    full = f'{system}\n\n---\n\n{prompt}' if system else prompt
+
+    if self.name == 'qa':
+      return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=60.0)
+
+    if self.name == 'planner':
+      try:
+        return await run_gemini(prompt=prompt, system=system)
+      except Exception:
+        return await run_claude_isolated(full)
+
+    # developer, designer: Sonnet → Gemini
     try:
-      return await run_claude_isolated(
-        f'{system}\n\n---\n\n{prompt}' if system else prompt
-      )
+      return await run_claude_isolated(full)
     except Exception:
       return await run_gemini(prompt=prompt, system=system)
 

@@ -37,11 +37,11 @@ def _build_system_info() -> str:
   '''각 에이전트의 실제 러너/모델 정보를 동적으로 구성한다.'''
   return (
     f'[시스템 정보 — 반드시 이 정보만 사용할 것]\n'
-    f'당신의 모델: Claude CLI\n'
-    f'기획자 모델: Claude Sonnet(업무) / Haiku(대화)\n'
-    f'디자이너 모델: Claude Sonnet(업무) / Haiku(대화)\n'
-    f'개발자 모델: Claude Sonnet(업무) / Haiku(대화)\n'
-    f'QA 모델: Claude Sonnet(업무) / Haiku(대화)\n\n'
+    f'당신의 모델: Claude Haiku\n'
+    f'기획자 모델: Gemini(1차) / Sonnet(폴백)\n'
+    f'디자이너 모델: Claude Sonnet(1차) / Gemini(폴백)\n'
+    f'개발자 모델: Claude Sonnet(1차) / Gemini(폴백)\n'
+    f'QA 모델: Claude Haiku\n\n'
     f'중요 규칙:\n'
     f'- 당신의 모델명은 "Claude CLI"이다. "Claude Opus"나 다른 이름을 사용하지 마라.\n'
     f'- 자기소개 요청 시 당신 본인만 소개하라. 다른 팀원 소개를 대신 하지 마라.\n'
@@ -115,14 +115,14 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
   # 명시적 팀 참여 키워드 → 무조건 PROJECT (LLM 판단보다 우선)
   team_keywords = ['모두 참여', '팀 전체', '다 같이', '전원 참여', '다같이', '모두 다', '팀원 모두', '전부 참여']
   if any(kw in user_input for kw in team_keywords):
-    response = await run_claude_isolated(prompt, timeout=120.0)
+    response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
     result = _parse_intent_response(response)
     # QUICK_TASK였어도 PROJECT로 강제 승격
     if result.intent in (IntentType.QUICK_TASK, IntentType.CONTINUE_PROJECT):
       result.intent = IntentType.PROJECT
     return result
 
-  response = await run_claude_isolated(prompt, timeout=120.0)
+  response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
   return _parse_intent_response(response)
 
 
