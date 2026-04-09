@@ -282,6 +282,23 @@ class Office:
       'qa': 'Claude Sonnet(업무) / Haiku(대화)',
     }
 
+    # ── @멘션 파싱 — 지목된 에이전트 우선 응답 ──
+    import re
+    mentioned_ids: set[str] = set()
+    raw_mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', user_input)
+    for raw in raw_mentions:
+      target = MENTION_MAP.get(raw) or MENTION_MAP.get(raw.rstrip('님'))
+      if target and target not in ('user', 'teamlead'):
+        mentioned_ids.add(target)
+
+    # 멘션된 에이전트가 먼저, 나머지는 기본 순서
+    default_order = ['planner', 'designer', 'developer', 'qa']
+    if mentioned_ids:
+      ordered = [n for n in default_order if n in mentioned_ids] + \
+                [n for n in default_order if n not in mentioned_ids]
+    else:
+      ordered = default_order
+
     # ── 대화 스레드 구성 — 최근 맥락 + 현재 대화 ──
     thread: list[str] = []
     responded: list[str] = []
@@ -296,31 +313,45 @@ class Office:
     if teamlead_response:
       thread.append(f'[팀장] {teamlead_response}')
 
-    for name in ('planner', 'designer', 'developer', 'qa'):
+    for name in ordered:
       agent = self.agents.get(name)
       if not agent:
         continue
       system = agent._build_system_prompt(task_hint=user_input)
       my_model = agent_model_map.get(name, '알 수 없음')
 
+      is_mentioned = name in mentioned_ids
       thread_text = '\n'.join(thread)
-      prompt = (
-        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
-        f'{thread_text}\n\n'
-        f'---\n\n'
-        f'당신은 {name}입니다. (모델: {my_model})\n'
-        f'위 대화를 전부 읽고, 당신이 반응해야 하는지 판단하세요.\n\n'
-        f'[판단 기준]\n'
-        f'- 대화 맥락을 정확히 파악하라. 같은 단어라도 문맥에 따라 의미가 다르다.\n'
-        f'- 누군가 이미 적절히 답변/반응한 내용은 반복하지 마라.\n'
-        f'- 새로운 관점이나 정보를 더할 수 있을 때만 발언하라.\n'
-        f'- 일상 대화(날씨, 교통, 안부)는 전문 영역과 무관하므로 대부분 [PASS]\n'
-        f'- 당신을 직접 지목(@멘션)하지 않았고, 추가할 가치가 없으면 [PASS]\n'
-        f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
-        f'반응할 필요 없으면: [PASS]\n'
-        f'반응할 필요 있으면: 1~2문장, 메신저 톤, 마크다운 금지.\n'
-        f'이미 나온 말을 다른 표현으로 반복하는 것은 금지.'
-      )
+
+      if is_mentioned:
+        # 직접 지목된 에이전트 → 반드시 응답
+        prompt = (
+          f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+          f'{thread_text}\n\n'
+          f'---\n\n'
+          f'당신은 {name}입니다. (모델: {my_model})\n'
+          f'사용자가 당신을 직접 지목(@멘션)했습니다. 반드시 응답하세요.\n\n'
+          f'1~2문장, 메신저 톤, 마크다운 금지.\n'
+          f'대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.'
+        )
+      else:
+        prompt = (
+          f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+          f'{thread_text}\n\n'
+          f'---\n\n'
+          f'당신은 {name}입니다. (모델: {my_model})\n'
+          f'위 대화를 전부 읽고, 당신이 반응해야 하는지 판단하세요.\n\n'
+          f'[판단 기준]\n'
+          f'- 대화 맥락을 정확히 파악하라. 같은 단어라도 문맥에 따라 의미가 다르다.\n'
+          f'- 누군가 이미 적절히 답변/반응한 내용은 반복하지 마라.\n'
+          f'- 새로운 관점이나 정보를 더할 수 있을 때만 발언하라.\n'
+          f'- 일상 대화(날씨, 교통, 안부)는 전문 영역과 무관하므로 대부분 [PASS]\n'
+          f'- 당신을 직접 지목(@멘션)하지 않았고, 추가할 가치가 없으면 [PASS]\n'
+          f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
+          f'반응할 필요 없으면: [PASS]\n'
+          f'반응할 필요 있으면: 1~2문장, 메신저 톤, 마크다운 금지.\n'
+          f'이미 나온 말을 다른 표현으로 반복하는 것은 금지.'
+        )
       try:
         await self._emit(name, '', 'typing')
         resp = await run_claude_isolated(
