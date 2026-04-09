@@ -206,14 +206,25 @@ class Office:
     except Exception:
       pass
 
-  async def _team_chat(self, user_input: str, chat_subtype: str = 'casual') -> None:
-    '''팀 채널 대화 — 멀티라운드. 팀원끼리 서로 반응하고 대화한다.
+  def _update_context(self, user_input: str, response: str) -> None:
+    '''대화 맥락을 실시간 갱신한다. 최근 15개 턴만 유지.'''
+    new_lines = [f'[사용자] {user_input[:150]}']
+    if response:
+      new_lines.append(f'[팀장] {response[:150]}')
 
-    라운드 1: 각 에이전트가 발언 (이전 팀원 발언을 컨텍스트로 전달)
-    라운드 2: @멘션 기반 후속 대화 (최대 2개)
+    existing = self._context_summary.split('\n') if self._context_summary else []
+    updated = existing + new_lines
+    # 최근 15줄만 유지
+    self._context_summary = '\n'.join(updated[-15:])
+
+  async def _team_chat(self, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
+    '''팀 채널 대화 — 스레드 기반. 각 에이전트가 전체 대화 스레드를 읽고 판단한다.
+
+    핵심: 실제 그룹 채팅처럼 이전 발언을 모두 본 뒤 새 가치를 더할 수 있을 때만 발언.
     업무 감지: [TASK_DETECTED:설명] 출력 시 팀장이 업무 흐름으로 전환
 
     chat_subtype: 'greeting'(인사) | 'question'(질문) | 'casual'(잡담)
+    teamlead_response: 팀장의 응답 (스레드에 포함)
     '''
     import random
     from orchestration.meeting import MENTION_MAP
@@ -271,24 +282,19 @@ class Office:
       'qa': 'Claude Sonnet(업무) / Haiku(대화)',
     }
 
-    # 최근 대화 컨텍스트 로드
-    recent_context = ''
-    try:
-      from db.log_store import load_logs
-      recent = load_logs(limit=6)
-      ctx_lines = [
-        f'[{l["agent_id"]}] {l["message"][:100]}'
-        for l in recent
-        if l['event_type'] in ('message', 'response') and l['agent_id'] != 'system'
-      ]
-      if ctx_lines:
-        recent_context = '\n'.join(ctx_lines)
-    except Exception:
-      pass
-
-    # ── 라운드 1: 각 에이전트 순차 발언 (이전 발언 컨텍스트 포함) ──
-    team_conversation: list[tuple[str, str]] = []  # (name, content)
+    # ── 대화 스레드 구성 — 최근 맥락 + 현재 대화 ──
+    thread: list[str] = []
     responded: list[str] = []
+
+    # 1) 이전 대화 맥락 (흐름 파악용)
+    if self._context_summary:
+      thread.append(f'[이전 대화 맥락]\n{self._context_summary}')
+      thread.append('---')
+
+    # 2) 현재 대화 — 사용자 메시지 + 팀장 응답
+    thread.append(f'[사용자] {user_input}')
+    if teamlead_response:
+      thread.append(f'[팀장] {teamlead_response}')
 
     for name in ('planner', 'designer', 'developer', 'qa'):
       agent = self.agents.get(name)
@@ -297,108 +303,58 @@ class Office:
       system = agent._build_system_prompt(task_hint=user_input)
       my_model = agent_model_map.get(name, '알 수 없음')
 
-      # 이전 팀원 발언 컨텍스트 구성
-      prev_talk = ''
-      if team_conversation:
-        prev_lines = [f'[{n}] {c}' for n, c in team_conversation]
-        prev_talk = f'\n\n[팀원 대화]\n' + '\n'.join(prev_lines) + '\n'
-
-      recent_section = f'\n[최근 대화]\n{recent_context}\n' if recent_context else ''
-
+      thread_text = '\n'.join(thread)
       prompt = (
-        f'팀 채팅방에서 대화가 이어지고 있습니다.\n\n'
-        f'{recent_section}'
-        f'[새 메시지 - 사용자]\n{user_input}\n\n'
-        f'당신은 {name}입니다. 당신이 사용하는 AI 모델/러너는 "{my_model}"입니다.\n'
-        f'모델이나 자기소개를 물어보면 이 정보를 기반으로 답하세요.\n'
-        f'{prev_talk}\n'
-        f'이 메시지에 당신이 반응해야 하는지 판단하세요.\n\n'
-        f'판단 기준:\n'
-        f'- 당신의 전문 영역과 관련이 있는가?\n'
-        f'- 당신을 지목했거나 당신이 대답해야 자연스러운가?\n'
-        f'- 다른 팀원이 한 말에 동의/반응/농담으로 이어갈 수 있는가?\n\n'
-        f'중요: 이건 업무 지시가 아니라 팀 채팅방의 일상 대화입니다.\n'
-        f'- "제 역할이 아닙니다" 같은 업무 거부 반응을 하지 마세요.\n'
-        f'- 동료처럼 자연스럽게 대화하세요. 농담, 이모지, 리액션 자유.\n'
-        f'- 다른 팀원에게 @멘션으로 말을 걸 수도 있습니다. (예: @안영이 맞아요 ㅎㅎ)\n'
-        f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n'
-        f'- 할 말이 없으면 반드시 [PASS]만 출력하세요.\n\n'
-        f'반응할 필요가 없으면 [PASS] 이 한 단어만 출력하세요. 이유를 설명하지 마세요.\n'
-        f'반응할 필요가 있으면 짧게 1~2문장으로 답하세요 (메신저 대화처럼, 마크다운 금지).'
+        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+        f'{thread_text}\n\n'
+        f'---\n\n'
+        f'당신은 {name}입니다. (모델: {my_model})\n'
+        f'위 대화를 전부 읽고, 당신이 반응해야 하는지 판단하세요.\n\n'
+        f'[판단 기준]\n'
+        f'- 대화 맥락을 정확히 파악하라. 같은 단어라도 문맥에 따라 의미가 다르다.\n'
+        f'- 누군가 이미 적절히 답변/반응한 내용은 반복하지 마라.\n'
+        f'- 새로운 관점이나 정보를 더할 수 있을 때만 발언하라.\n'
+        f'- 일상 대화(날씨, 교통, 안부)는 전문 영역과 무관하므로 대부분 [PASS]\n'
+        f'- 당신을 직접 지목(@멘션)하지 않았고, 추가할 가치가 없으면 [PASS]\n'
+        f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
+        f'반응할 필요 없으면: [PASS]\n'
+        f'반응할 필요 있으면: 1~2문장, 메신저 톤, 마크다운 금지.\n'
+        f'이미 나온 말을 다른 표현으로 반복하는 것은 금지.'
       )
       try:
-        response = await run_claude_isolated(
+        resp = await run_claude_isolated(
           f'{system}\n\n---\n\n{prompt}',
           model='claude-haiku-4-5-20251001',
           timeout=30.0,
         )
-        content = response.strip()
-        if '[PASS]' in content.upper() or content.strip().upper() == 'PASS':
-          continue
-        # 업무 감지 체크
-        if '[TASK_DETECTED:' in content:
-          import re
-          task_match = re.search(r'\[TASK_DETECTED:(.+?)\]', content)
-          if task_match:
-            detected_task = task_match.group(1).strip()
-            # 업무 감지 부분 제거 후 대화 부분만 표시
-            chat_part = re.sub(r'\[TASK_DETECTED:.+?\]', '', content).strip()
-            if chat_part:
-              await self._emit(name, chat_part, 'response')
-              team_conversation.append((name, chat_part))
-              responded.append(name)
-            # 팀장이 업무 캐치 안내
-            await self._emit('teamlead', f'지금 말씀 중에 업무 요청이 있는 것 같네요. "{detected_task}" — 확인해보겠습니다.', 'response')
-            # 업무로 재분류
-            from orchestration.intent import classify_intent
-            re_intent = await classify_intent(detected_task)
-            if re_intent.intent != IntentType.CONVERSATION:
-              # 남은 팀원 발언 건너뛰고 업무 흐름으로 전환
-              return
-            continue
-        responded.append(name)
-        team_conversation.append((name, content))
-        await self._emit(name, content, 'response')
+        content = resp.strip()
+        is_pass = '[PASS]' in content.upper() or content.strip().upper() == 'PASS'
+
+        if not is_pass:
+          # 업무 감지 체크
+          if '[TASK_DETECTED:' in content:
+            import re
+            task_match = re.search(r'\[TASK_DETECTED:(.+?)\]', content)
+            if task_match:
+              detected_task = task_match.group(1).strip()
+              chat_part = re.sub(r'\[TASK_DETECTED:.+?\]', '', content).strip()
+              if chat_part:
+                await self._emit(name, chat_part, 'response')
+                thread.append(f'[{name}] {chat_part}')
+                responded.append(name)
+              await self._emit('teamlead', f'지금 말씀 중에 업무 요청이 있는 것 같네요. "{detected_task}" — 확인해보겠습니다.', 'response')
+              from orchestration.intent import classify_intent
+              re_intent = await classify_intent(detected_task)
+              if re_intent.intent != IntentType.CONVERSATION:
+                return
+              continue
+
+          # 응답을 스레드에 추가 → 다음 에이전트가 볼 수 있게
+          thread.append(f'[{name}] {content}')
+          responded.append(name)
+          await self._emit(name, content, 'response')
       except Exception:
         pass
-
-    # ── 라운드 2: @멘션 기반 후속 대화 (최대 2명) ──
-    import re
-    mention_responses = 0
-    for speaker_name, speech in team_conversation:
-      if mention_responses >= 2:
-        break
-      mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', speech)
-      for raw_mention in mentions:
-        if mention_responses >= 2:
-          break
-        target_id = MENTION_MAP.get(raw_mention)
-        if not target_id:
-          stripped = raw_mention.rstrip('님')
-          target_id = MENTION_MAP.get(stripped)
-        if not target_id or target_id == speaker_name or target_id == 'user' or target_id == 'teamlead':
-          continue
-        target_agent = self.agents.get(target_id)
-        if not target_agent:
-          continue
-        system = target_agent._build_system_prompt(task_hint=user_input)
-        followup_prompt = (
-          f'팀 채팅방에서 {speaker_name}이(가) 당신(@{target_id})을 멘션하며 이렇게 말했습니다:\n\n'
-          f'"{speech}"\n\n'
-          f'짧게 1~2문장으로 응답하세요 (메신저 대화처럼, 마크다운 금지).'
-        )
-        try:
-          resp = await run_claude_isolated(
-            f'{system}\n\n---\n\n{followup_prompt}',
-            model='claude-haiku-4-5-20251001',
-            timeout=30.0,
-          )
-          resp_text = resp.strip()
-          if resp_text and '[PASS]' not in resp_text.upper():
-            await self._emit(target_id, resp_text, 'response')
-            mention_responses += 1
-        except Exception:
-          pass
 
     # 아무도 안 답하면 랜덤 한 명이 답변 (왕따 방지)
     if not responded:
@@ -406,9 +362,12 @@ class Office:
       fallback_name = random.choice(['planner', 'designer', 'developer', 'qa'])
       agent = self.agents[fallback_name]
       system = agent._build_system_prompt(task_hint=user_input)
+      thread_text = '\n'.join(thread)
       prompt = (
-        f'팀 채팅방에서 사용자가 "{user_input}"라고 했는데 아무도 답을 안 했습니다.\n'
-        f'당신이 대표로 한마디 해주세요. 짧고 자연스럽게. 마크다운 금지.'
+        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+        f'{thread_text}\n\n'
+        f'아무도 답을 안 했습니다. 당신이 대표로 한마디 해주세요.\n'
+        f'짧고 자연스럽게. 마크다운 금지.'
       )
       try:
         response = await run_claude_isolated(
@@ -434,6 +393,21 @@ class Office:
     # 하루 첫 메시지 여부 체크 (출근 인사는 CONVERSATION:greeting에서 처리)
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     is_first_today = not hasattr(self, '_greeted_date') or self._greeted_date != today
+
+    # 서버 재시작 후 첫 대화 시 이전 맥락 복원
+    if not self._context_summary:
+      try:
+        from db.log_store import load_logs
+        recent = load_logs(limit=30)
+        chat_lines = [
+          f'[{l["agent_id"]}] {l["message"][:150]}'
+          for l in recent
+          if l['event_type'] in ('response', 'message') and l['agent_id'] != 'system'
+        ]
+        if chat_lines:
+          self._context_summary = '\n'.join(chat_lines[-15:])
+      except Exception:
+        pass
 
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
@@ -487,9 +461,14 @@ class Office:
     except Exception:
       pass
 
+    # DB 최근 대화 + 인메모리 맥락 요약 결합
+    combined_context = recent_context
+    if self._context_summary and self._context_summary not in recent_context:
+      combined_context = f'{self._context_summary}\n---\n{recent_context}' if recent_context else self._context_summary
+
     intent_result = await classify_intent(
       user_input,
-      recent_context=recent_context,
+      recent_context=combined_context,
       active_project_title=self._active_project_title,
     )
 
@@ -556,8 +535,11 @@ class Office:
 
       await self._emit('teamlead', response, 'response')
 
-      # 서브유형별 팀원 반응 제어
-      await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype)
+      # 서브유형별 팀원 반응 제어 — 팀장 응답을 스레드에 포함
+      await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype, teamlead_response=response)
+
+      # 대화 맥락 실시간 갱신 — 후속 메시지에서 주제 변경 감지 가능
+      self._update_context(user_input, response)
 
       self._state = OfficeState.COMPLETED
       self._active_agent = ''

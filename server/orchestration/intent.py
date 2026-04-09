@@ -65,7 +65,14 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
 
   context_section = ''
   if recent_context:
-    context_section = f'[최근 대화 맥락]\n{recent_context}\n\n'
+    context_section = (
+      f'[최근 대화 맥락]\n{recent_context}\n\n'
+      f'위 맥락을 고려하여 판단하세요:\n'
+      f'- 이전 작업 결과에 대한 후속 질문/수정 요청 → QUICK_TASK (예: "아까 거 수정해줘", "그거 다시 해봐")\n'
+      f'- 대화 중 주제가 업무로 전환됨 → QUICK_TASK 또는 PROJECT (예: "아 그건 그렇고, 사이트 색상 바꿔줘")\n'
+      f'- 이전 대화의 연장선상 잡담/안부 → CONVERSATION\n'
+      f'- 완전히 새로운 큰 주제 요청 → PROJECT\n\n'
+    )
   if active_project_title:
     context_section += f'[현재 진행 중인 프로젝트: {active_project_title}]\n\n'
 

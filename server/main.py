@@ -219,6 +219,21 @@ async def chat(
                 break
           except Exception:
             pass
+
+          # 이전 DM 대화 기록을 컨텍스트에 추가 (대화 연속성)
+          try:
+            from db.log_store import load_logs
+            recent = load_logs(limit=50)
+            dm_history_lines = []
+            for log in recent:
+              if (log['agent_id'] == to and (log.get('data') or {}).get('dm')) or \
+                 (log['agent_id'] == 'user' and (log.get('data') or {}).get('to') == to):
+                dm_history_lines.append(f'[{log["agent_id"]}] {log["message"][:200]}')
+            if dm_history_lines:
+              dm_context = '[이전 DM 대화]\n' + '\n'.join(dm_history_lines[-10:]) + '\n\n' + dm_context
+          except Exception:
+            pass
+
           response = await agent.handle(full_message, context=dm_context)
           await event_bus.publish(LogEvent(
             agent_id=to,
