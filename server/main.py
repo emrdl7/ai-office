@@ -454,15 +454,12 @@ async def get_agents(request: Request):
 
   active = state_to_active.get(state, '')
 
-  # 에이전트별 실제 모델명 (러너에서 동적으로 가져옴)
-  from runners.groq_runner import MODEL as GROQ_MODEL
-  from runners.claude_runner import CLAUDE_MODEL
-  agent_models: dict[str, str] = {
-    'teamlead': f'Claude {CLAUDE_MODEL}' if CLAUDE_MODEL != 'claude' else 'Claude CLI',
-    'planner': 'Gemini CLI',
-    'designer': f'Claude {CLAUDE_MODEL}',
-    'developer': 'Gemini CLI',
-    'qa': 'Claude Haiku 4.5',
+  # 에이전트별 모델명 — 상태에 따라 동적 표시
+  # 대기/대화 중: Haiku, 업무 중: Sonnet (fallback 시 Gemini)
+  is_working = state in {
+    OfficeState.TEAMLEAD_THINKING, OfficeState.MEETING,
+    OfficeState.WORKING, OfficeState.QA_REVIEW,
+    OfficeState.TEAMLEAD_REVIEW, OfficeState.REVISION,
   }
 
   agents = []
@@ -475,10 +472,19 @@ async def get_agents(request: Request):
       status = 'idle'
     else:
       status = 'waiting'
+
+    # 팀장은 항상 Claude CLI
+    if agent_id == 'teamlead':
+      model = 'Claude CLI'
+    elif is_working:
+      model = 'Claude Sonnet'
+    else:
+      model = 'Claude Haiku'
+
     agents.append({
       'agent_id': agent_id,
       'status': status,
-      'model': agent_models.get(agent_id, ''),
+      'model': model,
       'work_started_at': office._work_started_at if status in ('working', 'meeting') else '',
     })
   return agents
