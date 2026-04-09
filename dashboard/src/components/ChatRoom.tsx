@@ -49,11 +49,11 @@ function isImageFile(name: string): boolean {
 
 // URL 감지 + 링크화
 function linkify(text: string) {
-  const urlRegex = /(https?:\/\/[^\s<]+)/g
-  const parts = text.split(urlRegex)
+  // URL + @멘션 동시 처리
+  const combinedRegex = /(https?:\/\/[^\s<]+|@[가-힣A-Za-z]+(?:님)?)/g
+  const parts = text.split(combinedRegex)
   return parts.map((part, i) => {
-    if (urlRegex.test(part)) {
-      urlRegex.lastIndex = 0
+    if (/^https?:\/\//.test(part)) {
       return (
         <a
           key={i}
@@ -64,6 +64,16 @@ function linkify(text: string) {
         >
           {part.length > 60 ? part.slice(0, 60) + '...' : part}
         </a>
+      )
+    }
+    if (/^@/.test(part)) {
+      return (
+        <span
+          key={i}
+          className="text-blue-400 font-semibold bg-blue-500/10 rounded px-0.5"
+        >
+          {part}
+        </span>
       )
     }
     return <span key={i}>{part}</span>
