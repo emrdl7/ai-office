@@ -535,6 +535,10 @@ class Office:
 
       await self._emit('teamlead', response, 'response')
 
+      # 팀장 응답 완료 → 팀원 대화로 전환 (UI에서 "팀장 작업중" 표시 제거)
+      self._active_agent = ''
+      self._work_started_at = ''
+
       # 서브유형별 팀원 반응 제어 — 팀장 응답을 스레드에 포함
       await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype, teamlead_response=response)
 
