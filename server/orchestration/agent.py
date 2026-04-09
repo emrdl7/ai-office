@@ -114,6 +114,8 @@ class Agent:
   async def handle(self, prompt: str, context: str = '') -> str:
     '''작업을 수행하고 결과를 반환한다.
 
+    파이프라인: 도구 사전실행 → LLM 생성 → 완전성 가드 → 셀프리뷰
+
     Args:
       prompt: 작업 지시 또는 대화 내용
       context: 추가 컨텍스트 (참조 자료, 이전 결과 등)
@@ -127,9 +129,25 @@ class Agent:
     if context:
       full_prompt = f'{prompt}\n\n[참고 자료]\n{context}'
 
+    # ── 도구 사전 실행 (키워드 기반, LLM 호출 없음) ──
+    try:
+      from harness.tool_registry import ToolRegistry, analyze_tool_needs
+      tool_needs = analyze_tool_needs(full_prompt, self.name)
+      if tool_needs:
+        registry = ToolRegistry()
+        tool_results = []
+        for need in tool_needs[:3]:  # 최대 3개 도구 실행
+          result = await registry.execute(self.name, need['tool'], **{k: v for k, v in need.items() if k != 'tool'})
+          if result:
+            tool_results.append(f'[{need["tool"]}]\n{result[:3000]}')
+        if tool_results:
+          full_prompt = f'{full_prompt}\n\n[도구 실행 결과]\n' + '\n\n'.join(tool_results)
+    except Exception:
+      pass
+
     # 최근 대화 기록을 컨텍스트에 포함 (DM 대화 연속성)
     if self._conversation_history:
-      recent = self._conversation_history[-10:]  # 최근 5턴 (10개 메시지)
+      recent = self._conversation_history[-10:]
       history_text = '\n'.join(
         f'{"사용자" if m["role"] == "user" else "나"}: {m["content"][:300]}'
         for m in recent
@@ -150,6 +168,20 @@ class Agent:
       if lines and lines[-1].strip() == '```':
         lines = lines[:-1]
       content = '\n'.join(lines)
+
+    # ── 완전성 가드: 잘림 감지 → 자동 이어쓰기 (최대 2회) ──
+    try:
+      from harness.output_templates import detect_truncation
+      for _ in range(2):
+        if not detect_truncation(content):
+          break
+        continuation = await self._generate(
+          f'아래 글이 중간에 잘렸습니다. 잘린 부분부터 이어서 완성하세요.\n\n{content[-2000:]}',
+          system,
+        )
+        content = content + '\n' + continuation.strip()
+    except Exception:
+      pass
 
     # 대화 기록 추가
     self._conversation_history.append({'role': 'user', 'content': prompt})

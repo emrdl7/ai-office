@@ -1413,11 +1413,54 @@ class Office:
     except Exception:
       pass  # 자가개선 실패가 프로젝트 완료를 막지 않음
 
+    # ── 자동 내보내기 — 산출물 PDF/DOCX/ZIP 생성 ──
+    try:
+      await self._auto_export(phase_artifacts)
+    except Exception:
+      pass
+
     return {
       'state': self._state.value,
       'response': '프로젝트 완료',
       'artifacts': phase_artifacts,
     }
+
+  async def _auto_export(self, phase_artifacts: list[str]) -> None:
+    '''프로젝트 완료 후 주요 산출물을 PDF/ZIP으로 자동 내보내기.'''
+    from harness.export_engine import md_to_pdf, folder_to_zip
+
+    task_dir = self.workspace.task_dir
+    if not task_dir.exists():
+      return
+
+    exported = []
+
+    # 최종 보고서 MD → PDF
+    for md_file in task_dir.rglob('*result*.md'):
+      if 'uploads' in str(md_file):
+        continue
+      content = md_file.read_text(encoding='utf-8', errors='replace')
+      if len(content) < 200:
+        continue
+      try:
+        pdf_name = md_file.stem + '.pdf'
+        pdf_path = md_file.parent / pdf_name
+        md_to_pdf(content, pdf_path, title=md_file.stem)
+        exported.append(str(pdf_path.relative_to(task_dir)))
+      except Exception:
+        continue
+
+    # 전체 산출물 ZIP
+    try:
+      zip_path = task_dir / 'exports' / 'project-bundle.zip'
+      folder_to_zip(task_dir, zip_path)
+      exported.append('exports/project-bundle.zip')
+    except Exception:
+      pass
+
+    if exported:
+      files_text = ', '.join(exported[:5])
+      await self._emit('system', f'📦 산출물 내보내기 완료: {files_text}', 'response')
 
   async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str:
     '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''

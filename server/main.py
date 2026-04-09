@@ -655,6 +655,54 @@ async def get_active_project_api(request: Request):
   return {'project_id': '', 'title': ''}
 
 
+@app.get('/api/exports/{task_id}')
+async def get_exportable_formats(task_id: str):
+  '''태스크의 내보내기 가능 포맷 목록을 반환한다.'''
+  from harness.export_engine import get_exportable_formats
+  task_dir = WORKSPACE_ROOT / task_id
+  return {'formats': get_exportable_formats(task_dir)}
+
+
+@app.post('/api/exports/{task_id}/{fmt}')
+async def export_artifact(task_id: str, fmt: str):
+  '''온디맨드 내보내기 — PDF, DOCX, ZIP 생성.'''
+  from harness.export_engine import md_to_pdf, md_to_docx, folder_to_zip
+
+  task_dir = WORKSPACE_ROOT / task_id
+  if not task_dir.exists():
+    raise HTTPException(status_code=404, detail='태스크를 찾을 수 없습니다')
+
+  export_dir = task_dir / 'exports'
+  export_dir.mkdir(parents=True, exist_ok=True)
+
+  if fmt == 'zip':
+    out = folder_to_zip(task_dir, export_dir / 'bundle.zip')
+    return {'path': f'{task_id}/exports/bundle.zip', 'format': 'zip'}
+
+  # MD 파일들을 합쳐서 변환
+  md_parts = []
+  for md_file in sorted(task_dir.rglob('*result*.md')):
+    if 'uploads' in str(md_file) or 'exports' in str(md_file):
+      continue
+    content = md_file.read_text(encoding='utf-8', errors='replace')
+    if len(content) > 100:
+      md_parts.append(f'# {md_file.stem}\n\n{content}')
+
+  if not md_parts:
+    raise HTTPException(status_code=400, detail='변환할 산출물이 없습니다')
+
+  combined = '\n\n---\n\n'.join(md_parts)
+
+  if fmt == 'pdf':
+    out = md_to_pdf(combined, export_dir / 'report.pdf', title=task_id[:20])
+    return {'path': f'{task_id}/exports/{out.name}', 'format': 'pdf'}
+  elif fmt == 'docx':
+    out = md_to_docx(combined, export_dir / 'report.docx', title=task_id[:20])
+    return {'path': f'{task_id}/exports/report.docx', 'format': 'docx'}
+
+  raise HTTPException(status_code=400, detail=f'지원하지 않는 포맷: {fmt}')
+
+
 @app.delete('/api/logs')
 async def clear_logs_api():
   '''채팅 로그를 모두 삭제한다.'''
