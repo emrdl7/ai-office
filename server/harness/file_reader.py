@@ -61,17 +61,75 @@ def read_folder(path: str, max_chars: int = 8000) -> str:
   return '\n\n'.join(results) if results else f'(폴더에 읽을 수 있는 파일 없음: {path})'
 
 
+def _fetch_github_repo(owner: str, repo: str) -> str:
+  '''GitHub 저장소의 파일 구조 + README를 가져온다.'''
+  import urllib.request, json as _json
+
+  parts = []
+
+  # 1) 파일 트리 (최상위)
+  try:
+    req = urllib.request.Request(
+      f'https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD?recursive=1',
+      headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'AI-Office'},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+      tree = _json.loads(resp.read())
+    files = [n['path'] for n in tree.get('tree', []) if n['type'] == 'blob']
+    parts.append(f'[파일 구조 ({len(files)}개)]\n' + '\n'.join(files[:200]))
+  except Exception:
+    parts.append('[파일 구조 가져오기 실패]')
+
+  # 2) README
+  for readme_name in ('README.md', 'readme.md', 'README.rst', 'README'):
+    try:
+      req = urllib.request.Request(
+        f'https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{readme_name}',
+        headers={'User-Agent': 'AI-Office'},
+      )
+      with urllib.request.urlopen(req, timeout=15) as resp:
+        content = resp.read().decode('utf-8', errors='replace')
+      if content.strip():
+        parts.append(f'[README]\n{content[:8000]}')
+        break
+    except Exception:
+      continue
+
+  # 3) package.json (있으면)
+  try:
+    req = urllib.request.Request(
+      f'https://raw.githubusercontent.com/{owner}/{repo}/HEAD/package.json',
+      headers={'User-Agent': 'AI-Office'},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+      content = resp.read().decode('utf-8', errors='replace')
+    if content.strip():
+      parts.append(f'[package.json]\n{content[:3000]}')
+  except Exception:
+    pass
+
+  return '\n\n'.join(parts) if parts else ''
+
+
 def resolve_references(instruction: str) -> str:
-  '''지시에서 경로를 찾아 파일 내용을 읽어온다.
+  '''지시에서 경로/URL을 찾아 내용을 읽어온다.
 
   Returns:
-    읽어온 파일 내용 텍스트. 경로가 없으면 빈 문자열.
+    읽어온 파일/URL 내용 텍스트. 경로가 없으면 빈 문자열.
   '''
-  paths = extract_paths(instruction)
-  if not paths:
-    return ''
-
   contents = []
+
+  # GitHub URL 감지 및 내용 가져오기
+  github_pattern = r'https?://github\.com/([^/\s]+)/([^/\s#?]+)'
+  github_matches = re.findall(github_pattern, instruction)
+  for owner, repo in github_matches:
+    repo = repo.rstrip('/')
+    content = _fetch_github_repo(owner, repo)
+    if content:
+      contents.append(f'[GitHub: {owner}/{repo}]\n{content}')
+
+  # 로컬 파일 경로 처리
+  paths = extract_paths(instruction)
   for path in paths:
     p = Path(path)
     if p.is_dir():
