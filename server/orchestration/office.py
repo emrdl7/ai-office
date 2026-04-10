@@ -831,7 +831,14 @@ class Office:
     await meeting.run()
     meeting_summary = meeting.get_summary()
 
-    # 2. 팀장이 회의 결과에서 확인 필요한 사항을 사용자에게 질문
+    # 2. 팀장이 회의 결과를 바탕으로 프로젝트 단계를 동적 설계
+    dynamic_phases = await self._plan_project_phases(user_input, analysis, meeting_summary)
+    if dynamic_phases:
+      phases = dynamic_phases
+      await self._emit('teamlead', f'프로젝트를 {len(phases)}단계로 진행하겠습니다.', 'response')
+    # dynamic_phases가 None이면 기존 get_phases() 결과를 그대로 사용
+
+    # 3. 팀장이 회의 결과에서 확인 필요한 사항을 사용자에게 질문
     questions = await self._extract_user_questions(user_input, meeting_summary)
     if questions:
       # @마스터가 안 붙어 있으면 앞에 추가
@@ -894,6 +901,98 @@ class Office:
       phases=phases,
     )
 
+  async def _plan_project_phases(
+    self,
+    user_input: str,
+    analysis: str,
+    meeting_summary: str,
+  ) -> list[dict]:
+    '''팀장(Claude)이 회의 결과를 바탕으로 프로젝트에 맞는 단계를 동적 설계한다.
+
+    Returns:
+      프로젝트 단계 리스트. 파싱 실패 시 기존 기본 단계를 반환한다.
+    '''
+    from runners.json_parser import parse_json
+
+    prompt = (
+      '당신은 팀장입니다. 아래 프로젝트에 적합한 작업 단계를 설계하세요.\n\n'
+      f'[프로젝트 지시]\n{user_input[:2000]}\n\n'
+      f'[팀장 분석]\n{analysis[:1000]}\n\n'
+      f'[회의 내용]\n{meeting_summary[:2000]}\n\n'
+      '각 단계를 JSON으로 출력하세요:\n'
+      '{"phases": [\n'
+      '  {"name": "단계명", "description": "구체적 작업 지시",\n'
+      '   "assigned_to": "planner|designer|developer",\n'
+      '   "group": "그룹명", "output_format": "markdown|html|code"}\n'
+      ']}\n\n'
+      '규칙:\n'
+      '- 프로젝트 유형에 맞게 필요한 단계만 포함 (웹사이트면 디자인 포함, 분석 보고서면 불필요)\n'
+      '- assigned_to는 각 단계의 전문 영역에 맞는 팀원 배정\n'
+      '- 같은 group의 단계들은 연속 배치 (그룹 끝에서 QA 검수 실행)\n'
+      '- 최소 3단계, 최대 10단계\n'
+      '- output_format: markdown(기본), html(웹페이지), html+pdf(보고서), md+code(코드 포함)\n\n'
+      '예시 1 — 웹사이트 구축:\n'
+      '{"phases": [\n'
+      '  {"name": "기획-요구사항분석", "description": "사이트 목적/타겟 정의, 핵심 기능 도출", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "기획-IA설계", "description": "정보구조 설계, 사이트맵, 네비게이션 구조", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "기획-콘텐츠기획", "description": "페이지별 콘텐츠 구성, 와이어프레임", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "디자인-시스템설계", "description": "컬러/타이포/아이콘 디자인 시스템", "assigned_to": "designer", "group": "디자인", "output_format": "markdown"},\n'
+      '  {"name": "디자인-레이아웃", "description": "주요 페이지 레이아웃 설계", "assigned_to": "designer", "group": "디자인", "output_format": "markdown"},\n'
+      '  {"name": "디자인-컴포넌트", "description": "UI 컴포넌트 상세 명세", "assigned_to": "designer", "group": "디자인", "output_format": "markdown"},\n'
+      '  {"name": "퍼블리싱-HTML구현", "description": "HTML/CSS/JS 구현", "assigned_to": "developer", "group": "퍼블리싱", "output_format": "html"}\n'
+      ']}\n\n'
+      '예시 2 — 분석 보고서:\n'
+      '{"phases": [\n'
+      '  {"name": "기획-범위정의", "description": "분석 범위, 목적, 방법론 정의", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "기획-조사설계", "description": "데이터 수집 계획, 분석 프레임워크", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "분석-데이터수집", "description": "관련 데이터/자료 수집 및 정리", "assigned_to": "developer", "group": "분석", "output_format": "md+code"},\n'
+      '  {"name": "분석-분석실행", "description": "데이터 분석 수행 및 인사이트 도출", "assigned_to": "developer", "group": "분석", "output_format": "md+code"},\n'
+      '  {"name": "취합-종합보고서", "description": "최종 분석 보고서 작성", "assigned_to": "planner", "group": "취합", "output_format": "html+pdf"}\n'
+      ']}\n\n'
+      '예시 3 — 앱/시스템 설계:\n'
+      '{"phases": [\n'
+      '  {"name": "기획-요구사항", "description": "기능/비기능 요구사항 정의", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "기획-아키텍처", "description": "시스템 아키텍처 설계", "assigned_to": "planner", "group": "기획", "output_format": "markdown"},\n'
+      '  {"name": "설계-시스템설계", "description": "상세 시스템 설계 문서", "assigned_to": "developer", "group": "설계", "output_format": "markdown"},\n'
+      '  {"name": "설계-API명세", "description": "API 엔드포인트 설계 및 명세", "assigned_to": "developer", "group": "설계", "output_format": "md+code"},\n'
+      '  {"name": "개발-프로토타입", "description": "핵심 기능 프로토타입 구현", "assigned_to": "developer", "group": "개발", "output_format": "md+code"}\n'
+      ']}\n\n'
+      'JSON만 출력하세요. 설명이나 마크다운 없이 순수 JSON만.'
+    )
+
+    try:
+      response = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=120.0)
+      parsed = parse_json(response)
+      if parsed and isinstance(parsed, dict) and 'phases' in parsed:
+        phases = parsed['phases']
+        # 유효성 검증: 최소 필수 키 확인
+        valid = all(
+          isinstance(p, dict) and p.get('name') and p.get('assigned_to') and p.get('group')
+          for p in phases
+        )
+        if valid and len(phases) >= 3:
+          # assigned_to 정규화 (유효한 에이전트만)
+          valid_agents = {'planner', 'designer', 'developer'}
+          for p in phases:
+            if p['assigned_to'] not in valid_agents:
+              p['assigned_to'] = 'planner'
+            if 'output_format' not in p:
+              p['output_format'] = 'markdown'
+            if 'description' not in p:
+              p['description'] = p['name']
+          return phases
+    except Exception:
+      pass
+
+    # Fallback: 기존 phase_registry 기반
+    return None
+
+  def _default_phases(self, user_input: str) -> tuple[list[dict], str]:
+    '''기본 단계 반환 — phases 미전달 시 하위호환용.'''
+    project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
+    phases = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
+    return phases, project_type
+
   async def _execute_project(
     self,
     user_input: str,
@@ -905,7 +1004,7 @@ class Office:
   ) -> dict[str, Any]:
     '''프로젝트 전체 실행 — 유형별 동적 단계로 진행.'''
 
-    # phases가 전달되지 않으면 기존 호환 로직 (웹 개발 기본)
+    # phases가 전달되지 않으면 기존 호환 로직
     if phases is not None:
       PHASES = phases
       project_type = 'web_development'
@@ -914,8 +1013,7 @@ class Office:
           project_type = 'document'
           break
     else:
-      project_type = self.improvement_engine.qa_adapter.classify_project_type(user_input)
-      PHASES = self.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
+      PHASES, project_type = self._default_phases(user_input)
     self._current_project_type = project_type
 
     # 팀원 피드백 초기화
@@ -971,7 +1069,8 @@ class Office:
           # 스킵해도 그룹 마지막이면 Stitch 시안 생성 체크
           current_group = phase.get('group', phase_name)
           remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
-          if not remaining_in_group and current_group == '디자인':
+          _has_design_group = any(p.get('group') == '디자인' for p in PHASES)
+          if not remaining_in_group and _has_design_group and current_group == '디자인':
             # Stitch 시안이 아직 없으면 생성
             # 전체 workspace에서 Stitch 시안 검색
             has_stitch = False
@@ -1145,8 +1244,9 @@ class Office:
           except Exception:
             pass
 
-      # 퍼블리싱 완료 시 멀티페이지 사이트 빌더 실행
-      if current_group == '퍼블리싱' and self._current_project_type in ('web_development', 'website'):
+      # HTML 출력 그룹 완료 시 멀티페이지 사이트 빌더 실행
+      _is_html_output = phase.get('output_format', '') in ('html', 'html+pdf')
+      if (current_group == '퍼블리싱' or _is_html_output) and self._current_project_type in ('web_development', 'website'):
         try:
           ia_content = next((v for k, v in all_results.items() if 'IA' in k), '')
           design_content = '\n'.join(v for k, v in all_results.items() if '디자인' in k)
@@ -1180,12 +1280,40 @@ class Office:
         data={'artifacts': [artifact_path]},
       ))
 
-      # 다른 팀원의 전문 의견 (40% 확률)
-      await self._work_commentary(agent_name, phase_name, content)
+      # 그룹 마지막 소단계인지 판단 (자문/피어리뷰는 그룹 마지막에서만)
+      current_group = phase.get('group', phase_name)
+      remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
+      _is_group_last = not remaining_in_group
 
-      # 다른 팀원 리액션 (가벼운 반응으로 실제 오피스 느낌)
-      content_summary = '\n'.join(content.strip().split('\n')[:5])
-      await self._team_reaction(agent_name, phase_name, content_summary=content_summary)
+      if _is_group_last:
+        # ── 그룹 마지막: 자문 → 피어리뷰 (실질적 협업) ──
+        group_content = '\n\n'.join(v for k, v in all_results.items() if current_group in k)
+
+        # 1) 타 팀원 자문
+        consultation_feedback = await self._consult_peers(agent_name, group_content, phase, all_results)
+        if consultation_feedback:
+          # 자문 결과를 담당자에게 전달하여 보완 기회 제공
+          await self._emit('teamlead', '자문 결과를 반영합니다.', 'response')
+          self._user_mid_feedback.append(f'[팀원 자문 결과]\n{consultation_feedback}')
+
+        # 2) 피어 리뷰 (실질적 피드백)
+        peer_reviews = await self._peer_review(agent_name, phase_name, group_content, user_input)
+
+        # 피어 리뷰에서 보완된 결과가 있으면 반영
+        for review in peer_reviews:
+          if review.get('revised') and review.get('content'):
+            content = review['content']
+            all_results[phase_name] = content
+            try:
+              self.workspace.write_artifact(filename, content)
+            except Exception:
+              pass
+            break
+      else:
+        # ── 소단계 중간: 경량 리액션 유지 ──
+        await self._work_commentary(agent_name, phase_name, content)
+        content_summary = '\n'.join(content.strip().split('\n')[:5])
+        await self._team_reaction(agent_name, phase_name, content_summary=content_summary)
 
       # 사용자 중간 지시 확인 — 최근 채팅에서 사용자 메시지 체크
       user_directive = await self._check_user_directive()
@@ -1231,10 +1359,8 @@ class Office:
           meeting_summary += f'\n\n[사용자 중간 지시]\n{user_directive["message"]}'
           await self._emit('teamlead', f'말씀하신 내용 반영하여 다음 단계 진행하겠습니다.', 'response')
 
-      # QA 검수 — 그룹의 마지막 소단계에서만 실행
-      current_group = phase.get('group', phase_name)
-      remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
-      if not remaining_in_group:
+      # QA 검수 — 그룹의 마지막 소단계에서만 실행 (current_group, _is_group_last는 위에서 계산됨)
+      if _is_group_last:
         # 그룹 마지막 → QA 검수
         self._state = OfficeState.QA_REVIEW
         self._active_agent = 'qa'
@@ -1314,11 +1440,15 @@ class Office:
         await self._cross_review(current_group, all_results)
 
         # 디자인 그룹 완료 시 → 웹 개발 프로젝트만 Stitch 시안 생성
-        if current_group == '디자인' and self._current_project_type in ('web_development', 'website'):
+        _has_design_phases = any(p.get('group') == '디자인' for p in PHASES)
+        if _has_design_phases and current_group == '디자인' and self._current_project_type in ('web_development', 'website'):
           await self._generate_stitch_mockup(all_results, user_input)
 
-    # 퍼블리싱이 포함된 프로젝트(사이트 구축)인지 판단
-    has_publishing = any('퍼블리싱' in k for k in all_results)
+    # HTML 산출물이 포함된 프로젝트(사이트 구축)인지 판단
+    has_publishing = (
+      any('퍼블리싱' in k for k in all_results)
+      or any(p.get('output_format') == 'html' for p in PHASES)
+    )
 
     if has_publishing:
       # 사이트 구축 → 짧은 요약 + 산출물 링크
@@ -1677,6 +1807,194 @@ class Office:
             await self._emit(chain_responder, chain_text, 'response')
         except Exception:
           pass
+
+  async def _consult_peers(
+    self,
+    worker_name: str,
+    content: str,
+    phase: dict,
+    all_results: dict[str, str],
+  ) -> str:
+    '''그룹 마지막 단계 완료 후, 산출물에서 다른 팀원의 전문 확인이 필요한 사항을 감지하고 자문한다.
+
+    Returns:
+      자문 결과 텍스트. 자문 불필요 시 빈 문자열.
+    '''
+    from runners.json_parser import parse_json
+
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+
+    # 1. Haiku로 자문 필요 여부 빠르게 판단
+    check_prompt = (
+      '아래 산출물을 검토하세요. 다른 팀원의 전문 확인이 필요한 사항이 있으면 알려주세요.\n\n'
+      f'[산출물 작성자] {worker_name}\n'
+      f'[산출물 내용] {content[:3000]}\n\n'
+      '다른 팀원에게 확인이 필요하면:\n'
+      '{"needs_consultation": true, "consultations": [\n'
+      '  {"target": "developer|designer|planner", "question": "구체적 질문"}\n'
+      ']}\n\n'
+      '확인 불필요하면: {"needs_consultation": false}\n\n'
+      'JSON만 출력하세요.'
+    )
+
+    try:
+      response = await run_claude_isolated(
+        check_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+      )
+      parsed = parse_json(response)
+      if not parsed or not parsed.get('needs_consultation'):
+        return ''
+
+      consultations = parsed.get('consultations', [])
+      if not consultations:
+        return ''
+
+      # 2. 각 대상에게 자문 수행
+      consultation_results = []
+      for consult in consultations[:2]:  # 최대 2건
+        target = consult.get('target', '')
+        question = consult.get('question', '')
+        if not target or not question:
+          continue
+
+        # 유효한 에이전트인지 + 자기 자신에게 질문하지 않도록
+        valid_targets = {'planner', 'designer', 'developer'}
+        if target not in valid_targets or target == worker_name:
+          continue
+
+        agent = self.agents.get(target)
+        if not agent:
+          continue
+
+        target_name_kr = profile_names.get(target, target)
+        worker_name_kr = profile_names.get(worker_name, worker_name)
+
+        try:
+          await self._emit(target, '', 'typing')
+          consult_prompt = (
+            f'{worker_name_kr}이(가) 작업 중 확인을 요청합니다:\n\n'
+            f'"{question}"\n\n'
+            f'전문가 관점에서 짧게 답변하세요 (2~3문장, 메신저 톤, 마크다운 금지).'
+          )
+          system = agent._build_system_prompt(task_hint=question)
+          answer = await run_claude_isolated(
+            f'{system}\n\n---\n\n{consult_prompt}',
+            model='claude-haiku-4-5-20251001',
+            timeout=30.0,
+          )
+          answer_text = answer.strip()[:300]
+          if answer_text:
+            await self._emit(target, answer_text, 'response')
+            consultation_results.append(f'{target_name_kr}: {answer_text}')
+            # 피드백 수집
+            self._phase_feedback.append({
+              'from': target_name_kr,
+              'phase': phase.get('name', ''),
+              'content': answer_text[:100],
+            })
+        except Exception:
+          pass
+
+      return '\n'.join(consultation_results)
+
+    except Exception:
+      return ''
+
+  # 피어 리뷰어 매핑: 작업자 역할 → 리뷰어 목록
+  _PEER_REVIEWERS: dict[str, list[str]] = {
+    'planner': ['designer', 'developer'],
+    'designer': ['developer', 'planner'],
+    'developer': ['designer', 'planner'],
+  }
+
+  async def _peer_review(
+    self,
+    worker_name: str,
+    phase_name: str,
+    content: str,
+    user_input: str,
+  ) -> list[dict]:
+    '''그룹 완료 시 관련 팀원 1~2명이 실질적 피어 리뷰를 수행한다.
+
+    Returns:
+      리뷰 결과 리스트. [CONCERN] 태그가 있으면 심각한 우려사항.
+    '''
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+
+    # 리뷰어 선정: 작업자 외 관련 팀원 1~2명
+    reviewer_ids = self._PEER_REVIEWERS.get(worker_name, ['planner', 'developer'])
+    # 최대 2명
+    reviewer_ids = reviewer_ids[:2]
+
+    reviews = []
+    concern_detected = False
+
+    for reviewer_id in reviewer_ids:
+      reviewer_name_kr = profile_names.get(reviewer_id, reviewer_id)
+      worker_name_kr = profile_names.get(worker_name, worker_name)
+
+      try:
+        await self._emit(reviewer_id, '', 'typing')
+        review_prompt = (
+          f'팀원 {worker_name_kr}이(가) {phase_name} 작업을 완료했습니다.\n\n'
+          f'[프로젝트] {user_input[:500]}\n'
+          f'[산출물 요약] {content[:2000]}\n\n'
+          f'당신({reviewer_name_kr})의 전문 관점에서 이 산출물에 대해 짧게 코멘트하세요.\n'
+          f'- 좋은 점이 있으면 구체적으로 칭찬\n'
+          f'- 자신의 다음 작업에 영향을 주는 사항이 있으면 언급\n'
+          f'- 우려 사항이 있으면 건설적으로 지적\n\n'
+          f'1~2문장으로, 메신저 대화 톤으로. 마크다운 금지.\n'
+          f'심각한 문제가 있으면 문장 끝에 [CONCERN]을 붙이세요.'
+        )
+        response = await run_claude_isolated(
+          review_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+        )
+        feedback = response.strip().split('\n')[0][:200]
+        if feedback:
+          await self._emit(reviewer_id, feedback, 'response')
+          has_concern = '[CONCERN]' in feedback
+          if has_concern:
+            concern_detected = True
+          reviews.append({
+            'reviewer': reviewer_id,
+            'feedback': feedback.replace('[CONCERN]', '').strip(),
+            'concern': has_concern,
+          })
+          # 피드백 수집
+          self._phase_feedback.append({
+            'from': reviewer_name_kr,
+            'phase': phase_name,
+            'content': feedback.replace('[CONCERN]', '').strip(),
+          })
+      except Exception:
+        pass
+
+    # [CONCERN] 감지 시 담당자에게 보완 기회 1회 제공
+    if concern_detected:
+      concern_items = [r['feedback'] for r in reviews if r.get('concern')]
+      concern_text = '\n'.join(f'- {item}' for item in concern_items)
+      worker_name_kr = profile_names.get(worker_name, worker_name)
+      await self._emit('teamlead', f'{worker_name_kr}, 피어 리뷰에서 우려 사항이 나왔습니다. 확인 부탁합니다.', 'response')
+
+      try:
+        agent = self.agents.get(worker_name)
+        if agent:
+          await self._emit(worker_name, '', 'typing')
+          revision_prompt = (
+            f'[프로젝트] {user_input[:500]}\n\n'
+            f'[당신의 산출물] {content[:3000]}\n\n'
+            f'[피어 리뷰 우려사항]\n{concern_text}\n\n'
+            f'위 우려사항을 반영하여 산출물을 보완하세요.\n'
+            f'전체를 다시 작성하되, 우려사항을 해결하세요.'
+          )
+          revised = await agent.handle(revision_prompt)
+          if revised and len(revised) > 100:
+            await self._emit(worker_name, f'{phase_name} 피어 리뷰 반영 완료했습니다.', 'response')
+            reviews.append({'revised': True, 'content': revised})
+      except Exception:
+        pass
+
+    return reviews
 
   async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None:
     '''그룹 전환 시 이전 담당자가 다음 담당자에게 인수인계 코멘트를 남긴다.'''

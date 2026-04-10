@@ -9,7 +9,6 @@ def office_setup(tmp_path):
     from bus.message_bus import MessageBus
     from log_bus.event_bus import EventBus
     from workspace.manager import WorkspaceManager
-    from runners.gemma_runner import GemmaRunner
     from orchestration.office import Office
 
     bus = MessageBus(db_path=str(tmp_path / 'test.db'))
@@ -17,21 +16,19 @@ def office_setup(tmp_path):
     ws = WorkspaceManager(
         task_id='test-task', workspace_root=str(tmp_path / 'workspace')
     )
-    runner = GemmaRunner()
     office = Office(
         bus=bus,
-        runner=runner,
         event_bus=ev_bus,
         workspace=ws,
         memory_root=tmp_path / 'memory',
     )
-    return office, bus, runner
+    return office, bus
 
 
 @pytest.mark.asyncio
 async def test_conversation_intent_direct_response(office_setup):
     '''대화 의도일 때 팀장이 직접 응답한다 (팀원 소집 없음)'''
-    office, bus, runner = office_setup
+    office, bus = office_setup
 
     with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
         mock_claude.return_value = '[CONVERSATION]\n저는 AI Office의 팀장입니다.'
@@ -45,7 +42,7 @@ async def test_conversation_intent_direct_response(office_setup):
 @pytest.mark.asyncio
 async def test_quick_task_routes_to_single_agent(office_setup):
     '''단순 요청은 담당 팀원 한 명에게만 전달된다'''
-    office, bus, runner = office_setup
+    office, bus = office_setup
 
     with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_intent:
         mock_intent.return_value = '[QUICK_TASK:developer]\n이 코드를 분석하세요.'
@@ -63,7 +60,7 @@ async def test_quick_task_routes_to_single_agent(office_setup):
 @pytest.mark.asyncio
 async def test_project_triggers_meeting(office_setup):
     '''프로젝트 의도일 때 회의가 소집된다'''
-    office, bus, runner = office_setup
+    office, bus = office_setup
 
     with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_intent:
         mock_intent.return_value = '[PROJECT]\n사이트 리뉴얼 프로젝트입니다.'
@@ -84,7 +81,7 @@ async def test_project_triggers_meeting(office_setup):
 @pytest.mark.asyncio
 async def test_agents_have_personalities(office_setup):
     '''각 에이전트가 성격 섹션이 포함된 시스템 프롬프트를 갖는다'''
-    office, bus, runner = office_setup
+    office, bus = office_setup
 
     for name, agent in office.agents.items():
         prompt = agent._build_system_prompt()
@@ -96,13 +93,14 @@ async def test_agents_have_personalities(office_setup):
 @pytest.mark.asyncio
 async def test_agent_can_speak_in_meeting(office_setup):
     '''에이전트가 회의에서 자기 관점으로 발언할 수 있다'''
-    office, bus, runner = office_setup
-
-    # runner.generate를 mock
-    runner.generate = AsyncMock(return_value='기획 관점에서 사용자 조사가 먼저 필요합니다.')
+    office, bus = office_setup
 
     planner = office.agents['planner']
-    opinion = await planner.speak('사이트 리뉴얼')
+
+    # speak()는 내부적으로 run_claude_isolated를 사용
+    with patch('orchestration.agent.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
+        mock_claude.return_value = '기획 관점에서 사용자 조사가 먼저 필요합니다.'
+        opinion = await planner.speak('사이트 리뉴얼')
 
     assert len(opinion) > 0
-    runner.generate.assert_called_once()
+    mock_claude.assert_called_once()
