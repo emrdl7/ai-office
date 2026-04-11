@@ -53,6 +53,14 @@ def create_suggestion(
   }
 
 
+def get_suggestion(suggestion_id: str) -> dict | None:
+  '''건의 단건을 반환한다.'''
+  c = _conn()
+  row = c.execute('SELECT * FROM suggestions WHERE id = ?', (suggestion_id,)).fetchone()
+  c.close()
+  return dict(row) if row else None
+
+
 def list_suggestions(status: str = '') -> list[dict]:
   '''건의 목록을 반환한다.'''
   c = _conn()

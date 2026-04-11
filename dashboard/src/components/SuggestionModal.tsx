@@ -17,9 +17,9 @@ interface Suggestion {
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   pending: { text: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
-  accepted: { text: '수용', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  accepted: { text: '반영 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
   rejected: { text: '반려', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  done: { text: '완료', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  done: { text: '반영 완료', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -36,14 +36,24 @@ export function SuggestionModal() {
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Suggestion | null>(null)
 
-  useEffect(() => {
-    if (!show) return
-    setLoading(true)
+  const fetchSuggestions = () =>
     fetch('/api/suggestions')
       .then((r) => r.json())
       .then(setSuggestions)
-      .finally(() => setLoading(false))
+
+  useEffect(() => {
+    if (!show) return
+    setLoading(true)
+    fetchSuggestions().finally(() => setLoading(false))
   }, [show])
+
+  // accepted 상태(반영 중) 항목이 있으면 3초마다 자동 갱신
+  useEffect(() => {
+    const hasPending = suggestions.some((s) => s.status === 'accepted')
+    if (!hasPending) return
+    const timer = setInterval(() => fetchSuggestions(), 3000)
+    return () => clearInterval(timer)
+  }, [suggestions])
 
   async function handleStatusChange(id: string, status: string) {
     await fetch(`/api/suggestions/${id}`, {

@@ -783,16 +783,32 @@ async def create_suggestion_api(request: Request):
 
 @app.patch('/api/suggestions/{suggestion_id}')
 async def update_suggestion_api(suggestion_id: str, request: Request):
-  '''건의 상태/답변을 업데이트한다.'''
-  from db.suggestion_store import update_suggestion
+  '''건의 상태/답변을 업데이트한다. 승인(accepted) 시 자가개선 패처를 백그라운드로 실행한다.'''
+  from db.suggestion_store import update_suggestion, get_suggestion
   body = await request.json()
+  new_status = body.get('status', '')
   success = update_suggestion(
     suggestion_id,
-    status=body.get('status', ''),
+    status=new_status,
     response=body.get('response', ''),
   )
   if not success:
     raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다')
+
+  # 승인 시 자가개선 패처 실행
+  if new_status == 'accepted':
+    suggestion = get_suggestion(suggestion_id)
+    if suggestion:
+      async def _run_patch():
+        from improvement.code_patcher import apply_suggestion
+        from db.suggestion_store import update_suggestion as _upd
+        ok = await apply_suggestion(suggestion)
+        if ok:
+          _upd(suggestion_id, status='done')
+        else:
+          _upd(suggestion_id, status='pending')  # 실패 시 다시 pending으로
+      asyncio.create_task(_run_patch())
+
   return {'success': True}
 
 

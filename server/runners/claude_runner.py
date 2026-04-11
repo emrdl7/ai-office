@@ -13,7 +13,7 @@ class ClaudeRunnerError(Exception):
   pass
 
 
-async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = '') -> str:
+async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = '', max_turns: int = 3) -> str:
   '''Claude CLI를 subprocess로 실행하고 텍스트 응답을 반환한다.'''
   project_root = str(Path(__file__).parent.parent.parent)
   use_model = model or CLAUDE_MODEL
@@ -26,7 +26,7 @@ async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = 
     '--no-session-persistence',
     '--dangerously-skip-permissions',
     '--model', use_model,
-    '--max-turns', '3',
+    '--max-turns', str(max_turns),
     prompt,
     cwd=project_root,
     stdout=asyncio.subprocess.PIPE,
