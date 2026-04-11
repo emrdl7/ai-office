@@ -2149,16 +2149,52 @@ class Office:
     except Exception:
       return ''
 
-  # QUICK_TASK 보완 의견 매핑: 담당자 → 보완 역할
+  # QUICK_TASK 보완 의견 기본 매핑: 담당자 → (기본 리뷰어, 관점)
   _SECOND_OPINION_MAP: dict[str, tuple[str, str]] = {
     'developer': ('planner', '기획/전략 관점에서 빠진 부분이 없는지'),
     'planner':   ('developer', '기술적 정확성과 실현 가능성 관점에서'),
     'designer':  ('developer', '기술 구현 관점에서'),
   }
 
-  async def _quick_task_second_opinion(self, worker: str, prompt: str, result: str) -> None:
-    '''QUICK_TASK 결과에 대해 다른 역할의 에이전트가 보완 의견을 제시한다.'''
+  # 태스크 키워드 → 리뷰어 오버라이드: 업무 내용에 맞는 전문가가 자문
+  _KEYWORD_REVIEWER_MAP: list[tuple[list[str], str, str]] = [
+    (
+      ['디자인', 'UI', 'UX', '비주얼', '화면', '색상', '레이아웃', '트렌드', '브랜드', '폰트'],
+      'designer',
+      '디자인/UX 관점에서 보완할 부분이 있는지',
+    ),
+    (
+      ['코드', '개발', 'API', '아키텍처', '데이터베이스', '서버', '프론트', '백엔드', '기술'],
+      'developer',
+      '기술적 정확성과 구현 가능성 관점에서',
+    ),
+    (
+      ['기획', '전략', '로드맵', '시장', '사용자', '요구사항', '시나리오'],
+      'planner',
+      '기획/전략 관점에서 빠진 부분이 없는지',
+    ),
+  ]
+
+  def _resolve_reviewer(self, worker: str, prompt: str) -> tuple[str, str] | None:
+    '''업무 내용 키워드 기반으로 리뷰어를 결정한다. 자기 자신은 제외.'''
+    for keywords, reviewer, perspective in self._KEYWORD_REVIEWER_MAP:
+      if reviewer == worker:
+        continue  # 자기 자신에게 자문 요청 불가
+      if any(kw in prompt for kw in keywords):
+        return reviewer, perspective
+    # 키워드 매칭 없으면 기본 매핑 사용
     config = self._SECOND_OPINION_MAP.get(worker)
+    if config and config[0] != worker:
+      return config
+    return None
+
+  async def _quick_task_second_opinion(self, worker: str, prompt: str, result: str) -> None:
+    '''QUICK_TASK 결과에 대해 관련 역할 에이전트가 보완 의견을 제시한다.
+
+    업무 내용 키워드를 보고 가장 적합한 전문가를 자동 선택한다.
+    예: 기획자가 디자인 트렌드 분석 → 디자이너가 보완 의견 제시
+    '''
+    config = self._resolve_reviewer(worker, prompt)
     if not config:
       return
 
