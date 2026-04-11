@@ -44,11 +44,17 @@ async def test_quick_task_routes_to_single_agent(office_setup):
     '''단순 요청은 담당 팀원 한 명에게만 전달된다'''
     office, bus = office_setup
 
-    with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_intent:
+    # office.py 내부 LLM 호출(팀장 검수 등)도 mock — 재작업 루프 방지
+    with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_intent, \
+         patch('orchestration.office.run_claude_isolated', new_callable=AsyncMock) as mock_office_claude:
         mock_intent.return_value = '[QUICK_TASK:developer]\n이 코드를 분석하세요.'
+        mock_office_claude.return_value = '[PASS] 검수 완료'
 
-        # developer agent의 handle을 mock
+        # developer와 qa agent의 handle을 mock — QA 루프가 재작업을 트리거하지 않도록
         office.agents['developer'].handle = AsyncMock(return_value='코드 분석 결과입니다.')
+        office.agents['qa'].handle = AsyncMock(
+            return_value='{"status":"success","summary":"검수 통과","failure_reason":"","severity":"none"}'
+        )
 
         result = await office.receive('이 코드 분석해줘')
 
@@ -97,10 +103,10 @@ async def test_agent_can_speak_in_meeting(office_setup):
 
     planner = office.agents['planner']
 
-    # speak()는 내부적으로 run_claude_isolated를 사용
-    with patch('orchestration.agent.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
-        mock_claude.return_value = '기획 관점에서 사용자 조사가 먼저 필요합니다.'
+    # planner는 Gemini 1차 → Sonnet 폴백 순으로 러너를 사용
+    with patch('orchestration.agent.run_gemini', new_callable=AsyncMock) as mock_gemini:
+        mock_gemini.return_value = '기획 관점에서 사용자 조사가 먼저 필요합니다.'
         opinion = await planner.speak('사이트 리뉴얼')
 
     assert len(opinion) > 0
-    mock_claude.assert_called_once()
+    mock_gemini.assert_called_once()
