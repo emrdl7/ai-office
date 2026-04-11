@@ -6,6 +6,8 @@ export interface Agent {
   model?: string
   work_started_at?: string
   current_task_id?: string
+  current_phase?: string
+  active_project_title?: string
 }
 
 export interface Task {

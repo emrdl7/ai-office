@@ -489,8 +489,63 @@ async def get_agents(request: Request):
       'status': status,
       'model': model,
       'work_started_at': office._work_started_at if status in ('working', 'meeting') else '',
+      'current_phase': office._current_phase if status == 'working' and active == agent_id else '',
+      'active_project_title': office._active_project_title if status in ('working', 'meeting', 'waiting') else '',
     })
   return agents
+
+
+@app.get('/api/agents/quotes')
+async def get_daily_quotes():
+  '''오늘의 한마디 반환. 없으면 Haiku로 생성 후 캐싱.'''
+  from db.daily_quote_store import get_quotes, save_quotes, AGENT_PERSONAS
+  from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
+
+  cached = get_quotes()
+  if len(cached) >= 5:
+    return cached
+
+  # 생성 프롬프트
+  persona_block = '\n'.join(
+    f'- {agent_id}: {persona}'
+    for agent_id, persona in AGENT_PERSONAS.items()
+  )
+  prompt = (
+    '아래 5명의 직장인 캐릭터가 오늘 아침 출근하며 한마디씩 합니다.\n'
+    '각 캐릭터의 성격을 살려, 짧고 인상적인 한마디를 만들어 주세요.\n'
+    '일상적인 감상, 일에 대한 생각, 오늘 날씨, 인생 통찰 등 자유롭게.\n'
+    '20자 이내, 구어체, 말줄임표 사용 가능, 직접 인용처럼.\n\n'
+    f'{persona_block}\n\n'
+    '아래 JSON 형식으로만 답하세요 (설명 없이):\n'
+    '{"teamlead":"...", "planner":"...", "designer":"...", "developer":"...", "qa":"..."}'
+  )
+
+  try:
+    result = await run_claude_isolated(
+      prompt,
+      model='claude-haiku-4-5-20251001',
+      timeout=30.0,
+      max_turns=1,
+    )
+    from runners.json_parser import parse_json
+    parsed = parse_json(result)
+    if parsed and isinstance(parsed, dict) and len(parsed) >= 5:
+      quotes = {k: str(v) for k, v in parsed.items() if k in AGENT_PERSONAS}
+      save_quotes(quotes)
+      return quotes
+  except (ClaudeRunnerError, Exception):
+    pass
+
+  # 폴백 — 정적 기본 한마디
+  fallback = {
+    'teamlead': '일 앞에서 핑계는 없어.',
+    'planner': '오늘도 수를 읽어야지.',
+    'designer': '타협? 그건 제 사전에 없어요.',
+    'developer': '코드가 곧 답이다.',
+    'qa': '완벽하지 않으면 통과 없다.',
+  }
+  save_quotes(fallback)
+  return fallback
 
 
 @app.get('/api/artifacts')

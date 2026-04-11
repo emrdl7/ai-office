@@ -78,6 +78,7 @@ class Office:
     self._interrupted_confirmed = False
     self._active_agent = ''  # 현재 작업 중인 에이전트 ID
     self._work_started_at = ''  # 작업 시작 ISO 타임스탬프
+    self._current_phase = ''   # 현재 진행 중인 단계명
     self._last_review_feedback = ''
     # 프로젝트 세션
     self._active_project_id: str | None = None
@@ -551,6 +552,7 @@ class Office:
       # 팀장 응답 완료 → 팀원 대화로 전환 (UI에서 "팀장 작업중" 표시 제거)
       self._active_agent = ''
       self._work_started_at = ''
+      self._current_phase = ''
 
       # 서브유형별 팀원 반응 제어 — 팀장 응답을 스레드에 포함
       await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype, teamlead_response=response)
@@ -561,6 +563,7 @@ class Office:
       self._state = OfficeState.COMPLETED
       self._active_agent = ''
       self._work_started_at = ''
+      self._current_phase = ''
       return {
         'state': self._state.value,
         'response': response,
@@ -785,6 +788,7 @@ class Office:
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
     self._work_started_at = ''
+    self._current_phase = ''
     self._user_mid_feedback = []  # 피드백 초기화
     return {
       'state': self._state.value,
@@ -1091,6 +1095,7 @@ class Office:
       self._state = OfficeState.WORKING
       self._active_agent = agent_name
       self._work_started_at = datetime.now(timezone.utc).isoformat()
+      self._current_phase = phase_name
       _phase_started_at = datetime.now(timezone.utc).isoformat()
       _phase_revision_count = 0
       await self._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
@@ -1323,6 +1328,7 @@ class Office:
           self._state = OfficeState.COMPLETED
           self._active_agent = ''
           self._work_started_at = ''
+          self._current_phase = ''
           return {
             'state': self._state.value,
             'response': '작업 중단',
@@ -1480,6 +1486,7 @@ class Office:
           self._state = OfficeState.IDLE
           self._active_agent = ''
           self._work_started_at = ''
+          self._current_phase = ''
           return {
             'state': 'waiting_input',
             'response': confirm_msg,
@@ -1577,6 +1584,7 @@ class Office:
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
     self._work_started_at = ''
+    self._current_phase = ''
     self._pending_project = None
     self._interrupted_instruction = None
     self._user_mid_feedback = []  # 피드백 초기화
@@ -2221,6 +2229,7 @@ class Office:
       self._state = OfficeState.IDLE
       self._active_agent = ''
       self._work_started_at = ''
+      self._current_phase = ''
       return
 
     # @멘션 파싱
