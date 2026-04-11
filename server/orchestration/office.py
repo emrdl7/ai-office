@@ -551,7 +551,10 @@ class Office:
           update_task_project(self._current_task_id, self._active_project_id)
         await self._emit('system', f'📂 프로젝트 이어가기: {self._active_project_title}', 'project_update')
       else:
-        # 새 프로젝트 시작
+        # 새 프로젝트 시작 — 이전 프로젝트 컨텍스트 초기화 (다른 프로젝트 대화 오염 방지)
+        self._context_summary = ''
+        for agent in self.agents.values():
+          agent._conversation_history = []
         if self._active_project_id:
           archive_project(self._active_project_id)
 
@@ -702,13 +705,7 @@ class Office:
           f'- 명시된 요구사항을 충족했으면 status=success입니다\n\n'
           f'반드시 JSON 형식으로 응답: {{"status":"success|fail","summary":"...","failure_reason":"...","severity":"critical|major|minor|none"}}'
         )
-        # run_claude_isolated 직접 호출 — 대화 이력/컨텍스트 요약 주입 차단
-        # qa_agent.handle()은 이전 대화를 자동 추가해 엉뚱한 기준으로 판단하는 문제 있음
-        qa_system = qa_agent._build_system_prompt()
-        qa_full = f'{qa_system}\n\n---\n\n{qa_prompt}' if qa_system else qa_prompt
-        qa_result = await run_claude_isolated(
-          qa_full, model='claude-haiku-4-5-20251001', timeout=60.0
-        )
+        qa_result = await qa_agent.handle(qa_prompt)
 
         # severity 기반 합격/불합격 판단
         passed = True
