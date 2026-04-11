@@ -674,8 +674,8 @@ class Office:
       ctx_parts.append(reference_context)
     result = await agent.handle(prompt, context='\n\n'.join(ctx_parts))
 
-    # 보완 관점 의견 — 다른 역할 에이전트가 한마디
-    await self._quick_task_second_opinion(agent_name, prompt, result)
+    # 보완 전문 기여 — 관련 역할 에이전트가 전문 내용 제공 후 담당자가 결과물 보강
+    result = await self._quick_task_second_opinion(agent_name, prompt, result, agent, ctx_parts)
 
     # QA 검수 (최대 3회: 초기 + 2회 보완)
     qa_agent = self.agents.get('qa')
@@ -2188,40 +2188,88 @@ class Office:
       return config
     return None
 
-  async def _quick_task_second_opinion(self, worker: str, prompt: str, result: str) -> None:
-    '''QUICK_TASK 결과에 대해 관련 역할 에이전트가 보완 의견을 제시한다.
+  async def _quick_task_second_opinion(
+    self,
+    worker: str,
+    prompt: str,
+    result: str,
+    worker_agent: 'Agent | None' = None,
+    ctx_parts: list[str] | None = None,
+  ) -> str:
+    '''QUICK_TASK 결과에 관련 전문가가 내용을 기여하고, 담당자가 결과물을 보강한다.
 
-    업무 내용 키워드를 보고 가장 적합한 전문가를 자동 선택한다.
-    예: 기획자가 디자인 트렌드 분석 → 디자이너가 보완 의견 제시
+    흐름:
+      1. 리뷰어가 자신의 전문 관점 내용(보완 섹션)을 생성
+      2. 의미 있는 내용이면 담당자에게 전달 → 담당자가 결과물에 반영
+      3. 보강된 결과물 반환 (변경 없으면 원본 반환)
     '''
+    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+
     config = self._resolve_reviewer(worker, prompt)
     if not config:
-      return
+      return result
 
     reviewer_name, perspective = config
     reviewer = self.agents.get(reviewer_name)
     if not reviewer:
-      return
+      return result
 
+    # ── Step 1: 리뷰어가 전문 내용 기여 ──
     try:
       await self._emit(reviewer_name, '', 'typing')
-      review_prompt = (
-        f'{perspective} 아래 산출물을 검토하세요.\n\n'
+      system = reviewer._build_system_prompt(task_hint=prompt)
+      contribute_prompt = (
+        f'{perspective} 관점에서 아래 산출물에 추가할 내용을 작성하세요.\n\n'
         f'[원본 요청]\n{prompt[:500]}\n\n'
-        f'[산출물]\n{result[:3000]}\n\n'
-        f'보완할 점이 있으면 2~3줄로 짧게. 없으면 "특이사항 없습니다" 한 줄.\n'
-        f'메신저 톤, 마크다운 금지.'
+        f'[현재 산출물]\n{result[:2000]}\n\n'
+        f'[지시]\n'
+        f'- 당신의 전문 영역({reviewer_name})에서만 기여하세요\n'
+        f'- 이미 잘 다뤄진 내용은 반복하지 마세요\n'
+        f'- 추가할 내용이 있으면 구체적으로 작성하세요 (제목 포함)\n'
+        f'- 추가할 내용이 없으면 "없음"만 출력하세요'
       )
-      resp = await run_claude_isolated(
-        review_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
-      )
-      feedback = resp.strip()
-      if feedback and '특이사항 없' not in feedback:
-        await self._emit(reviewer_name, feedback[:300], 'response')
-      else:
-        await self._emit(reviewer_name, '확인했습니다 👍', 'response')
+      full = f'{system}\n\n---\n\n{contribute_prompt}' if system else contribute_prompt
+      resp = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=40.0)
+      contribution = resp.strip()
     except Exception:
-      pass
+      return result
+
+    # 의미 없는 응답 필터
+    if not contribution or contribution in ('없음', '없음.') or len(contribution) < 10:
+      await self._emit(reviewer_name, '내용 충실하네요 👍', 'response')
+      return result
+
+    # 채팅에 기여 사실 알림
+    await self._emit(
+      reviewer_name,
+      f'{perspective} 관점에서 보완 내용 추가했습니다.',
+      'response',
+    )
+
+    # ── Step 2: 담당자가 기여 내용을 반영해 결과물 보강 ──
+    if not worker_agent:
+      return result
+
+    try:
+      self._active_agent = worker
+      await self._emit(worker, '', 'typing')
+      revise_prompt = (
+        f'[원본 요청]\n{prompt}\n\n'
+        f'[현재 산출물]\n{result}\n\n'
+        f'[{profile_names.get(reviewer_name, reviewer_name)}의 보완 내용]\n{contribution}\n\n'
+        f'위 보완 내용을 산출물에 자연스럽게 통합하여 완성본을 작성하세요.\n'
+        f'원본 구조를 유지하면서 보완 내용을 적절한 위치에 녹여 넣으세요.'
+      )
+      ctx = '\n\n'.join(ctx_parts) if ctx_parts else ''
+      updated = await worker_agent.handle(revise_prompt, context=ctx)
+      await self._emit(
+        worker,
+        f'{profile_names.get(reviewer_name, reviewer_name)} 의견 반영해서 보강했습니다.',
+        'response',
+      )
+      return updated
+    except Exception:
+      return result
 
   async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None:
     '''작업 완료 직후 관련 팀원 1명이 결과물 기반 전문 의견을 짧게 끼어든다.
