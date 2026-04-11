@@ -126,6 +126,8 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const [showTaskPicker, setShowTaskPicker] = useState(false)
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])
   const [activeProject, setActiveProject] = useState<{ id: string; title: string } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [lightbox, setLightbox] = useState<string | null>(null)
   const sendLock = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -165,7 +167,9 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       try {
         const log = JSON.parse(event.data) as LogEntry
         if (log.event_type === 'reaction_update') {
-          const { log_id, reactions } = log.data ?? {}
+          const d = (log.data ?? {}) as Record<string, unknown>
+          const log_id = d.log_id as string | undefined
+          const reactions = d.reactions as Record<string, string[]> | undefined
           if (log_id && reactions) updateLogReactions(log_id, reactions)
           return
         }
@@ -233,17 +237,52 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     setShowTaskPicker(true)
   }
 
-  // 파일 선택
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(e.target.files ?? [])
-    if (selected.length === 0) return
-    setFiles((prev) => [...prev, ...selected])
-    // 이미지 로컬 프리뷰 생성
-    const newPreviews = selected.map((f) =>
+  // 파일 추가 공통 헬퍼
+  function addFiles(incoming: File[]) {
+    if (incoming.length === 0) return
+    setFiles((prev) => [...prev, ...incoming])
+    const newPreviews = incoming.map((f) =>
       isImageFile(f.name) ? URL.createObjectURL(f) : ''
     )
     setPreviews((prev) => [...prev, ...newPreviews])
+  }
+
+  // 파일 선택
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? [])
+    addFiles(selected)
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  // 붙여넣기 — 이미지 감지 시 파일로 추가
+  function handlePaste(e: React.ClipboardEvent) {
+    const imageFiles = Array.from(e.clipboardData.items)
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item, i) => {
+        const raw = item.getAsFile()
+        if (!raw) return null
+        const ext = item.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
+        return new File([raw], `paste_${Date.now()}_${i}.${ext}`, { type: item.type })
+      })
+      .filter((f): f is File => f !== null)
+    if (imageFiles.length === 0) return
+    e.preventDefault()
+    addFiles(imageFiles)
+  }
+
+  // 드래그앤드롭
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false)
+  }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragging(false)
+    const dropped = Array.from(e.dataTransfer.files)
+    addFiles(dropped)
   }
 
   function removeFile(idx: number) {
@@ -295,6 +334,27 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
   return (
     <>
+      {/* 이미지 라이트박스 */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightbox(null)}
+        >
+          <img
+            src={lightbox}
+            alt="확대 이미지"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl cursor-pointer"
+            onClick={() => setLightbox(null)}
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {/* 헤더 */}
       <header className="flex items-center justify-between px-4 md:px-5 py-3
         bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
@@ -396,10 +456,25 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
       {/* 대화 영역 */}
       <div
-        className="flex-1 overflow-y-auto py-3 min-h-0
-          bg-gray-50 dark:bg-gray-900/50"
+        className={`flex-1 overflow-y-auto py-3 min-h-0 relative
+          bg-gray-50 dark:bg-gray-900/50
+          ${isDragging ? 'ring-2 ring-inset ring-blue-400' : ''}`}
         role="log" aria-live="polite" aria-label="대화"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {/* 드래그 오버레이 */}
+        {isDragging && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center
+            bg-blue-500/10 pointer-events-none">
+            <div className="flex flex-col items-center gap-2 px-6 py-4 rounded-2xl
+              bg-white dark:bg-gray-800 border-2 border-dashed border-blue-400 shadow-lg">
+              <span className="text-3xl">🖼️</span>
+              <span className="text-sm font-medium text-blue-600 dark:text-blue-400">여기에 놓으세요</span>
+            </div>
+          </div>
+        )}
         <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1">
           {channelLogs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 py-40">
@@ -411,7 +486,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           ) : (
             <>
-              {renderMessages(channelLogs)}
+              {renderMessages(channelLogs, setLightbox)}
               <WorkingIndicator workingAgents={workingAgents} typingAgents={typingAgents} />
               <div ref={bottomRef} />
             </>
@@ -515,6 +590,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           <textarea ref={inputRef} value={message}
             onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={activeChannel === 'all'
               ? '팀에게 메시지 보내기...'
               : `${profile?.character || profile?.name}에게 메시지 보내기...`}
@@ -569,7 +645,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
 // --- 메시지 렌더링 ---
 
-function renderMessages(logs: LogEntry[]) {
+function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
   const elements: React.ReactNode[] = []
   let prevAgent = ''
   let prevTime = ''
@@ -605,7 +681,7 @@ function renderMessages(logs: LogEntry[]) {
 
     // 사용자 메시지 (오른쪽)
     if (log.agent_id === 'user') {
-      elements.push(<UserMessage key={log.id ?? i} log={log} time={time} />)
+      elements.push(<UserMessage key={log.id ?? i} log={log} time={time} onImageClick={onImageClick} />)
       prevAgent = log.agent_id
       prevTime = time
       continue
@@ -632,7 +708,7 @@ function renderMessages(logs: LogEntry[]) {
               <span className="text-[10px] text-gray-400">{profile.role}</span>
               <span className="text-[10px] text-gray-400">{time}</span>
             </div>
-            <MessageBubble log={log} isResponse={isResponse} />
+            <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
           </div>
         </div>
       )
@@ -640,7 +716,7 @@ function renderMessages(logs: LogEntry[]) {
       elements.push(
         <div key={log.id ?? i} className="flex gap-3 py-0.5 pl-10 md:pl-12">
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
-            <MessageBubble log={log} isResponse={isResponse} />
+            <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
           </div>
         </div>
       )
@@ -652,7 +728,7 @@ function renderMessages(logs: LogEntry[]) {
 }
 
 // 사용자 메시지 컴포넌트
-function UserMessage({ log, time }: { log: LogEntry; time: string }) {
+function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string; onImageClick: (url: string) => void }) {
   const fileInfos = (log.data?.files as FileInfo[]) ?? []
   const fileNames = (log.data?.attachments as string[]) ?? []
   const baseTaskId = (log.data?.base_task_id as string) ?? ''
@@ -677,16 +753,23 @@ function UserMessage({ log, time }: { log: LogEntry; time: string }) {
         )}
 
         {/* 이미지 썸네일 */}
-        {fileInfos.filter((f) => f.isImage).map((f, i) => (
-          <div key={`img-${i}`} className="mb-1.5 flex justify-end">
-            <a href={f.url} target="_blank" rel="noopener noreferrer"
-              className="block max-w-[240px] rounded-xl overflow-hidden
-                border border-gray-200 dark:border-gray-700">
-              <img src={f.url} alt={f.name}
-                className="w-full max-h-[300px] object-cover" loading="lazy" />
-            </a>
-          </div>
-        ))}
+        {fileInfos.filter((f) => f.isImage).map((f, i) => {
+          const isGif = f.name.toLowerCase().endsWith('.gif')
+          return (
+            <div key={`img-${i}`} className="mb-1.5 flex justify-end">
+              <button
+                onClick={() => onImageClick(f.url)}
+                className="block max-w-[280px] rounded-xl overflow-hidden
+                  border border-gray-200 dark:border-gray-700 cursor-zoom-in
+                  hover:opacity-90 transition-opacity"
+              >
+                <img src={f.url} alt={f.name}
+                  className={`w-full max-h-[300px] ${isGif ? 'object-contain' : 'object-cover'}`}
+                  loading="lazy" />
+              </button>
+            </div>
+          )
+        })}
 
         {/* 일반 파일 첨부 */}
         {fileInfos.filter((f) => !f.isImage).length > 0 && (
@@ -729,7 +812,7 @@ function UserMessage({ log, time }: { log: LogEntry; time: string }) {
 }
 
 // 에이전트 메시지 버블
-function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean }) {
+function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isResponse: boolean; onImageClick: (url: string) => void }) {
   const [showReactions, setShowReactions] = useState(false)
   const { updateLogReactions } = useStore()
   const content = log.message.replace(/^\[.*?\]\s*/, '')
@@ -823,11 +906,25 @@ function MessageBubble({ log, isResponse }: { log: LogEntry; isResponse: boolean
       {artifactPaths.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-1.5">
           {artifactPaths.map((path, pi) => {
-            // task_id/단계명/파일명 → 단계명/파일명 으로 표시
             const parts = path.split('/')
             const name = parts.length >= 3 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : parts.pop() ?? path
+            const artifactUrl = `/api/artifacts/${path}`
+            const isImg = isImageFile(name)
+            const isGif = name.toLowerCase().endsWith('.gif')
+            if (isImg) {
+              return (
+                <button key={pi} onClick={() => onImageClick(artifactUrl)}
+                  className="block max-w-[240px] rounded-lg overflow-hidden
+                    border border-gray-200 dark:border-gray-600 cursor-zoom-in
+                    hover:opacity-90 transition-opacity">
+                  <img src={artifactUrl} alt={name}
+                    className={`w-full max-h-[200px] ${isGif ? 'object-contain' : 'object-cover'}`}
+                    loading="lazy" />
+                </button>
+              )
+            }
             return (
-              <a key={pi} href={`/api/artifacts/${path}`} target="_blank" rel="noopener noreferrer"
+              <a key={pi} href={artifactUrl} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
                   bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600
                   text-xs text-gray-600 dark:text-gray-300

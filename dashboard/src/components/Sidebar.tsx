@@ -74,8 +74,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     refetchInterval: 2000,
   })
 
-  const logs = useStore((s) => s.logs)
-
   // 에이전트별 상태 코멘트 (미생 캐릭터 성격 반영)
   const STATUS_COMMENTS: Record<string, Record<string, string>> = {
     teamlead: {
