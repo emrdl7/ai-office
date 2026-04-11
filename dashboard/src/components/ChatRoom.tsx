@@ -951,7 +951,7 @@ function WorkingIndicator({ workingAgents, typingAgents }: { workingAgents: Agen
     if (!hasWorking) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [hasWorking])
+  }, [workingAgents.length])
 
   if (!hasWorking && !hasTyping) return null
 

@@ -277,15 +277,11 @@ class Office:
         except Exception:
           pass
       return
-    agent_model_map = {
-      'planner': 'Claude Sonnet(업무) / Haiku(대화)',
-      'designer': 'Claude Sonnet(업무) / Haiku(대화)',
-      'developer': 'Claude Sonnet(업무) / Haiku(대화)',
-      'qa': 'Claude Sonnet(업무) / Haiku(대화)',
-    }
-
-    # ── @멘션 파싱 — 지목된 에이전트 우선 응답 ──
+    import asyncio
+    import random
     import re
+
+    # ── @멘션 파싱 — 지목된 에이전트 파악 ──
     mentioned_ids: set[str] = set()
     raw_mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', user_input)
     for raw in raw_mentions:
@@ -293,70 +289,70 @@ class Office:
       if target and target not in ('user', 'teamlead'):
         mentioned_ids.add(target)
 
-    # 멘션된 에이전트가 먼저, 나머지는 기본 순서
-    default_order = ['planner', 'designer', 'developer', 'qa']
-    if mentioned_ids:
-      ordered = [n for n in default_order if n in mentioned_ids] + \
-                [n for n in default_order if n not in mentioned_ids]
-    else:
-      ordered = default_order
-
-    # ── 대화 스레드 구성 — 최근 맥락 + 현재 대화 ──
-    thread: list[str] = []
-    responded: list[str] = []
-
-    # 1) 이전 대화 맥락 (흐름 파악용)
+    # ── 기본 스레드 구성 ──
+    base_thread: list[str] = []
     if self._context_summary:
-      thread.append(f'[이전 대화 맥락]\n{self._context_summary}')
-      thread.append('---')
-
-    # 2) 현재 대화 — 사용자 메시지 + 팀장 응답
-    thread.append(f'[사용자] {user_input}')
+      base_thread.append(f'[이전 대화 맥락]\n{self._context_summary}')
+      base_thread.append('---')
+    base_thread.append(f'[사용자] {user_input}')
     if teamlead_response:
-      thread.append(f'[팀장] {teamlead_response}')
+      base_thread.append(f'[팀장] {teamlead_response}')
 
-    for name in ordered:
+    # ── Round 1: 4명 병렬 호출 ──
+    async def _single_agent_chat(
+      name: str,
+      thread_lines: list[str],
+      round_context: str = '',
+    ) -> tuple[str, str]:
+      '''(name, 응답) 반환. PASS 혹은 실패 시 빈 문자열.'''
       agent = self.agents.get(name)
       if not agent:
-        continue
+        return name, ''
       system = agent._build_system_prompt(task_hint=user_input)
-      my_model = agent_model_map.get(name, '알 수 없음')
-
+      thread_text = '\n'.join(thread_lines)
       is_mentioned = name in mentioned_ids
-      thread_text = '\n'.join(thread)
 
-      if is_mentioned:
-        # 직접 지목된 에이전트 → 반드시 응답
+      if round_context:
+        # Round 2 프롬프트 — 상대 발언을 보고 추가 반응 여부 결정
+        prompt = (
+          f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+          f'{thread_text}\n\n'
+          f'[라운드 1 발언]\n{round_context}\n\n'
+          f'---\n\n'
+          f'당신은 {name}입니다.\n'
+          f'위 발언들을 읽고 한마디 더 하겠습니까?\n'
+          f'새로운 관점이나 반박이 있으면 1문장으로 하세요. 없으면 [PASS].'
+          f'\n마크다운 금지.'
+        )
+      elif is_mentioned:
         prompt = (
           f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
           f'{thread_text}\n\n'
           f'---\n\n'
-          f'당신은 {name}입니다. (모델: {my_model})\n'
+          f'당신은 {name}입니다.\n'
           f'사용자가 당신을 직접 지목(@멘션)했습니다. 반드시 응답하세요.\n\n'
           f'1~2문장, 메신저 톤, 마크다운 금지.\n'
-          f'이미 완료된 작업에 대해 "지금 하겠습니다", "다시 작성하겠습니다" 같은 새 약속은 금지. 끝난 일은 끝난 것이다.\n'
-          f'피드백을 받았으면 수용/반성/감사만 표현하라.\n'
-          f'대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.'
+          f'이미 완료된 작업에 대한 새 약속은 금지.\n'
+          f'대화 중 업무 요청이 감지되면 [TASK_DETECTED:업무 설명]을 출력하세요.'
         )
       else:
         prompt = (
           f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
           f'{thread_text}\n\n'
           f'---\n\n'
-          f'당신은 {name}입니다. (모델: {my_model})\n'
-          f'위 대화를 전부 읽고, 당신이 반응해야 하는지 판단하세요.\n\n'
+          f'당신은 {name}입니다.\n'
+          f'위 대화를 읽고 반응해야 하는지 판단하세요.\n\n'
           f'[판단 기준]\n'
-          f'- 대화 맥락을 정확히 파악하라. 같은 단어라도 문맥에 따라 의미가 다르다.\n'
-          f'- 누군가 이미 적절히 답변/반응한 내용은 반복하지 마라.\n'
+          f'- 누군가 이미 적절히 답한 내용은 반복하지 마라.\n'
           f'- 새로운 관점이나 정보를 더할 수 있을 때만 발언하라.\n'
-          f'- 일상 대화(날씨, 교통, 안부)는 전문 영역과 무관하므로 대부분 [PASS]\n'
-          f'- 당신을 직접 지목(@멘션)하지 않았고, 추가할 가치가 없으면 [PASS]\n'
-          f'- 대화 중 사용자가 은연중에 업무를 요청한 것 같다면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
-          f'반응할 필요 없으면: [PASS]\n'
-          f'반응할 필요 있으면: 1~2문장, 메신저 톤, 마크다운 금지.\n'
-          f'이미 나온 말을 다른 표현으로 반복하는 것은 금지.\n'
-          f'이미 완료된 작업에 대해 "지금 하겠습니다", "다시 작성하겠습니다" 같은 새 약속은 금지. 끝난 일은 끝난 것이다.'
+          f'- 일상 대화(날씨, 교통, 안부)는 대부분 [PASS]\n'
+          f'- 직접 지목(@멘션)되지 않았고 추가할 가치가 없으면 [PASS]\n'
+          f'- 업무 요청이 감지되면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
+          f'반응 불필요: [PASS]\n'
+          f'반응 필요: 1~2문장, 메신저 톤, 마크다운 금지. 이미 나온 말 반복 금지.\n'
+          f'이미 완료된 작업에 대한 새 약속은 금지.'
         )
+
       try:
         await self._emit(name, '', 'typing')
         resp = await run_claude_isolated(
@@ -366,56 +362,84 @@ class Office:
         )
         content = resp.strip()
         is_pass = '[PASS]' in content.upper() or content.strip().upper() == 'PASS'
-
-        if not is_pass:
-          # 업무 감지 체크
-          if '[TASK_DETECTED:' in content:
-            import re
-            task_match = re.search(r'\[TASK_DETECTED:(.+?)\]', content)
-            if task_match:
-              detected_task = task_match.group(1).strip()
-              chat_part = re.sub(r'\[TASK_DETECTED:.+?\]', '', content).strip()
-              if chat_part:
-                await self._emit(name, chat_part, 'response')
-                thread.append(f'[{name}] {chat_part}')
-                responded.append(name)
-              await self._emit('teamlead', f'지금 말씀 중에 업무 요청이 있는 것 같네요. "{detected_task}" — 확인해보겠습니다.', 'response')
-              from orchestration.intent import classify_intent
-              re_intent = await classify_intent(detected_task)
-              if re_intent.intent != IntentType.CONVERSATION:
-                return
-              continue
-
-          # 응답을 스레드에 추가 → 다음 에이전트가 볼 수 있게
-          thread.append(f'[{name}] {content}')
-          responded.append(name)
-          await self._emit(name, content, 'response')
+        return name, ('' if is_pass else content)
       except Exception:
-        pass
+        return name, ''
 
-    # 아무도 안 답하면 랜덤 한 명이 답변 (왕따 방지)
+    all_agents = ['planner', 'designer', 'developer', 'qa']
+    round1_results = await asyncio.gather(
+      *[_single_agent_chat(n, base_thread) for n in all_agents],
+      return_exceptions=False,
+    )
+
+    # Round 1 결과 처리
+    responded: list[str] = []
+    task_detected: str | None = None
+    thread_after_r1 = list(base_thread)
+
+    for name, content in round1_results:
+      if not content:
+        continue
+      # 업무 감지 체크
+      if '[TASK_DETECTED:' in content:
+        task_match = re.search(r'\[TASK_DETECTED:(.+?)\]', content)
+        if task_match:
+          task_detected = task_match.group(1).strip()
+          chat_part = re.sub(r'\[TASK_DETECTED:.+?\]', '', content).strip()
+          if chat_part:
+            await self._emit(name, chat_part, 'response')
+            thread_after_r1.append(f'[{name}] {chat_part}')
+            responded.append(name)
+          continue
+      await self._emit(name, content, 'response')
+      thread_after_r1.append(f'[{name}] {content}')
+      responded.append(name)
+
+    # 업무 감지 → 팀장 전환
+    if task_detected:
+      await self._emit(
+        'teamlead',
+        f'지금 말씀 중에 업무 요청이 있는 것 같네요. "{task_detected}" — 확인해보겠습니다.',
+        'response',
+      )
+      re_intent = await classify_intent(task_detected)
+      if re_intent.intent != IntentType.CONVERSATION:
+        return
+
+    # 아무도 안 답하면 fallback
     if not responded:
-      import random
-      fallback_name = random.choice(['planner', 'designer', 'developer', 'qa'])
+      fallback_name = random.choice(all_agents)
       agent = self.agents[fallback_name]
       system = agent._build_system_prompt(task_hint=user_input)
-      thread_text = '\n'.join(thread)
-      prompt = (
-        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
-        f'{thread_text}\n\n'
-        f'아무도 답을 안 했습니다. 당신이 대표로 한마디 해주세요.\n'
-        f'짧고 자연스럽게. 마크다운 금지.'
-      )
+      thread_text = '\n'.join(base_thread)
       try:
         response = await run_claude_isolated(
-          f'{system}\n\n---\n\n{prompt}',
+          f'{system}\n\n---\n\n아래는 팀 채팅방의 현재 대화입니다.\n\n{thread_text}\n\n'
+          f'아무도 답을 안 했습니다. 당신이 대표로 한마디 해주세요.\n짧고 자연스럽게. 마크다운 금지.',
           model='claude-haiku-4-5-20251001',
           timeout=30.0,
         )
         content = response.strip()
         await self._emit(fallback_name, content, 'response')
+        thread_after_r1.append(f'[{fallback_name}] {content}')
+        responded.append(fallback_name)
       except Exception:
         pass
+      return  # fallback 후 Round 2 불필요
+
+    # ── Round 2: Round 1 응답을 보고 추가 반응 ──
+    round1_context = '\n'.join(
+      f'[{n}] {c}' for n, c in round1_results if c and '[TASK_DETECTED:' not in c
+    )
+    if round1_context:
+      round2_results = await asyncio.gather(
+        *[_single_agent_chat(n, thread_after_r1, round_context=round1_context) for n in all_agents],
+        return_exceptions=False,
+      )
+      for name, content in round2_results:
+        if not content:
+          continue
+        await self._emit(name, content, 'response')
 
   async def receive(self, user_input: str) -> dict[str, Any]:
     '''사용자 입력을 받아 처리한다.
@@ -464,6 +488,15 @@ class Office:
         self._interrupted_instruction = None
         self._interrupted_task_id = None
         self._interrupted_confirmed = False
+
+    # 0-2. 이미 작업 중이면 새 요청 차단
+    if self._state not in (OfficeState.IDLE, OfficeState.COMPLETED, OfficeState.ESCALATED):
+      await self._emit(
+        'teamlead',
+        '현재 다른 작업을 처리 중입니다. 잠시 후 다시 말씀해 주세요.',
+        'response',
+      )
+      return {'state': self._state.value, 'response': '', 'artifacts': []}
 
     # 1. 파일 참조 해석
     reference_context = resolve_references(user_input)
@@ -1779,79 +1812,87 @@ class Office:
     return None
 
   async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None:
-    '''소단계 완료 후 다른 팀원이 AI 생성 리액션을 한다 (오피스 분위기).'''
+    '''소단계 완료 후 다른 팀원이 성격 기반 맥락 리액션을 한다 (오피스 분위기).'''
+    import asyncio
     import random
 
     profile_names = {'teamlead': '오상식 팀장', 'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
 
     # 작업자 외 팀원 중 1~2명이 리액션
     others = [n for n in ('teamlead', 'planner', 'designer', 'developer', 'qa') if n != worker]
     reactors = random.sample(others, min(random.choice([1, 1, 2]), len(others)))
 
-    summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
+    async def _react_one(reactor_name: str) -> tuple[str, str]:
+      '''(reactor_name, 반응 텍스트) 반환. 실패 시 빈 문자열.'''
+      try:
+        agent = self.agents.get(reactor_name)
+        system = agent._build_system_prompt() if agent else ''
+        prompt = (
+          f'{profile_names.get(worker, worker)}이(가) [{phase_name}] 작업을 완료했습니다.\n'
+          f'{summary_section}'
+          f'당신({profile_names.get(reactor_name, reactor_name)})의 성격으로 동료로서 1문장 짧게 반응하세요.\n'
+          f'20자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.'
+        )
+        full = f'{system}\n\n---\n\n{prompt}' if system else prompt
+        response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=20.0)
+        return reactor_name, response.strip().split('\n')[0][:30]
+      except Exception:
+        return reactor_name, ''
+
+    # 병렬 실행
+    results = await asyncio.gather(*[_react_one(r) for r in reactors], return_exceptions=False)
 
     first_reaction_text = ''
-    for reactor in reactors:
-      try:
-        prompt = (
-          f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
-          f'{profile_names.get(worker, worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
-          f'{summary_section}'
-          f'동료로서 당신의 전문 관점에서 리액션 한마디 해주세요.\n'
-          f'20자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.\n'
-          f'예: "구조 잘 잡혔네요 👍", "접근성도 체크해볼게요 🔍"'
-        )
-        response = await run_claude_isolated(
-          prompt,
-          model='claude-haiku-4-5-20251001',
-          timeout=15.0,
-        )
-        text = response.strip().split('\n')[0][:30]
-        if text:
-          await self._emit(reactor, text, 'response')
-          if not first_reaction_text:
-            first_reaction_text = text
-          # 업무 관련 피드백 수집
-          if any(kw in text for kw in ('체크', '확인', '검토', '반영', '수정', '추가', '고려', '필요', '개선')):
-            self._phase_feedback.append({
-              'from': profile_names.get(reactor, reactor),
-              'phase': phase_name,
-              'content': text,
-            })
-      except Exception:
-        pass
+    first_reactor = ''
+    for reactor_name, text in results:
+      if not text:
+        continue
+      await self._emit(reactor_name, text, 'response')
+      if not first_reaction_text:
+        first_reaction_text = text
+        first_reactor = reactor_name
+      # 업무 관련 피드백 수집
+      if any(kw in text for kw in ('체크', '확인', '검토', '반영', '수정', '추가', '고려', '필요', '개선')):
+        self._phase_feedback.append({
+          'from': profile_names.get(reactor_name, reactor_name),
+          'phase': phase_name,
+          'content': text,
+        })
 
-    # 30% 확률로 AI 생성 잡담
+    # 30% 확률로 잡담 (Haiku 생성)
     if random.random() < 0.3:
       meme_sender = random.choice(others)
       try:
-        response = await run_claude_isolated(
-          f'당신은 {profile_names.get(meme_sender, meme_sender)}입니다.\n'
+        agent = self.agents.get(meme_sender)
+        system = agent._build_system_prompt() if agent else ''
+        prompt = (
           f'팀이 "{phase_name}" 작업을 진행 중입니다.\n'
           f'동료들에게 가볍게 잡담 한마디 해주세요 (커피, 날씨, 야근, 회식 등).\n'
-          f'15자 이내, 이모지 1개, 메신저 톤. 마크다운 금지.',
-          model='claude-haiku-4-5-20251001',
-          timeout=15.0,
+          f'15자 이내, 이모지 1개, 메신저 톤. 마크다운 금지.'
         )
+        full = f'{system}\n\n---\n\n{prompt}' if system else prompt
+        response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=15.0)
         meme = response.strip().split('\n')[0][:25]
         if meme:
           await self._emit(meme_sender, meme, 'response')
       except Exception:
         pass
 
-    # 대화 체인: 첫 리액터 리액션 후 30% 확률로 다른 에이전트가 응답
+    # 대화 체인: 첫 리액터 이후 30% 확률로 다른 에이전트가 응답
     if first_reaction_text and random.random() < 0.3:
-      chain_candidates = [n for n in others if n != reactors[0]]
+      chain_candidates = [n for n in others if n != first_reactor]
       if chain_candidates:
         chain_responder = random.choice(chain_candidates)
         try:
-          response = await run_claude_isolated(
-            f'당신은 {profile_names.get(chain_responder, chain_responder)}입니다.\n'
-            f'동료 {profile_names.get(reactors[0], reactors[0])}이(가) "{first_reaction_text}"라고 했습니다.\n'
-            f'이에 대해 가볍게 한마디 응답하세요. 15자 이내, 메신저 톤. 마크다운 금지.',
-            model='claude-haiku-4-5-20251001',
-            timeout=15.0,
+          agent = self.agents.get(chain_responder)
+          system = agent._build_system_prompt() if agent else ''
+          prompt = (
+            f'동료 {profile_names.get(first_reactor, first_reactor)}이(가) "{first_reaction_text}"라고 했습니다.\n'
+            f'이에 대해 가볍게 한마디 응답하세요. 15자 이내, 메신저 톤. 마크다운 금지.'
           )
+          full = f'{system}\n\n---\n\n{prompt}' if system else prompt
+          response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=15.0)
           chain_text = response.strip().split('\n')[0][:25]
           if chain_text:
             await self._emit(chain_responder, chain_text, 'response')

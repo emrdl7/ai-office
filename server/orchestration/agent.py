@@ -298,6 +298,8 @@ class Agent:
     system = self._build_system_prompt(task_hint=topic)
 
     prompt = (
+      f'중요: 이전 발언에 전문적 관점에서 문제가 있다면 반드시 @이름 으로 반박하세요. '
+      f'동의를 위한 동의는 하지 마세요. 당신만의 관점을 솔직하게 표현하세요.\n\n'
       f'팀 회의 중입니다. 아래 주제에 대해 당신의 전문 관점에서 의견을 말하세요.\n\n'
       f'[회의 주제]\n{topic}\n'
     )
@@ -328,30 +330,38 @@ class Agent:
     result = await self._generate(prompt, system)
     return result.strip()
 
-  async def _generate(self, prompt: str, system: str = '') -> str:
-    '''에이전트 역할에 맞는 러너로 텍스트를 생성한다.
+  async def _run_with_runner(self, prompt: str, system: str = '') -> str:
+    '''에이전트 역할에 맞는 러너를 선택해 텍스트를 생성한다.
 
     러너 매핑:
     - qa: Haiku (판단 전담)
-    - planner: Gemini 1차 → Sonnet 폴백
-    - developer, designer: Sonnet 1차 → Gemini 폴백
+    - planner, developer: Gemini 1차 → Sonnet 폴백
+    - designer: Sonnet (창의 작업)
+    - 나머지 (groq_runner 있는 경우): Groq
     '''
     full = f'{system}\n\n---\n\n{prompt}' if system else prompt
 
     if self.name == 'qa':
       return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=120.0)
 
-    if self.name == 'planner':
+    if self.name in ('developer', 'planner'):
       try:
         return await run_gemini(prompt=prompt, system=system)
       except Exception:
         return await run_claude_isolated(full)
 
-    # developer, designer: Sonnet → Gemini
+    if self.name == 'designer':
+      return await run_claude_isolated(full)
+
+    # 그 외: Sonnet → Gemini 폴백
     try:
       return await run_claude_isolated(full)
     except Exception:
       return await run_gemini(prompt=prompt, system=system)
+
+  async def _generate(self, prompt: str, system: str = '') -> str:
+    '''_run_with_runner() 래퍼 — 기존 호출부 호환성 유지.'''
+    return await self._run_with_runner(prompt, system)
 
   def record_experience(self, task_id: str, success: bool, feedback: str, tags: list[str] | None = None) -> None:
     '''경험을 메모리에 기록한다.'''
