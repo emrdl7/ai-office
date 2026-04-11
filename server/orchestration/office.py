@@ -1444,6 +1444,48 @@ class Office:
         if _has_design_phases and current_group == '디자인' and self._current_project_type in ('web_development', 'website'):
           await self._generate_stitch_mockup(all_results, user_input)
 
+        # ── 그룹 경계 확인 — 다음 그룹이 있으면 사용자에게 진행 여부 확인 ──
+        _remaining_phases = PHASES[PHASES.index(phase) + 1:]
+        _next_group = next(
+          (p.get('group', p['name']) for p in _remaining_phases
+           if p.get('group', p['name']) != current_group),
+          None,
+        )
+        if _next_group:
+          confirm_msg = (
+            f'✅ **{current_group}** 단계가 완료되었습니다.\n\n'
+            f'다음은 **{_next_group}** 단계입니다. 이대로 진행할까요?\n'
+            f'수정하거나 방향을 바꾸고 싶으신 사항이 있으시면 말씀해 주세요.'
+          )
+          await self.event_bus.publish(LogEvent(
+            agent_id='teamlead',
+            event_type='response',
+            message=confirm_msg,
+            data={'needs_input': True},
+          ))
+          # 상태 저장 — 재개 시 _execute_project 재호출, 완료 단계는 자동 스킵
+          self._pending_project = {
+            'user_input': user_input,
+            'analysis': analysis,
+            'meeting_summary': meeting_summary,
+            'reference_context': reference_context,
+            'briefing': briefing,
+            'project_type': self._current_project_type,
+            'phases': PHASES,
+          }
+          self._pending_task_id = getattr(self, '_current_task_id', '')
+          if self._pending_task_id:
+            from db.task_store import update_task_state
+            update_task_state(self._pending_task_id, 'waiting_input', context=self._pending_project)
+          self._state = OfficeState.IDLE
+          self._active_agent = ''
+          self._work_started_at = ''
+          return {
+            'state': 'waiting_input',
+            'response': confirm_msg,
+            'artifacts': phase_artifacts,
+          }
+
     # HTML 산출물이 포함된 프로젝트(사이트 구축)인지 판단
     has_publishing = (
       any('퍼블리싱' in k for k in all_results)
