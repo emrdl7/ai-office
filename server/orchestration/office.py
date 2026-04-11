@@ -694,7 +694,12 @@ class Office:
           f'[원본 요구사항]\n{prompt}\n\n'
           f'{feedback_section}'
           f'[작업 결과물]\n{result}\n\n'
-          f'위 요구사항 대비 결과물을 검수하세요.\n'
+          f'위 원본 요구사항 대비 결과물을 검수하세요.\n\n'
+          f'[검수 원칙 — 반드시 준수]\n'
+          f'- 원본 요구사항에 명시된 내용만 기준으로 판단하세요\n'
+          f'- 사용자가 요청하지 않은 사항(배경 맥락, 추정 목적, 이전 대화 등)을 추가 요구사항으로 간주하지 마세요\n'
+          f'- "~했으면 좋겠다", "~도 있어야 한다"는 추가 의견은 severity=minor로만 처리하세요\n'
+          f'- 명시된 요구사항을 충족했으면 status=success입니다\n\n'
           f'반드시 JSON 형식으로 응답: {{"status":"success|fail","summary":"...","failure_reason":"...","severity":"critical|major|minor|none"}}'
         )
         qa_result = await qa_agent.handle(qa_prompt)
