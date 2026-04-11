@@ -730,10 +730,32 @@ class Office:
           if severity == 'minor':
             msg = f'검수 통과 (경미한 보완 권장) ✅'
           await self._emit('qa', msg, 'response')
+          # 성공 경험 기록
+          try:
+            import uuid as _uuid
+            agent.record_experience(
+              task_id=str(_uuid.uuid4()),
+              success=True,
+              feedback=f'QA 통과: {prompt[:100]}',
+              tags=[agent_name, 'qa_pass'],
+            )
+          except Exception:
+            pass
           break
         else:
           await self._emit('qa', f'검수 불합격 [{severity}]: {failure_reason[:200]}', 'response')
           accumulated_feedback.append(failure_reason[:200])
+          # 실패 경험 기록 (보완 학습용)
+          try:
+            import uuid as _uuid
+            agent.record_experience(
+              task_id=str(_uuid.uuid4()),
+              success=False,
+              feedback=failure_reason[:200],
+              tags=[agent_name, 'qa_fail', severity],
+            )
+          except Exception:
+            pass
           if attempt < 2:
             self._state = OfficeState.WORKING
             self._active_agent = agent_name
