@@ -50,3 +50,42 @@ body {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* 스크롤바 — 평소엔 투명, 호버 시 얇게 오버레이 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s;
+}
+*:hover {
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 99px;
+  transition: background 0.2s;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7) !important;
+}
+
+/* 다크모드 */
+.dark *:hover {
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+.dark *:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6) !important;
+}
