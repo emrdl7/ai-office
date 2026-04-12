@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar'
 import { ChatRoom } from './components/ChatRoom'
 import { ArtifactModal } from './components/ArtifactModal'
 import { SuggestionModal } from './components/SuggestionModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -78,9 +79,11 @@ function MessengerApp() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <MessengerApp />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <MessengerApp />
+      </QueryClientProvider>
+    </ErrorBoundary>
   )
 }
 
