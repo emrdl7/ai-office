@@ -71,7 +71,25 @@ class Agent:
 
   def _build_system_prompt(self, task_hint: str = '') -> str:
     '''시스템 프롬프트 + 전문 지식 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
-    prompt = self._system_prompt
+    # 현재 팀 구성 강제 주입 — 과거 로그에 구 이름이 있어도 신 이름만 사용하도록
+    team_roster = (
+      '## 현재 팀 구성 (절대 규칙)\n'
+      '- 팀장: **잡스** (스티브 잡스)\n'
+      '- 기획자: **드러커** (피터 드러커)\n'
+      '- 디자이너: **아이브** (조너선 아이브)\n'
+      '- 개발자: **튜링** (앨런 튜링)\n'
+      '- QA: **데밍** (W. 에드워즈 데밍)\n\n'
+      '**중요**: 과거 대화 로그에 다음 이름이 보이더라도 절대 쓰지 마라 — '
+      '이들은 이전 팀원 이름이며 지금은 존재하지 않는다:\n'
+      '- "오상식" → 잡스\n'
+      '- "장그래" → 드러커\n'
+      '- "안영이" → 아이브\n'
+      '- "김동식" → 튜링\n'
+      '- "한석율" → 데밍\n'
+      '팀원을 언급할 때는 반드시 위 5명의 현재 이름만 사용하라.\n\n'
+      '---\n\n'
+    )
+    prompt = team_roster + self._system_prompt
 
     # Layer 1 + 2: 전문 지식 주입
     from orchestration.expertise import load_expertise, detect_task_type
