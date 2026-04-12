@@ -6,6 +6,10 @@ from pathlib import Path
 from runners.claude_runner import run_claude_isolated
 from orchestration.phase_registry import ProjectType
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
 
@@ -213,6 +217,7 @@ async def generate_project_title(user_input: str) -> str:
     title = response.strip().split('\n')[0].strip().strip('"\'')
     return title[:20] if title else user_input[:15]
   except Exception:
+    logger.debug("프로젝트 제목 생성 LLM 호출 실패", exc_info=True)
     return user_input[:15]
 
 
@@ -266,6 +271,6 @@ async def classify_project_type(user_input: str, context: str = '') -> ProjectTy
         if type_value in _VALID_TYPES:
           return ProjectType(type_value)
   except Exception:
-    pass
+    logger.debug("프로젝트 유형 분류 LLM 호출 실패", exc_info=True)
 
   return ProjectType.GENERAL

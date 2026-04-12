@@ -5,6 +5,9 @@ from pathlib import Path
 
 from log_bus.event_bus import LogEvent, event_bus
 from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
+import logging
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 BRANCH_PREFIX = 'improvement'
@@ -123,6 +126,7 @@ async def apply_suggestion(suggestion: dict) -> bool:
     _rollback(branch, original_branch)
     return False
   except Exception as e:
+    logger.warning("자가개선 중 예기치 않은 오류 발생: %s", e, exc_info=True)
     await _emit('팀장', f'❌ 자가개선 중 오류 발생: {e}', 'error')
     _rollback(branch, original_branch)
     return False

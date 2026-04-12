@@ -4,6 +4,9 @@ import re
 from pathlib import Path
 
 from runners.claude_runner import run_claude_isolated
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def extract_pages_from_ia(ia_content: str) -> list[dict[str, str]]:
@@ -125,6 +128,7 @@ async def _generate_common_css(design_specs: str) -> str:
       return match.group(1) if match else result
     return result
   except Exception:
+    logger.debug("공통 CSS 생성 LLM 호출 실패", exc_info=True)
     return ':root { --primary: #2196F3; --text: #333; }\n* { margin: 0; padding: 0; box-sizing: border-box; }\nbody { font-family: sans-serif; }'
 
 
@@ -192,4 +196,5 @@ async def _generate_page(
       return match.group(1) if match else result
     return result
   except Exception:
+    logger.debug("페이지 HTML 생성 LLM 호출 실패: %s", page.get("slug"), exc_info=True)
     return f'<!DOCTYPE html><html><head><meta charset="utf-8"><title>{page["title"]}</title><link rel="stylesheet" href="css/style.css"></head><body><header>{nav_html}</header><main><h1>{page["title"]}</h1></main><footer></footer><script src="js/main.js" defer></script></body></html>'

@@ -3,6 +3,10 @@ import json
 from datetime import date
 from pathlib import Path
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 STORE_PATH = Path(__file__).parent.parent / 'data' / 'daily_quotes.json'
 
 AGENT_PERSONAS = {
@@ -23,7 +27,7 @@ def load() -> dict:
     try:
       return json.loads(STORE_PATH.read_text(encoding='utf-8'))
     except Exception:
-      pass
+      logger.debug("오늘의 한마디 JSON 로드 실패", exc_info=True)
   return {}
 
 

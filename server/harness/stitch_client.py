@@ -3,6 +3,10 @@ import asyncio
 import json
 from pathlib import Path
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 BRIDGE_PATH = Path(__file__).parent / 'stitch_bridge.mjs'
 NODE_MODULES = Path(__file__).parent.parent.parent / 'node_modules'
 TIMEOUT = 300.0
@@ -49,6 +53,7 @@ async def generate_design(prompt: str, output_dir: str) -> dict:
   try:
     return json.loads(stdout.decode())
   except Exception:
+    logger.debug("Stitch 응답 JSON 파싱 실패", exc_info=True)
     return {
       'success': False,
       'error': stderr.decode(errors='replace')[:500] or stdout.decode(errors='replace')[:500],

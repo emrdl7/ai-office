@@ -1,7 +1,10 @@
 # 파일 읽기 하네스 — PDF, DOCX, 텍스트 파일을 읽어서 텍스트로 반환
 from __future__ import annotations
+import logging
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # 경로 패턴 매칭 (~/Downloads, /Users/..., ./folder 등)
@@ -96,6 +99,7 @@ def web_search(query: str, max_results: int = 5) -> str:
 
     return '\n\n'.join(lines)
   except Exception:
+    logger.debug("웹 검색 실패: query=%s", query, exc_info=True)
     return ''
 
 
@@ -125,6 +129,7 @@ def _fetch_web_page(url: str, max_chars: int = 8000) -> str:
       return cleaned[:max_chars]
     return raw[:max_chars]
   except Exception:
+    logger.debug("웹 페이지 가져오기 실패: url=%s", url, exc_info=True)
     return ''
 
 
@@ -145,6 +150,7 @@ def _fetch_github_repo(owner: str, repo: str) -> str:
     files = [n['path'] for n in tree.get('tree', []) if n['type'] == 'blob']
     parts.append(f'[파일 구조 ({len(files)}개)]\n' + '\n'.join(files[:200]))
   except Exception:
+    logger.debug("GitHub 파일 트리 가져오기 실패: %s/%s", owner, repo, exc_info=True)
     parts.append('[파일 구조 가져오기 실패]')
 
   # 2) README
@@ -160,6 +166,7 @@ def _fetch_github_repo(owner: str, repo: str) -> str:
         parts.append(f'[README]\n{content[:8000]}')
         break
     except Exception:
+      logger.debug("GitHub README 가져오기 실패: %s/%s/%s", owner, repo, readme_name, exc_info=True)
       continue
 
   # 3) package.json (있으면)
@@ -173,7 +180,7 @@ def _fetch_github_repo(owner: str, repo: str) -> str:
     if content.strip():
       parts.append(f'[package.json]\n{content[:3000]}')
   except Exception:
-    pass
+    logger.debug("GitHub package.json 가져오기 실패: %s/%s", owner, repo, exc_info=True)
 
   return '\n\n'.join(parts) if parts else ''
 
@@ -257,6 +264,7 @@ def _read_pdf(path: Path, max_chars: int) -> str | None:
     doc.close()
     return '\n'.join(text_parts)[:max_chars]
   except Exception as e:
+    logger.warning("PDF 읽기 실패: %s", path, exc_info=True)
     return f'(PDF 읽기 실패: {e})'
 
 
@@ -274,6 +282,7 @@ def _read_docx(path: Path, max_chars: int) -> str | None:
         break
     return '\n'.join(text_parts)[:max_chars]
   except Exception as e:
+    logger.warning("DOCX 읽기 실패: %s", path, exc_info=True)
     return f'(DOCX 읽기 실패: {e})'
 
 
@@ -282,4 +291,5 @@ def _read_text(path: Path, max_chars: int) -> str | None:
   try:
     return path.read_text(encoding='utf-8', errors='replace')[:max_chars]
   except Exception as e:
+    logger.warning("텍스트 파일 읽기 실패: %s", path, exc_info=True)
     return f'(파일 읽기 실패: {e})'

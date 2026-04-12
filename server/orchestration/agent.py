@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+import logging
 
 from runners.groq_runner import GroqRunner
 from runners.gemini_runner import run_gemini
@@ -11,6 +12,8 @@ from log_bus.event_bus import EventBus, LogEvent
 from memory.agent_memory import AgentMemory, MemoryRecord
 from harness.rejection_analyzer import get_past_rejections
 from improvement.prompt_evolver import PromptEvolver, PromptRule
+
+logger = logging.getLogger(__name__)
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 _prompt_evolver = PromptEvolver()
@@ -62,7 +65,7 @@ class Agent:
           self._conversation_history.append({'role': 'assistant', 'content': log['message']})
       self._conversation_history = self._conversation_history[-10:]
     except Exception:
-      pass
+      logger.debug("대화 이력 복원 실패", exc_info=True)
 
   def _build_system_prompt(self, task_hint: str = '') -> str:
     '''시스템 프롬프트 + 전문 지식 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
@@ -99,7 +102,7 @@ class Agent:
       if rules_text:
         prompt += '\n\n' + rules_text
     except Exception:
-      pass
+      logger.debug("학습 규칙 로드 실패", exc_info=True)
 
     return prompt
 
@@ -143,7 +146,7 @@ class Agent:
         if tool_results:
           full_prompt = f'{full_prompt}\n\n[도구 실행 결과]\n' + '\n\n'.join(tool_results)
     except Exception:
-      pass
+      logger.debug("도구 사전 실행 실패", exc_info=True)
 
     # 최근 대화 기록을 컨텍스트에 포함 (DM 대화 연속성)
     if self._conversation_history:
@@ -181,19 +184,19 @@ class Agent:
         )
         content = content + '\n' + continuation.strip()
     except Exception:
-      pass
+      logger.debug("완전성 가드 이어쓰기 실패", exc_info=True)
 
     # ── 건의 자동 등록: 도구/정보 부족 감지 ──
     try:
       self._detect_and_suggest(content, prompt)
     except Exception:
-      pass
+      logger.debug("건의 자동 등록 실패", exc_info=True)
 
     # ── 약속 감지 → 학습 규칙으로 자동 등록 ──
     try:
       self._capture_commitments(content, prompt)
     except Exception:
-      pass
+      logger.debug("약속 감지 처리 실패", exc_info=True)
 
     # 대화 기록 추가
     self._conversation_history.append({'role': 'user', 'content': prompt})
@@ -348,6 +351,7 @@ class Agent:
       try:
         return await run_gemini(prompt=prompt, system=system)
       except Exception:
+        logger.debug("Gemini 러너 실패, Claude로 폴백", exc_info=True)
         return await run_claude_isolated(full)
 
     if self.name == 'designer':
@@ -357,6 +361,7 @@ class Agent:
     try:
       return await run_claude_isolated(full)
     except Exception:
+      logger.debug("Claude 러너 실패, Gemini로 폴백", exc_info=True)
       return await run_gemini(prompt=prompt, system=system)
 
   async def _generate(self, prompt: str, system: str = '') -> str:

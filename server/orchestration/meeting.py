@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from orchestration.agent import Agent
 from log_bus.event_bus import EventBus, LogEvent
 from runners.claude_runner import run_claude_isolated
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -124,6 +127,7 @@ class Meeting:
       response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
       return response.strip()
     except Exception:
+      logger.debug("팀장 회의 응답 LLM 호출 실패", exc_info=True)
       return '확인했습니다. 진행해 주세요.'
 
   def get_summary(self) -> str:

@@ -20,6 +20,9 @@ from orchestration.task_graph import TaskGraph
 from workspace.manager import WorkspaceManager
 from db.task_store import save_task, update_task_state, list_tasks, get_task
 
+import logging
+logger = logging.getLogger(__name__)
+
 # 데이터 디렉토리 생성 (MessageBus SQLite 파일용)
 Path('data').mkdir(exist_ok=True)
 
@@ -99,6 +102,7 @@ def _build_prev_context(base_task_id: str) -> str:
         stage = rel.parts[0] if len(rel.parts) > 1 else 'final'
         parts.append(f'[이전 산출물: {stage}]\n{content}')
       except Exception:
+        logger.debug('이전 작업 산출물 파일 읽기 실패: %s', md_file, exc_info=True)
         continue
 
   combined = '\n\n'.join(parts)
@@ -218,7 +222,7 @@ async def chat(
               if dm_context:
                 break
           except Exception:
-            pass
+            logger.warning('DM 컨텍스트 산출물 조회 실패 (agent=%s)', to, exc_info=True)
 
           # 이전 DM 대화 기록을 컨텍스트에 추가 (대화 연속성)
           try:
@@ -232,7 +236,7 @@ async def chat(
             if dm_history_lines:
               dm_context = '[이전 DM 대화]\n' + '\n'.join(dm_history_lines[-10:]) + '\n\n' + dm_context
           except Exception:
-            pass
+            logger.warning('DM 대화 기록 로드 실패 (agent=%s)', to, exc_info=True)
 
           response = await agent.handle(full_message, context=dm_context)
           await event_bus.publish(LogEvent(
@@ -250,9 +254,7 @@ async def chat(
       final_state = result.get('state', 'completed')
       update_task_state(task_id, final_state)
     except Exception as e:
-      import traceback, logging
-      logging.error(f'_run() error: {e}')
-      traceback.print_exc()
+      logger.warning('채팅 처리 중 오류 발생 (task_id=%s): %s', task_id, e, exc_info=True)
       update_task_state(task_id, f'error: {e}')
       office._state = OfficeState.IDLE
       office._active_agent = ''
@@ -266,8 +268,7 @@ async def chat(
   task = asyncio.create_task(_run())
   def _handle_task_error(t):
     if t.exception():
-      import logging
-      logging.error(f'Unhandled task error: {t.exception()}')
+      logger.warning('비동기 태스크 미처리 예외 발생: %s', t.exception(), exc_info=t.exception())
   task.add_done_callback(_handle_task_error)
   return {'task_id': task_id, 'status': 'accepted', 'to': to, 'attachments': len(files)}
 
@@ -321,8 +322,7 @@ async def create_task(
       final_state = result.get('state', 'completed')
       update_task_state(task_id, final_state)
     except Exception as e:
-      import traceback
-      traceback.print_exc()
+      logger.warning('태스크 실행 중 오류 발생 (task_id=%s): %s', task_id, e, exc_info=True)
       update_task_state(task_id, f'error: {e}')
 
   asyncio.create_task(_run())

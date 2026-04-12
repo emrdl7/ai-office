@@ -6,6 +6,9 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -76,7 +79,7 @@ class EventBus:
                 from db.log_store import save_log
                 save_log(asdict(event))
             except Exception:
-                pass
+                logger.debug("이벤트 SQLite 저장 실패", exc_info=True)
 
         for q in list(self._subscribers):  # 복사본으로 순회 (동시 수정 안전)
             try:

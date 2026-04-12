@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -143,6 +146,7 @@ class MetricsCollector:
         phases = [PhaseMetrics(**p) for p in data.pop('phases', [])]
         results.append(ProjectMetrics(**data, phases=phases))
       except Exception:
+        logger.debug("메트릭 JSON 파싱 실패: %s", json_path, exc_info=True)
         continue
     return results
 

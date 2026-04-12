@@ -7,6 +7,9 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -184,5 +187,6 @@ class AgentMemory:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.rename(tmp_path, self._file)
         except Exception:
+            logger.warning("메모리 파일 atomic write 실패: %s", self._file, exc_info=True)
             tmp_path.unlink(missing_ok=True)
             raise

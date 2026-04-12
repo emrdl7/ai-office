@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from orchestration.intent import IntentType, classify_intent, classify_project_type
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
@@ -206,7 +209,7 @@ class Office:
       for agent in self.agents.values():
         agent._conversation_history = []
     except Exception:
-      pass
+      logger.debug("대화 히스토리 압축 실패", exc_info=True)
 
   def _update_context(self, user_input: str, response: str) -> None:
     '''대화 맥락을 실시간 갱신한다. 최근 15개 턴만 유지.'''
@@ -248,7 +251,7 @@ class Office:
         if text:
           await self._emit(responder, text, 'response')
       except Exception:
-        pass
+        logger.debug("인사 리액션 생성 실패", exc_info=True)
       return
 
     # question: 관련 에이전트 1명만 답변 (나머지 PASS)
@@ -275,7 +278,7 @@ class Office:
             await self._emit(name, content, 'response')
             break  # 1명만 답변
         except Exception:
-          pass
+          logger.debug("질문 응답 생성 실패: %s", name, exc_info=True)
       return
     import asyncio
     import random
@@ -364,6 +367,7 @@ class Office:
         is_pass = '[PASS]' in content.upper() or content.strip().upper() == 'PASS'
         return name, ('' if is_pass else content)
       except Exception:
+        logger.debug("팀 채팅 에이전트 응답 실패: %s", name, exc_info=True)
         return name, ''
 
     all_agents = ['planner', 'designer', 'developer', 'qa']
@@ -424,7 +428,7 @@ class Office:
         thread_after_r1.append(f'[{fallback_name}] {content}')
         responded.append(fallback_name)
       except Exception:
-        pass
+        logger.debug("팀 채팅 폴백 응답 실패", exc_info=True)
       return  # fallback 후 Round 2 불필요
 
     # ── Round 2: Round 1 응답을 보고 추가 반응 ──
@@ -463,7 +467,7 @@ class Office:
         if chat_lines:
           self._context_summary = '\n'.join(chat_lines[-15:])
       except Exception:
-        pass
+        logger.debug("이전 맥락 복원 실패", exc_info=True)
 
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
@@ -513,7 +517,7 @@ class Office:
       if chat_lines:
         recent_context = '\n'.join(chat_lines[-10:])
     except Exception:
-      pass
+      logger.debug("최근 대화 로그 로딩 실패", exc_info=True)
 
     # DB 최근 대화 + 인메모리 맥락 요약 결합
     combined_context = recent_context
@@ -740,7 +744,7 @@ class Office:
               tags=[agent_name, 'qa_pass'],
             )
           except Exception:
-            pass
+            logger.debug("QA 통과 경험 기록 실패", exc_info=True)
           break
         else:
           await self._emit('qa', f'검수 불합격 [{severity}]: {failure_reason[:200]}', 'response')
@@ -755,7 +759,7 @@ class Office:
               tags=[agent_name, 'qa_fail', severity],
             )
           except Exception:
-            pass
+            logger.debug("QA 불합격 경험 기록 실패", exc_info=True)
           if attempt < 2:
             self._state = OfficeState.WORKING
             self._active_agent = agent_name
@@ -771,7 +775,7 @@ class Office:
       self.workspace.write_artifact(file_path, result)
       saved_paths.append(f'{self.workspace.task_id}/{file_path}')
     except Exception:
-      pass
+      logger.warning("퀵태스크 산출물 저장 실패", exc_info=True)
 
     # 팀장 최종 검수 (최대 1회 보완)
     self._state = OfficeState.TEAMLEAD_REVIEW
@@ -787,6 +791,7 @@ class Office:
     try:
       review_response = await run_claude_isolated(review_prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
     except Exception:
+      logger.warning("팀장 최종 검수 실행 실패, PASS 처리", exc_info=True)
       review_response = '[PASS]'
     review_text = review_response.strip()
 
@@ -804,7 +809,7 @@ class Office:
       try:
         self.workspace.write_artifact(file_path, result)
       except Exception:
-        pass
+        logger.warning("보완 결과물 재저장 실패", exc_info=True)
 
     # 팀장 최종 보고 — 사용자에게 결과 요약 + 산출물 링크
     report_prompt = (
@@ -820,6 +825,7 @@ class Office:
     try:
       report = await teamlead_agent.handle(report_prompt) if teamlead_agent else ''
     except Exception:
+      logger.warning("팀장 최종 보고 생성 실패", exc_info=True)
       report = ''
 
     if report:
@@ -1049,7 +1055,7 @@ class Office:
               p['description'] = p['name']
           return phases
     except Exception:
-      pass
+      logger.debug("LLM 기반 단계 생성 실패, 기본 단계 사용", exc_info=True)
 
     # Fallback: 기존 phase_registry 기반
     return None
@@ -1153,7 +1159,7 @@ class Office:
               await self._emit('designer', '이전에 생성된 Stitch 시안이 있습니다. 그대로 사용합니다. 🎨', 'response')
           continue
       except Exception:
-        pass
+        logger.debug("그룹 전환 처리 실패: %s", phase_name, exc_info=True)
 
       self._state = OfficeState.WORKING
       self._active_agent = agent_name
@@ -1259,7 +1265,7 @@ class Office:
         self.workspace.write_artifact(filename, content)
         phase_artifacts.append(f'{self.workspace.task_id}/{filename}')
       except Exception:
-        pass
+        logger.warning("단계 산출물 저장 실패: %s", filename, exc_info=True)
 
       # output_format에 따른 산출물 추출 및 저장
       output_format = phase.get('output_format', 'md')
@@ -1297,9 +1303,9 @@ class Office:
                   data={'artifacts': [f'{self.workspace.task_id}/{pdf_rel}']},
                 ))
               except Exception:
-                pass
+                logger.warning("PDF 변환 실패: %s", phase_name, exc_info=True)
           except Exception:
-            pass
+            logger.warning("HTML 산출물 저장 실패: %s", phase_name, exc_info=True)
 
       # md+code 포맷: Python/JS 코드블록 추출
       if output_format == 'md+code':
@@ -1310,7 +1316,7 @@ class Office:
             self.workspace.write_artifact(code_filename, code)
             phase_artifacts.append(f'{self.workspace.task_id}/{code_filename}')
           except Exception:
-            pass
+            logger.debug("코드 블록 저장 실패: %s", code_filename, exc_info=True)
 
       # HTML 출력 그룹 완료 시 멀티페이지 사이트 빌더 실행
       _is_html_output = phase.get('output_format', '') in ('html', 'html+pdf')
@@ -1332,7 +1338,7 @@ class Office:
                 phase_artifacts.append(f'{self.workspace.task_id}/{page_path}')
               await self._emit('developer', f'멀티페이지 사이트 생성 완료 ({len(site_result["pages"])}페이지) 🌐', 'response')
         except Exception:
-          pass
+          logger.warning("멀티페이지 사이트 빌드 실패", exc_info=True)
 
       all_results[phase_name] = content
       prev_phase_result = content
@@ -1375,7 +1381,7 @@ class Office:
             try:
               self.workspace.write_artifact(filename, content)
             except Exception:
-              pass
+              logger.warning("피어 리뷰 보완 결과 저장 실패: %s", filename, exc_info=True)
             break
       else:
         # ── 소단계 중간: 경량 리액션 유지 ──
@@ -1419,6 +1425,7 @@ class Office:
                   )
                   await self._emit(target_id, resp.strip(), 'response')
                 except Exception:
+                  logger.debug("멘션 대상 응답 생성 실패: %s", target_id, exc_info=True)
                   await self._emit(target_id, '네, 확인했습니다.', 'response')
           self._user_mid_feedback.append(feedback_msg)
           await self._emit('teamlead', f'말씀하신 내용 반영하여 다음 단계 진행하겠습니다.', 'response')
@@ -1471,7 +1478,7 @@ class Office:
           try:
             self.workspace.write_artifact(filename, revised)
           except Exception:
-            pass
+            logger.warning("QA 보완 결과 저장 실패: %s", filename, exc_info=True)
           all_results[phase_name] = revised
           prev_phase_result = revised
 
@@ -1493,6 +1500,7 @@ class Office:
           _end = _dt.fromisoformat(_phase_finished_at)
           _dur = (_end - _start).total_seconds()
         except Exception:
+          logger.debug("단계 소요시간 계산 실패", exc_info=True)
           _dur = 0.0
         _phase_metrics.append(PhaseMetrics(
           phase_name=phase_name,
@@ -1597,6 +1605,7 @@ class Office:
           timeout=30.0,
         )
       except Exception:
+        logger.debug("프로젝트 완료 요약 생성 실패", exc_info=True)
         overview = '모든 단계가 정상 완료되었습니다.'
 
       report_lines = [
@@ -1665,6 +1674,7 @@ class Office:
       _p_end = datetime.fromisoformat(_project_finished_at)
       _total_dur = (_p_end - _p_start).total_seconds()
     except Exception:
+      logger.debug("프로젝트 총 소요시간 계산 실패", exc_info=True)
       _total_dur = 0.0
 
     project_metrics = ProjectMetrics(
@@ -1681,13 +1691,13 @@ class Office:
     try:
       await self.improvement_engine.on_project_complete(project_metrics)
     except Exception:
-      pass  # 자가개선 실패가 프로젝트 완료를 막지 않음
+      logger.warning("자가개선 메트릭 수집 실패", exc_info=True)  # 자가개선 실패가 프로젝트 완료를 막지 않음
 
     # ── 자동 내보내기 — 산출물 PDF/DOCX/ZIP 생성 ──
     try:
       await self._auto_export(phase_artifacts)
     except Exception:
-      pass
+      logger.warning("자동 내보내기 실패", exc_info=True)
 
     return {
       'state': self._state.value,
@@ -1718,6 +1728,7 @@ class Office:
         md_to_pdf(content, pdf_path, title=md_file.stem)
         exported.append(str(pdf_path.relative_to(task_dir)))
       except Exception:
+        logger.debug("MD→PDF 변환 실패: %s", md_file.name, exc_info=True)
         continue
 
     # 전체 산출물 ZIP
@@ -1726,7 +1737,7 @@ class Office:
       folder_to_zip(task_dir, zip_path)
       exported.append('exports/project-bundle.zip')
     except Exception:
-      pass
+      logger.warning("프로젝트 ZIP 생성 실패", exc_info=True)
 
     if exported:
       files_text = ', '.join(exported[:5])
@@ -1773,7 +1784,7 @@ class Office:
       else:
         await self._emit(reviewer_name, f'{group_name} 산출물 확인했습니다 ✅', 'response')
     except Exception:
-      pass
+      logger.debug("크로스리뷰 실패: %s", group_name, exc_info=True)
 
   async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str:
     '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''
@@ -1795,6 +1806,7 @@ class Office:
         return ''
       return text
     except Exception:
+      logger.debug("사용자 확인 질문 추출 실패", exc_info=True)
       return ''
 
   async def _check_user_directive(self) -> dict | None:
@@ -1868,6 +1880,7 @@ class Office:
         response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=20.0)
         return reactor_name, response.strip().split('\n')[0][:30]
       except Exception:
+        logger.debug("팀 리액션 생성 실패: %s", reactor_name, exc_info=True)
         return reactor_name, ''
 
     # 병렬 실행
@@ -1907,7 +1920,7 @@ class Office:
         if meme:
           await self._emit(meme_sender, meme, 'response')
       except Exception:
-        pass
+        logger.debug("잡담 생성 실패", exc_info=True)
 
     # 대화 체인: 첫 리액터 이후 30% 확률로 다른 에이전트가 응답
     if first_reaction_text and random.random() < 0.3:
@@ -1927,7 +1940,7 @@ class Office:
           if chain_text:
             await self._emit(chain_responder, chain_text, 'response')
         except Exception:
-          pass
+          logger.debug("대화 체인 응답 생성 실패", exc_info=True)
 
   async def _consult_peers(
     self,
@@ -2014,11 +2027,12 @@ class Office:
               'content': answer_text[:100],
             })
         except Exception:
-          pass
+          logger.debug("팀원 자문 실행 실패: %s", target, exc_info=True)
 
       return '\n'.join(consultation_results)
 
     except Exception:
+      logger.debug("자문 필요 여부 판단 실패", exc_info=True)
       return ''
 
   # 피어 리뷰어 매핑: 작업자 역할 → 리뷰어 목록
@@ -2088,7 +2102,7 @@ class Office:
             'content': feedback.replace('[CONCERN]', '').strip(),
           })
       except Exception:
-        pass
+        logger.debug("피어 리뷰 실행 실패: %s", reviewer_id, exc_info=True)
 
     # [CONCERN] 감지 시 담당자에게 보완 기회 1회 제공
     if concern_detected:
@@ -2113,7 +2127,7 @@ class Office:
             await self._emit(worker_name, f'{phase_name} 피어 리뷰 반영 완료했습니다.', 'response')
             reviews.append({'revised': True, 'content': revised})
       except Exception:
-        pass
+        logger.warning("피어 리뷰 우려사항 보완 실패: %s", worker_name, exc_info=True)
 
     return reviews
 
@@ -2141,7 +2155,7 @@ class Office:
           'content': text,
         })
     except Exception:
-      pass
+      logger.debug("인수인계 코멘트 생성 실패: %s → %s", from_agent, to_agent, exc_info=True)
 
   async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None:
     '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.'''
@@ -2159,6 +2173,7 @@ class Office:
       if text:
         await self._emit(agent_name, text, 'response')
     except Exception:
+      logger.debug("업무 수령 확인 생성 실패: %s", agent_name, exc_info=True)
       await self._emit(agent_name, '네, 확인했습니다. 시작하겠습니다.', 'response')
 
   async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
@@ -2177,6 +2192,7 @@ class Office:
       text = response.strip().split('\n')[0][:30]
       return text if text else ''
     except Exception:
+      logger.debug("문맥 리액션 생성 실패: %s", reactor, exc_info=True)
       return ''
 
   # QUICK_TASK 보완 의견 기본 매핑: 담당자 → (기본 리뷰어, 관점)
@@ -2262,6 +2278,7 @@ class Office:
       resp = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=40.0)
       contribution = resp.strip()
     except Exception:
+      logger.debug("보완 의견 생성 실패: %s", reviewer_name, exc_info=True)
       return result
 
     # 의미 없는 응답 필터
@@ -2299,6 +2316,7 @@ class Office:
       )
       return updated
     except Exception:
+      logger.warning("보완 내용 반영 실패: %s", worker, exc_info=True)
       return result
 
   async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None:
@@ -2335,7 +2353,7 @@ class Office:
       if text:
         await self._emit(commenter, text, 'response')
     except Exception:
-      pass
+      logger.debug("작업 코멘터리 생성 실패", exc_info=True)
 
   async def _phase_intro(self, agent_name: str, phase_name: str) -> None:
     '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.'''
@@ -2360,7 +2378,7 @@ class Office:
         await self._emit(agent_name, text, 'response')
         return
     except Exception:
-      pass
+      logger.debug("단계 시작 포부 생성 실패: %s", agent_name, exc_info=True)
     # 폴백
     await self._emit(agent_name, fallback_intros.get(agent_name, '시작하겠습니다 🚀'), 'response')
 
@@ -2411,6 +2429,7 @@ class Office:
             )
             await self._emit('teamlead', response.strip(), 'response')
           except Exception:
+            logger.debug("팀장 멘션 응답 생성 실패", exc_info=True)
             await self._emit('teamlead', '네, 확인했습니다. 반영하겠습니다.', 'response')
         else:
           # 특정 에이전트에게 멘션
@@ -2427,6 +2446,7 @@ class Office:
               )
               await self._emit(target_id, response.strip(), 'response')
             except Exception:
+              logger.debug("에이전트 멘션 응답 생성 실패: %s", target_id, exc_info=True)
               await self._emit(target_id, '네, 확인했습니다. 반영하겠습니다.', 'response')
 
       # 피드백을 작업 컨텍스트에 축적
@@ -2469,6 +2489,7 @@ class Office:
       )
       return guide
     except Exception:
+      logger.warning("인수인계 가이드 생성 실패, 목차로 대체", exc_info=True)
       # 실패 시 목차라도 전달
       return sections_text
 
@@ -2506,7 +2527,7 @@ class Office:
             html_content = Path(stitch_result['html_path']).read_text(encoding='utf-8')
             all_results['디자인-시안HTML'] = html_content
           except Exception:
-            pass
+            logger.debug("Stitch 시안 HTML 읽기 실패", exc_info=True)
         if stitch_result.get('image_path'):
           stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.png')
         await self.event_bus.publish(LogEvent(
@@ -2520,6 +2541,7 @@ class Office:
         error = stitch_result.get('error', '알 수 없는 오류')[:200]
         await self._emit('designer', f'시안 생성을 건너뜁니다 (Stitch: {error})', 'response')
     except Exception as e:
+      logger.warning("Stitch 시안 생성 실패", exc_info=True)
       await self._emit('designer', f'시안 생성을 건너뜁니다 ({str(e)[:100]})', 'response')
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
@@ -2582,6 +2604,7 @@ class Office:
     try:
       raw = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}')
     except Exception:
+      logger.warning("기획자 취합 Claude 실행 실패, Gemini 폴백", exc_info=True)
       raw = await run_gemini(prompt=prompt, system=system)
     content = raw.strip()
     if content.startswith('```'):
@@ -2594,7 +2617,7 @@ class Office:
     try:
       self.workspace.write_artifact('final/result.md', content)
     except Exception:
-      pass
+      logger.warning("최종 산출물 저장 실패", exc_info=True)
 
   async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool:
     '''팀장(Claude)이 최종 산출물을 검수한다.'''
