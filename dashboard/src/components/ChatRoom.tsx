@@ -20,7 +20,16 @@ function formatTime(ts: string): string {
 }
 
 function isSystemEvent(e: LogEntry): boolean {
-  return ['status_change', 'meeting_start', 'meeting_end', 'task_start', 'task_end', 'internal'].includes(e.event_type)
+  // 채팅창에 렌더링하지 말아야 할 이벤트 타입들
+  const hidden = [
+    'status_change', 'meeting_start', 'meeting_end',
+    'task_start', 'task_end', 'internal',
+    'reaction_update',  // 👍 리액션은 배지만 업데이트, 새 메시지 X
+  ]
+  if (hidden.includes(e.event_type)) return true
+  // 빈 메시지는 숨김 (타이핑, 상태 신호 등)
+  if (!e.message || e.message.trim() === '') return true
+  return false
 }
 
 function fileIcon(name: string): string {
