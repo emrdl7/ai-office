@@ -3267,21 +3267,24 @@ class Office:
 
     # 중복 방지 — 전체 건의(done 포함) 중 유사 내용 있으면 스킵
     try:
-      all_suggestions = list_suggestions(status='')  # 전체 상태
+      all_suggestions = list_suggestions(status='')
       msg_keywords = _extract_keywords(message)
-      for s in all_suggestions[:30]:  # 최근 30건
-        # 1. 같은 에이전트 + 같은 카테고리 + pending이면 무조건 스킵
+      for s in all_suggestions[:30]:
         if s['agent_id'] == agent_id and s['category'] == matched_category and s['status'] == 'pending':
           return
-        # 2. 내용 키워드 유사도 60% 이상이면 중복 간주 (상태 무관)
         s_keywords = _extract_keywords(s.get('title', '') + ' ' + s.get('content', ''))
         if msg_keywords and s_keywords:
           overlap = len(msg_keywords & s_keywords)
           smaller = min(len(msg_keywords), len(s_keywords))
-          if smaller > 0 and overlap / smaller >= 0.6:
+          if smaller == 0:
+            continue
+          ratio = overlap / smaller
+          # 같은 카테고리면 관대(0.4), 다른 카테고리면 엄격(0.55)
+          threshold = 0.4 if s['category'] == matched_category else 0.55
+          if ratio >= threshold:
             logger.info(
-              '건의 중복 감지 — 기존 %s (%s) 와 유사하여 재등록 스킵',
-              s['id'], s['status'],
+              '건의 중복 감지 — 기존 %s (%s, cat=%s) 유사도 %.2f 재등록 스킵',
+              s['id'], s['status'], s['category'], ratio,
             )
             return
     except Exception:
