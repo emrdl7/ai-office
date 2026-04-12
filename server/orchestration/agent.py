@@ -394,11 +394,7 @@ class Agent:
     )
 
     try:
-      result = await run_claude_isolated(
-        f'{system}\n\n---\n\n{prompt}',
-        model='claude-haiku-4-5-20251001',
-        timeout=20.0,
-      )
+      result = await run_gemini(prompt=prompt, system=system)
       text = result.strip()
       if '[PASS]' in text.upper() or text.upper() == 'PASS':
         return ''

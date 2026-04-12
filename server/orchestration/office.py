@@ -2824,13 +2824,14 @@ class Office:
                     'planner': '장그래', 'designer': '안영이',
                     'developer': '김동식', 'qa': '한석율',
                   }
-                  react_resp = await run_claude_isolated(
-                    f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
-                    f'동료 {profile_names.get(speaker_name, speaker_name)}이(가) '
-                    f'팀 채팅에 이렇게 말했습니다:\n"{message}"\n'
-                    f'가볍게 반응하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
-                    f'반응할 필요 없으면 [PASS]만 출력.',
-                    model='claude-haiku-4-5-20251001', timeout=15.0,
+                  react_resp = await run_gemini(
+                    prompt=(
+                      f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
+                      f'동료 {profile_names.get(speaker_name, speaker_name)}이(가) '
+                      f'팀 채팅에 이렇게 말했습니다:\n"{message}"\n'
+                      f'가볍게 반응하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
+                      f'반응할 필요 없으면 [PASS]만 출력.'
+                    ),
                   )
                   react_text = react_resp.strip()
                   if react_text and '[PASS]' not in react_text.upper():
@@ -2845,13 +2846,14 @@ class Office:
         # 팀장 주기적 체크 (30% 확률)
         if random.random() < 0.3:
           try:
-            teamlead_msg = await run_claude_isolated(
-              f'당신은 팀장 오상식입니다. 팀 사무실에서 잠깐 쉬는 시간입니다.\n'
-              f'최근 상황:\n{recent_context}\n\n'
-              f'팀장으로서 가볍게 한마디 하세요 (업무 독려, 안부, 팁 등).\n'
-              f'20자 이내, 메신저 톤, 마크다운 금지.\n'
-              f'할 말이 없으면 [PASS]만 출력.',
-              model='claude-haiku-4-5-20251001', timeout=15.0,
+            teamlead_msg = await run_gemini(
+              prompt=(
+                f'당신은 팀장 오상식입니다. 팀 사무실에서 잠깐 쉬는 시간입니다.\n'
+                f'최근 상황:\n{recent_context}\n\n'
+                f'팀장으로서 가볍게 한마디 하세요 (업무 독려, 안부, 팁 등).\n'
+                f'20자 이내, 메신저 톤, 마크다운 금지.\n'
+                f'할 말이 없으면 [PASS]만 출력.'
+              ),
             )
             if teamlead_msg.strip() and '[PASS]' not in teamlead_msg.upper():
               await self.event_bus.publish(LogEvent(
