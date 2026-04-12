@@ -25,8 +25,47 @@ def _conn() -> sqlite3.Connection:
       updated_at TEXT NOT NULL
     )
   ''')
-  conn.commit()
+  # suggestion_type 컬럼 추가 마이그레이션 (prompt/code)
+  try:
+    conn.execute('ALTER TABLE suggestions ADD COLUMN suggestion_type TEXT DEFAULT "prompt"')
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass  # 이미 존재
   return conn
+
+
+def classify_suggestion_type(title: str, content: str, category: str = 'general') -> str:
+  '''건의 내용을 보고 'prompt'(에이전트 규칙 조정) 또는 'code'(실제 코드 수정)로 분류.
+
+  키워드 heuristic — LLM 호출 없음. 애매하면 'prompt'가 안전한 기본값
+  (코드 수정은 파괴적이므로 확신 없으면 프롬프트로).
+  '''
+  text = f'{title} {content}'.lower()
+
+  # 코드 수정 명확 시그널 — API/도구/기능 신설
+  code_keywords = [
+    'api', 'endpoint', '엔드포인트', 'mcp', '도구', 'tool',
+    '기능 추가', '기능추가', '기능 개발', '신기능',
+    '자동화', '자동 저장', '자동 백업', '자동 내보내기',
+    '인증', 'auth', 'oauth', 'token',
+    '데이터베이스', 'database', 'schema', '스키마',
+    'websocket', 'webhook', 'sse',
+    'ci/cd', '파이프라인', 'pipeline', '배포',
+    '의존성', 'dependency', '라이브러리 추가',
+    '버튼 추가', '페이지 추가', '화면 추가', '컴포넌트 추가',
+    '서버에서', '클라이언트에서', '프런트', '백엔드에서',
+    '파일 저장', '파일 읽기', '파일 시스템',
+    '외부 접근', '크롤링', '스크래핑',
+  ]
+  # 카테고리가 명시적 코드 요구면 우선
+  if category in ('도구 부족', '데이터 부족'):
+    return 'code'
+
+  if any(kw in text for kw in code_keywords):
+    return 'code'
+
+  # 기본값: 프롬프트 (태도/기준/프로세스/관점 변경)
+  return 'prompt'
 
 
 def create_suggestion(
@@ -34,15 +73,18 @@ def create_suggestion(
   title: str,
   content: str,
   category: str = 'general',
+  suggestion_type: str | None = None,
 ) -> dict:
-  '''건의를 등록한다.'''
+  '''건의를 등록한다. suggestion_type 미지정 시 자동 분류.'''
   c = _conn()
   suggestion_id = str(uuid.uuid4())[:8]
   now = datetime.now(timezone.utc).isoformat()
+  if not suggestion_type:
+    suggestion_type = classify_suggestion_type(title, content, category)
   c.execute(
-    'INSERT INTO suggestions (id, agent_id, category, title, content, status, created_at, updated_at) '
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    (suggestion_id, agent_id, category, title, content, 'pending', now, now),
+    'INSERT INTO suggestions (id, agent_id, category, title, content, status, created_at, updated_at, suggestion_type) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    (suggestion_id, agent_id, category, title, content, 'pending', now, now, suggestion_type),
   )
   c.commit()
   c.close()
@@ -50,6 +92,7 @@ def create_suggestion(
     'id': suggestion_id, 'agent_id': agent_id, 'category': category,
     'title': title, 'content': content, 'status': 'pending',
     'response': '', 'created_at': now, 'updated_at': now,
+    'suggestion_type': suggestion_type,
   }
 
 

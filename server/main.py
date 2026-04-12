@@ -997,11 +997,10 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
   '''건의 상태/답변을 업데이트한다.
 
   status 값:
-    - 'accepted_prompt': 프롬프트 수준 반영 (team_memory + prompt_evolver rule)
-    - 'accepted_code':  실제 코드 수정 (code_patcher 실행)
-    - 'accepted':       하위호환 — 기존 code_patcher 실행
-    - 'rejected':       반려 — 에이전트에게 유사 건의 억제 시그널
-    - 기타 문자열:       단순 상태 변경
+    - 'accepted':  승인 — 건의의 suggestion_type에 따라 자동 분기
+                   (prompt → TeamMemory/PromptEvolver / code → code_patcher)
+    - 'rejected':  반려 — 제안자 AgentMemory에 억제 시그널
+    - 기타 문자열: 단순 상태 변경
   '''
   from db.suggestion_store import update_suggestion, get_suggestion
   body = await request.json()
@@ -1016,21 +1015,24 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
 
   suggestion = get_suggestion(suggestion_id)
 
-  # 프롬프트 반영 — TeamMemory + PromptEvolver에 규칙 추가 (즉시 적용)
-  if new_status == 'accepted_prompt' and suggestion:
-    await _apply_suggestion_to_prompts(suggestion)
-
-  # 코드 수정 — 기존 자가개선 패처
-  elif new_status in ('accepted_code', 'accepted') and suggestion:
-    async def _run_patch():
-      from improvement.code_patcher import apply_suggestion
-      from db.suggestion_store import update_suggestion as _upd
-      ok = await apply_suggestion(suggestion)
-      if ok:
-        _upd(suggestion_id, status='done')
-      else:
-        _upd(suggestion_id, status='pending')
-    asyncio.create_task(_run_patch())
+  # 승인 — 저장된 suggestion_type 보고 자동 분기
+  if new_status == 'accepted' and suggestion:
+    stype = suggestion.get('suggestion_type') or 'prompt'
+    if stype == 'code':
+      async def _run_patch():
+        from improvement.code_patcher import apply_suggestion
+        from db.suggestion_store import update_suggestion as _upd
+        ok = await apply_suggestion(suggestion)
+        if ok:
+          _upd(suggestion_id, status='done')
+        else:
+          _upd(suggestion_id, status='pending')
+      asyncio.create_task(_run_patch())
+    else:
+      # prompt 타입 — 즉시 반영
+      await _apply_suggestion_to_prompts(suggestion)
+      # done으로 마킹
+      update_suggestion(suggestion_id, status='done')
 
   # 반려 — 제안자 에이전트 메모리에 "유사 건의 반복 금지" 시그널
   elif new_status == 'rejected' and suggestion:

@@ -13,13 +13,17 @@ interface Suggestion {
   response: string
   created_at: string
   updated_at: string
+  suggestion_type?: string  // 'prompt' | 'code'
+}
+
+const TYPE_BADGE: Record<string, { icon: string; label: string; color: string }> = {
+  prompt: { icon: '🧠', label: '프롬프트', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  code: { icon: '🔧', label: '코드 수정', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 }
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   pending: { text: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
-  accepted_prompt: { text: '프롬프트 반영됨', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  accepted_code: { text: '코드 작업 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
-  accepted: { text: '반영 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
+  accepted: { text: '처리 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
   rejected: { text: '반려', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   done: { text: '반영 완료', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 }
@@ -122,14 +126,23 @@ export function SuggestionModal() {
                     onClick={() => setSelected(isExpanded ? null : s)}
                   >
                     {/* 요약 행 */}
-                    <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="flex items-center gap-2 px-4 py-3">
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[60px]">
                         {profile?.character || s.agent_id}
                       </span>
+                      {(() => {
+                        const t = TYPE_BADGE[s.suggestion_type || 'prompt']
+                        return (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${t.color}`}
+                            title={s.suggestion_type === 'code' ? '승인 시 Claude가 실제 코드 수정' : '승인 시 에이전트 프롬프트에 반영'}>
+                            {t.icon} {t.label}
+                          </span>
+                        )
+                      })()}
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusInfo.color}`}>
                         {statusInfo.text}
                       </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
                         {catLabel}
                       </span>
                       <span className="flex-1 text-sm text-gray-600 dark:text-gray-400 truncate">
@@ -150,25 +163,24 @@ export function SuggestionModal() {
                           {s.status === 'pending' && (
                             <>
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'accepted_prompt') }}
-                                className="text-xs px-3 py-1 rounded-lg bg-emerald-500 text-white
-                                  hover:bg-emerald-600 cursor-pointer transition-colors"
-                                title="팀 메모리 + 에이전트 프롬프트에 즉시 반영 (코드 수정 없음)"
-                              >
-                                🧠 프롬프트 반영
-                              </button>
-                              <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  if (confirm('Claude CLI가 실제 프로젝트 코드를 수정합니다. 계속할까요?')) {
-                                    handleStatusChange(s.id, 'accepted_code')
-                                  }
+                                  const isCode = s.suggestion_type === 'code'
+                                  if (isCode && !confirm(
+                                    '이 건의는 실제 프로젝트 코드 수정이 필요한 것으로 분류됐습니다.\n' +
+                                    'Claude CLI가 improvement 브랜치에서 소스를 수정합니다. 계속할까요?'
+                                  )) return
+                                  handleStatusChange(s.id, 'accepted')
                                 }}
-                                className="text-xs px-3 py-1 rounded-lg bg-blue-500 text-white
-                                  hover:bg-blue-600 cursor-pointer transition-colors"
-                                title="improvement/{id} 브랜치 생성 후 Claude가 코드 수정"
+                                className="text-xs px-3 py-1 rounded-lg bg-green-500 text-white
+                                  hover:bg-green-600 cursor-pointer transition-colors"
+                                title={
+                                  s.suggestion_type === 'code'
+                                    ? 'Claude가 코드 수정 → improvement/{id} 브랜치'
+                                    : '에이전트 프롬프트 + 팀 메모리에 즉시 반영'
+                                }
                               >
-                                🔧 코드 작업
+                                승인
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'rejected') }}
