@@ -28,6 +28,16 @@ logger = logging.getLogger(__name__)
 # WebSocket 인증 토큰 (환경변수 또는 서버 시작 시 자동 생성)
 WS_AUTH_TOKEN = os.environ.get('WS_AUTH_TOKEN') or secrets.token_urlsafe(32)
 
+# 파일 업로드 제한
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+ALLOWED_EXTENSIONS = {
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp',  # 이미지
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',  # 문서
+  '.txt', '.md', '.csv', '.json', '.yaml', '.yml',  # 텍스트/데이터
+  '.py', '.js', '.ts', '.tsx', '.jsx', '.html', '.css',  # 코드
+  '.zip', '.tar', '.gz',  # 압축
+}
+
 # 데이터 디렉토리 생성 (MessageBus SQLite 파일용)
 Path('data').mkdir(exist_ok=True)
 
@@ -68,6 +78,16 @@ app.add_middleware(
   allow_methods=['*'],
   allow_headers=['*'],
 )
+
+
+def _validate_upload(f: UploadFile, content: bytes) -> str | None:
+  '''업로드 파일 검증. 문제가 있으면 에러 메시지 반환, 없으면 None.'''
+  ext = Path(f.filename or '').suffix.lower()
+  if ext not in ALLOWED_EXTENSIONS:
+    return f'허용되지 않는 파일 형식: {ext} ({f.filename})'
+  if len(content) > MAX_UPLOAD_SIZE:
+    return f'파일 크기 초과 ({len(content) // (1024*1024)}MB > {MAX_UPLOAD_SIZE // (1024*1024)}MB): {f.filename}'
+  return None
 
 
 # 요청/응답 Pydantic 모델
@@ -151,8 +171,12 @@ async def chat(
     upload_dir.mkdir(parents=True, exist_ok=True)
     for f in files:
       if f.filename:
-        file_path = upload_dir / f.filename
         content = await f.read()
+        err = _validate_upload(f, content)
+        if err:
+          logger.warning('파일 업로드 거부: %s', err)
+          continue
+        file_path = upload_dir / f.filename
         file_path.write_bytes(content)
         ext = Path(f.filename).suffix.lower()
         file_urls.append({
@@ -303,8 +327,12 @@ async def create_task(
 
   for f in files:
     if f.filename:
-      file_path = upload_dir / f.filename
       content = await f.read()
+      err = _validate_upload(f, content)
+      if err:
+        logger.warning('파일 업로드 거부: %s', err)
+        continue
+      file_path = upload_dir / f.filename
       file_path.write_bytes(content)
       parsed = read_file(str(file_path))
       if parsed:
