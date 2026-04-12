@@ -122,9 +122,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const [previews, setPreviews] = useState<string[]>([])
   const [sending, setSending] = useState(false)
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
-  const [baseTaskId, setBaseTaskId] = useState('')
-  const [showTaskPicker, setShowTaskPicker] = useState(false)
-  const [completedTasks, setCompletedTasks] = useState<Task[]>([])
   const [activeProject, setActiveProject] = useState<{ id: string; title: string } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [lightbox, setLightbox] = useState<string | null>(null)
@@ -227,18 +224,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     el.style.height = Math.min(el.scrollHeight, 200) + 'px'
   }
 
-  // 이전 작업 선택 팝업 열기
-  async function openTaskPicker() {
-    try {
-      const res = await fetch('/api/tasks')
-      if (res.ok) {
-        const tasks: Task[] = await res.json()
-        setCompletedTasks(tasks.filter((t) => t.state === 'completed').reverse().slice(0, 10))
-      }
-    } catch { /* 무시 */ }
-    setShowTaskPicker(true)
-  }
-
   // 파일 추가 공통 헬퍼
   function addFiles(incoming: File[]) {
     if (incoming.length === 0) return
@@ -303,14 +288,12 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       const form = new FormData()
       form.append('message', message.trim())
       form.append('to', activeChannel)
-      if (baseTaskId) form.append('base_task_id', baseTaskId)
       for (const f of files) form.append('files', f)
       await fetch('/api/chat', { method: 'POST', body: form })
       setMessage('')
       setFiles([])
       previews.forEach((p) => { if (p) URL.revokeObjectURL(p) })
       setPreviews([])
-      setBaseTaskId('')
       if (inputRef.current) inputRef.current.style.height = 'auto'
     } catch { /* 에러 */ }
     finally {
@@ -501,50 +484,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         border-t border-gray-200 dark:border-gray-800">
         <div className="max-w-3xl mx-auto px-3 md:px-5">
 
-        {/* 이전 작업 참조 태그 */}
-        {baseTaskId && (
-          <div className="flex items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
-              bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700
-              text-xs text-purple-700 dark:text-purple-300">
-              🔗 이전 작업: {completedTasks.find((t) => t.task_id === baseTaskId)?.instruction?.slice(0, 30) || baseTaskId.slice(0, 8)}...
-              <button onClick={() => setBaseTaskId('')}
-                className="ml-1 text-purple-400 hover:text-purple-600 dark:hover:text-purple-200
-                  cursor-pointer font-bold">✕</button>
-            </span>
-          </div>
-        )}
-
-        {/* 이전 작업 선택 팝업 */}
-        {showTaskPicker && (
-          <div className="mb-2 p-2 rounded-xl bg-white dark:bg-gray-800
-            border border-gray-200 dark:border-gray-700 shadow-lg max-h-60 overflow-y-auto">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">완료된 작업 선택</span>
-              <button onClick={() => setShowTaskPicker(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200
-                  cursor-pointer text-sm">✕</button>
-            </div>
-            {completedTasks.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-4">완료된 작업이 없습니다</p>
-            ) : (
-              completedTasks.map((t) => (
-                <button key={t.task_id}
-                  onClick={() => { setBaseTaskId(t.task_id); setShowTaskPicker(false) }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs cursor-pointer
-                    transition-colors mb-0.5
-                    ${baseTaskId === t.task_id
-                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                    }`}>
-                  <p className="font-medium truncate">{t.instruction?.slice(0, 60) || '(지시 없음)'}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{t.created_at ? new Date(t.created_at).toLocaleDateString('ko-KR') : ''}</p>
-                </button>
-              ))
-            )}
-          </div>
-        )}
-
         {/* 첨부파일 미리보기 */}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
@@ -611,15 +550,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
-              </svg>
-            </button>
-            <button onClick={openTaskPicker}
-              className={`p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700
-                cursor-pointer transition-colors ${baseTaskId ? 'text-purple-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
-              aria-label="이전 작업 참조" title="이전 작업 참조" disabled={sending}>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-3.06a4.5 4.5 0 00-6.364-6.364L6.2 5.55m11.4 7.459l1.757-1.757" />
               </svg>
             </button>
             </div>

@@ -104,43 +104,6 @@ class TaskResponse(BaseModel):
   status: str  # 'accepted'
 
 
-def _build_prev_context(base_task_id: str) -> str:
-  '''이전 작업의 instruction + 모든 단계별 산출물을 수집하여 컨텍스트 문자열로 반환한다.'''
-  if not base_task_id:
-    return ''
-  prev_task = get_task(base_task_id)
-  if not prev_task:
-    return ''
-
-  parts: list[str] = []
-  parts.append(f'[이전 작업 지시]\n{prev_task["instruction"]}')
-
-  # 해당 workspace의 모든 *-result.md 파일을 단계별로 수집
-  task_dir = WORKSPACE_ROOT / base_task_id
-  if task_dir.exists():
-    for md_file in sorted(task_dir.rglob('*result*.md')):
-      # uploads/ 폴더는 제외
-      if 'uploads' in str(md_file):
-        continue
-      try:
-        content = md_file.read_text(encoding='utf-8', errors='replace').strip()
-        if len(content) < 50:
-          continue
-        # 단계명 추출: task_id/단계명/파일명
-        rel = md_file.relative_to(task_dir)
-        stage = rel.parts[0] if len(rel.parts) > 1 else 'final'
-        parts.append(f'[이전 산출물: {stage}]\n{content}')
-      except Exception:
-        logger.debug('이전 작업 산출물 파일 읽기 실패: %s', md_file, exc_info=True)
-        continue
-
-  combined = '\n\n'.join(parts)
-  # 총 6000자 한도
-  if len(combined) > 6000:
-    combined = combined[:6000] + '\n...(이하 생략)'
-  return f'\n[이전 작업 참고]\n{combined}'
-
-
 @app.get('/health')
 async def health():
   '''서버 상태 확인'''
@@ -156,7 +119,6 @@ async def chat(
   message: str = Form(default=''),
   to: str = Form(default='all'),
   files: list[UploadFile] = File(default=[]),
-  base_task_id: str = Form(default=''),
 ):
   '''메신저 채팅 — 팀 채널 또는 특정 팀원에게 메시지 전송 (파일 첨부 지원)'''
   from harness.file_reader import read_file
@@ -193,30 +155,17 @@ async def chat(
         if parsed:
           attachments_text += f'\n[첨부파일: {f.filename}]\n{parsed}\n'
 
-  # 이전 작업 참조 정보 (채팅에 표시용)
-  base_task_data: dict = {}
-  if base_task_id:
-    base_task_data['base_task_id'] = base_task_id
-    base_task = get_task(base_task_id)
-    if base_task:
-      base_task_data['base_task_instruction'] = base_task['instruction'][:60]
-
   # 사용자 메시지를 이벤트 버스로 발행 (파일 URL 포함)
   await event_bus.publish(LogEvent(
     agent_id='user',
     event_type='message',
     message=message,
-    data={'to': to, 'attachments': file_names, 'files': file_urls, **base_task_data},
+    data={'to': to, 'attachments': file_names, 'files': file_urls},
   ))
-
-  # 이전 작업 컨텍스트 수집
-  prev_context = _build_prev_context(base_task_id)
 
   full_message = message
   if attachments_text:
     full_message = f'{message}\n\n[첨부된 참조 자료]\n{attachments_text}'
-  if prev_context:
-    full_message = f'{full_message}\n{prev_context}'
 
   async def _run():
     try:
@@ -229,9 +178,6 @@ async def chat(
         task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
         office.workspace = task_workspace
       office._current_task_id = task_id
-      # 🔗 이전 작업 참조 시 Office에 전달
-      if base_task_id:
-        office._base_task_id = base_task_id
 
       if to == 'all':
         # 작업 중 사용자 메시지 → 중간 참여 처리

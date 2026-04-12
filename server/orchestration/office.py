@@ -87,7 +87,6 @@ class Office:
     # 프로젝트 세션
     self._active_project_id: str | None = None
     self._active_project_title: str = ''
-    self._base_task_id: str = ''  # 🔗 이전 작업 참조 (main.py에서 설정)
     self._user_mid_feedback: list[str] = []  # 작업 중 사용자 피드백 축적
     self._phase_feedback: list[dict] = []   # 팀원 리액션/인수인계 피드백
     self._current_project_type: str = ''    # 현재 프로젝트 유형 (phase_registry)
@@ -570,18 +569,9 @@ class Office:
         if self._active_project_id:
           archive_project(self._active_project_id)
 
-        # 🔗 이전 작업 참조가 있으면 해당 workspace를 프로젝트로 승격
         ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
-        if self._base_task_id:
-          new_pid = self._base_task_id  # 이전 workspace 그대로 사용
-          base_task = get_task(self._base_task_id)
-          title = await generate_project_title(
-            base_task['instruction'] if base_task else user_input
-          )
-          self._base_task_id = ''  # 사용 후 초기화
-        else:
-          new_pid = str(uuid.uuid4())
-          title = await generate_project_title(user_input)
+        new_pid = str(uuid.uuid4())
+        title = await generate_project_title(user_input)
 
         create_project(new_pid, title)
         self._active_project_id = new_pid
