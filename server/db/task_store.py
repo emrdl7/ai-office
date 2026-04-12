@@ -87,7 +87,7 @@ def list_tasks() -> list[dict]:
   '''모든 태스크를 생성 순서로 반환한다.'''
   c = _conn()
   rows = c.execute(
-    'SELECT task_id, instruction, state, attachments, created_at, updated_at '
+    'SELECT task_id, instruction, state, attachments, created_at, updated_at, project_id '
     'FROM tasks ORDER BY created_at ASC'
   ).fetchall()
   c.close()
@@ -98,7 +98,7 @@ def get_task(task_id: str) -> Optional[dict]:
   '''태스크 하나를 조회한다.'''
   c = _conn()
   row = c.execute(
-    'SELECT task_id, instruction, state, attachments, context_json, created_at, updated_at '
+    'SELECT task_id, instruction, state, attachments, context_json, created_at, updated_at, project_id '
     'FROM tasks WHERE task_id=?',
     (task_id,),
   ).fetchone()

@@ -63,7 +63,11 @@ async def lifespan(app: FastAPI):
 
   # 중단된 태스크 알림 (자동 재실행 없이 사용자에게 선택권)
   asyncio.create_task(office.restore_pending_tasks())
+
+  # 에이전트 자발적 활동 백그라운드 루프 시작
+  office._autonomous_task = asyncio.create_task(office.start_autonomous_loop())
   yield
+  office.stop_autonomous_loop()
   await office.groq_runner.stop()
   message_bus.close()
 
@@ -581,16 +585,74 @@ async def get_daily_quotes():
   return fallback
 
 
+@app.get('/api/team-memory')
+async def get_team_memory():
+  '''팀 공유 메모리 조회 — 교훈, 협업 패턴, 프로젝트 이력'''
+  from memory.team_memory import TeamMemory
+  tm = TeamMemory()
+  return {
+    'lessons': [
+      {'id': l.id, 'project': l.project_title, 'agent': l.agent_name,
+       'lesson': l.lesson, 'category': l.category, 'timestamp': l.timestamp}
+      for l in tm.get_all_lessons(limit=15)
+    ],
+    'projects': [
+      {'id': p.project_id, 'title': p.title, 'type': p.project_type,
+       'outcome': p.outcome, 'decisions': p.key_decisions, 'timestamp': p.timestamp}
+      for p in tm.get_recent_projects(limit=10)
+    ],
+  }
+
+
 @app.get('/api/artifacts')
 async def list_all_artifacts(task_id: str = ''):
-  '''산출물 목록 반환. task_id 지정 시 해당 태스크만.'''
+  '''산출물 목록 반환. task_id 지정 시 해당 태스크만.
+
+  workspace 디렉토리명이 project_id인 경우 projects 테이블에서 메타데이터를 가져온다.
+  task_id인 경우 tasks 테이블에서 instruction을 가져온다.
+  '''
   if not WORKSPACE_ROOT.exists():
     return []
+
+  # 프로젝트/태스크 메타데이터 캐시 구축
+  from db.task_store import list_projects
+  project_map = {p['project_id']: p for p in list_projects()}
+  task_list = list_tasks()
+  task_map = {t['task_id']: t for t in task_list}
+  # task의 project_id → task 역매핑 (project_id로 원본 instruction 찾기)
+  project_to_task = {}
+  for t in task_list:
+    pid = t.get('project_id', '')
+    if pid and pid not in project_to_task:
+      project_to_task[pid] = t
+
   result = []
   dirs = [WORKSPACE_ROOT / task_id] if task_id else sorted(WORKSPACE_ROOT.iterdir())
   for task_dir in dirs:
     if not task_dir.is_dir() or task_dir.name.startswith('.'):
       continue
+    dir_id = task_dir.name
+
+    # 이 workspace의 메타데이터 결정
+    project = project_map.get(dir_id)
+    task = task_map.get(dir_id)
+    linked_task = project_to_task.get(dir_id)
+
+    meta_title = ''
+    meta_created = ''
+    meta_state = ''
+    if project:
+      meta_title = project.get('title', '')
+      meta_created = project.get('created_at', '')
+      meta_state = project.get('state', '')
+    if linked_task:
+      meta_title = meta_title or linked_task.get('instruction', '')[:60]
+      meta_created = meta_created or linked_task.get('created_at', '')
+    if task:
+      meta_title = meta_title or task.get('instruction', '')[:60]
+      meta_created = meta_created or task.get('created_at', '')
+      meta_state = meta_state or task.get('state', '')
+
     for f in sorted(task_dir.rglob('*')):
       if f.is_file() and f.name != '.gitkeep':
         rel = f.relative_to(WORKSPACE_ROOT)
@@ -600,11 +662,14 @@ async def list_all_artifacts(task_id: str = ''):
         if 'uploads' in str(rel):
           continue
         result.append({
-          'task_id': task_dir.name,
+          'task_id': dir_id,
           'path': str(rel),
           'name': f.name,
           'type': ftype,
           'size': f.stat().st_size,
+          'project_title': meta_title,
+          'created_at': meta_created,
+          'state': meta_state,
         })
   return result
 

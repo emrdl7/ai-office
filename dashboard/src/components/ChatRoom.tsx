@@ -690,7 +690,7 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
     }
 
     // 에이전트 메시지 (왼쪽)
-    const isResponse = log.event_type === 'response'
+    const isResponse = log.event_type === 'response' || log.event_type === 'autonomous' || log.event_type === 'colleague_question'
     if (isNewGroup) {
       elements.push(
         <div key={log.id ?? i} className="flex gap-2 md:gap-3 py-1.5">
@@ -817,6 +817,8 @@ function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string;
 function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isResponse: boolean; onImageClick: (url: string) => void }) {
   const [showReactions, setShowReactions] = useState(false)
   const { updateLogReactions } = useStore()
+  const isAutonomous = log.event_type === 'autonomous'
+  const isColleagueQ = log.event_type === 'colleague_question'
   const content = log.message.replace(/^\[.*?\]\s*/, '')
   const artifactPaths = (log.data?.artifacts as string[]) ?? []
   const needsInput = !!log.data?.needs_input
@@ -842,14 +844,32 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
       <div className={`px-3 md:px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed
         ${needsInput
           ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 shadow-sm'
-          : isResponse
-            ? 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm'
-            : 'bg-gray-100 dark:bg-gray-800/60'
+          : isAutonomous
+            ? 'bg-indigo-50/60 dark:bg-indigo-900/15 border border-indigo-200/50 dark:border-indigo-700/30 shadow-sm'
+            : isColleagueQ
+              ? 'bg-teal-50/60 dark:bg-teal-900/15 border border-teal-200/50 dark:border-teal-700/30 shadow-sm'
+              : isResponse
+                ? 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm'
+                : 'bg-gray-100 dark:bg-gray-800/60'
         }`}>
         {needsInput && (
           <div className="flex items-center gap-1.5 mb-2 text-amber-600 dark:text-amber-400">
             <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800/50">
               답변 필요
+            </span>
+          </div>
+        )}
+        {isAutonomous && (
+          <div className="flex items-center gap-1 mb-1.5 text-indigo-500 dark:text-indigo-400">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-800/40">
+              💭 자발적
+            </span>
+          </div>
+        )}
+        {isColleagueQ && (
+          <div className="flex items-center gap-1 mb-1.5 text-teal-500 dark:text-teal-400">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-800/40">
+              🗣️ 동료 질문
             </span>
           </div>
         )}

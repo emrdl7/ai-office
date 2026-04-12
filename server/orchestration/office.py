@@ -15,6 +15,7 @@ from orchestration.intent import IntentType, classify_intent, classify_project_t
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
+from memory.team_memory import TeamMemory, SharedLesson, TeamDynamic, ProjectSummary
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
 from runners.groq_runner import GroqRunner
 from runners.claude_runner import run_claude_isolated
@@ -96,6 +97,13 @@ class Office:
 
     # 자가개선 엔진
     self.improvement_engine = ImprovementEngine(event_bus=event_bus)
+
+    # 팀 공유 메모리
+    self.team_memory = TeamMemory(memory_root=memory_root)
+
+    # 자발적 활동 제어
+    self._autonomous_running = False
+    self._autonomous_task = None
 
     # 팀원 초기화
     self.agents: dict[str, Agent] = {}
@@ -1343,6 +1351,12 @@ class Office:
       all_results[phase_name] = content
       prev_phase_result = content
 
+      # 에이전트 간 @멘션 자동 라우팅 — 산출물에서 다른 에이전트에게 질문 감지
+      try:
+        await self._route_agent_mentions(agent_name, content[:3000])
+      except Exception:
+        logger.debug("에이전트 간 멘션 라우팅 실패: %s", phase_name, exc_info=True)
+
       # 단계 결과를 채팅에 요약 + 산출물 카드로 보고
       summary_lines = content.strip().split('\n')[:5]
       summary = '\n'.join(summary_lines)
@@ -1643,6 +1657,18 @@ class Office:
           passed = await self._teamlead_final_review(user_input, None)
           if passed:
             break
+
+    # 팀 회고 — 프로젝트 완료 후 각 에이전트가 배운 점 공유
+    try:
+      await self._team_retrospective(
+        project_title=self._active_project_title or '프로젝트',
+        project_type=project_type,
+        all_results=all_results,
+        user_input=user_input,
+        duration=_total_dur if '_total_dur' in dir() else 0.0,
+      )
+    except Exception:
+      logger.debug("팀 회고 실행 실패", exc_info=True)
 
     # 프로젝트 세션 종료
     if self._active_project_id:
@@ -2657,3 +2683,302 @@ class Office:
     self._last_review_feedback = text.replace('[FAIL]', '').strip()[:500]
     record_rejection(self._last_review_feedback, 'final_review', str(self._memory_root))
     return False
+
+  # ──────────────────────────────────────────────────────────────
+  # 에이전트 간 자율 대화 라우팅 (Phase 1)
+  # ──────────────────────────────────────────────────────────────
+
+  async def _route_agent_mentions(self, speaker: str, content: str) -> None:
+    '''에이전트 산출물/발언에서 @멘션을 감지하고 대상 에이전트가 응답하게 한다.
+
+    작업 중 에이전트끼리 자연스럽게 질문/토론하는 효과.
+    '''
+    import re
+    from orchestration.meeting import MENTION_MAP
+
+    profile_names = {
+      'planner': '장그래', 'designer': '안영이',
+      'developer': '김동식', 'qa': '한석율', 'teamlead': '오상식 팀장',
+    }
+
+    # @멘션 + 뒤따르는 내용 추출
+    mentions = re.findall(
+      r'@([가-힣A-Za-z]+(?:님)?)[,.]?\s*([^@\n]{5,150})',
+      content,
+    )
+    if not mentions:
+      return
+
+    seen_targets = set()
+    for raw_target, question_text in mentions[:3]:  # 최대 3개 멘션 처리
+      target_id = MENTION_MAP.get(raw_target) or MENTION_MAP.get(raw_target.rstrip('님'))
+      if not target_id or target_id == speaker or target_id == 'user':
+        continue
+      if target_id in seen_targets:
+        continue
+      seen_targets.add(target_id)
+
+      question = question_text.strip()
+      if not question:
+        continue
+
+      if target_id == 'teamlead':
+        # 팀장에게 질문 → Claude 응답
+        try:
+          response = await run_claude_isolated(
+            f'당신은 팀장입니다. {profile_names.get(speaker, speaker)}이(가) 작업 중 질문했습니다:\n'
+            f'"{question}"\n짧게 1~2문장으로 답변하세요 (메신저 톤, 마크다운 금지).',
+            model='claude-haiku-4-5-20251001', timeout=20.0,
+          )
+          await self._emit('teamlead', response.strip()[:150], 'response')
+        except Exception:
+          logger.debug("에이전트→팀장 질문 라우팅 실패", exc_info=True)
+      else:
+        agent = self.agents.get(target_id)
+        if agent:
+          try:
+            await self._emit(target_id, '', 'typing')
+            answer = await agent.respond_to(profile_names.get(speaker, speaker), question)
+            if answer:
+              await self._emit(target_id, answer[:200], 'response')
+
+              # 팀 다이나믹 기록 — 에이전트 간 소통 패턴 학습
+              try:
+                self.team_memory.add_dynamic(TeamDynamic(
+                  from_agent=speaker,
+                  to_agent=target_id,
+                  dynamic_type='needs_clarification',
+                  description=question[:80],
+                  timestamp=datetime.now(timezone.utc).isoformat(),
+                ))
+              except Exception:
+                logger.debug("팀 다이나믹 기록 실패", exc_info=True)
+          except Exception:
+            logger.debug("에이전트 간 질문 라우팅 실패: %s→%s", speaker, target_id, exc_info=True)
+
+  # ──────────────────────────────────────────────────────────────
+  # 자발적 활동 시스템 (Phase 2)
+  # ──────────────────────────────────────────────────────────────
+
+  async def start_autonomous_loop(self) -> None:
+    '''에이전트 자발적 활동 백그라운드 루프를 시작한다.
+
+    idle 상태에서만 동작하며, 5~15분 간격으로 에이전트가 자발적으로 발언한다.
+    '''
+    import asyncio
+    import random
+
+    self._autonomous_running = True
+    # 서버 시작 후 첫 자발적 활동은 2~5분 뒤
+    await asyncio.sleep(random.randint(120, 300))
+
+    while self._autonomous_running:
+      try:
+        # 작업 중이면 건너뛰기
+        if self._state not in (OfficeState.IDLE, OfficeState.COMPLETED):
+          await asyncio.sleep(60)
+          continue
+
+        # 최근 대화 맥락 가져오기
+        recent_context = ''
+        try:
+          from db.log_store import load_logs
+          recent = load_logs(limit=15)
+          chat_lines = [
+            f'[{l["agent_id"]}] {l["message"][:100]}'
+            for l in recent
+            if l['event_type'] in ('response', 'message', 'autonomous')
+            and l['agent_id'] != 'system'
+          ]
+          recent_context = '\n'.join(chat_lines[-10:]) if chat_lines else '(조용한 사무실)'
+        except Exception:
+          recent_context = '(조용한 사무실)'
+
+        # 최근 프로젝트 경험
+        project_context = ''
+        try:
+          projects = self.team_memory.get_recent_projects(limit=2)
+          if projects:
+            project_context = '\n'.join(f'- 최근 프로젝트: {p.title} ({p.outcome})' for p in projects)
+        except Exception:
+          pass
+
+        topic = f'{recent_context}\n{project_context}' if project_context else recent_context
+
+        # 랜덤 에이전트 1~2명 선택
+        candidates = ['planner', 'designer', 'developer', 'qa']
+        num_speakers = random.choice([1, 1, 1, 2])  # 75% 확률로 1명
+        speakers = random.sample(candidates, min(num_speakers, len(candidates)))
+
+        for speaker_name in speakers:
+          agent = self.agents.get(speaker_name)
+          if not agent:
+            continue
+
+          message = await agent.reflect(topic)
+          if message:
+            await self.event_bus.publish(LogEvent(
+              agent_id=speaker_name,
+              event_type='autonomous',
+              message=message,
+            ))
+
+            # 30% 확률로 다른 에이전트가 반응
+            if random.random() < 0.3:
+              reactors = [n for n in candidates if n != speaker_name]
+              reactor = random.choice(reactors)
+              reactor_agent = self.agents.get(reactor)
+              if reactor_agent:
+                try:
+                  profile_names = {
+                    'planner': '장그래', 'designer': '안영이',
+                    'developer': '김동식', 'qa': '한석율',
+                  }
+                  react_resp = await run_claude_isolated(
+                    f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
+                    f'동료 {profile_names.get(speaker_name, speaker_name)}이(가) '
+                    f'팀 채팅에 이렇게 말했습니다:\n"{message}"\n'
+                    f'가볍게 반응하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
+                    f'반응할 필요 없으면 [PASS]만 출력.',
+                    model='claude-haiku-4-5-20251001', timeout=15.0,
+                  )
+                  react_text = react_resp.strip()
+                  if react_text and '[PASS]' not in react_text.upper():
+                    await self.event_bus.publish(LogEvent(
+                      agent_id=reactor,
+                      event_type='autonomous',
+                      message=react_text.split('\n')[0][:50],
+                    ))
+                except Exception:
+                  logger.debug("자발적 활동 반응 실패: %s", reactor, exc_info=True)
+
+        # 팀장 주기적 체크 (30% 확률)
+        if random.random() < 0.3:
+          try:
+            teamlead_msg = await run_claude_isolated(
+              f'당신은 팀장 오상식입니다. 팀 사무실에서 잠깐 쉬는 시간입니다.\n'
+              f'최근 상황:\n{recent_context}\n\n'
+              f'팀장으로서 가볍게 한마디 하세요 (업무 독려, 안부, 팁 등).\n'
+              f'20자 이내, 메신저 톤, 마크다운 금지.\n'
+              f'할 말이 없으면 [PASS]만 출력.',
+              model='claude-haiku-4-5-20251001', timeout=15.0,
+            )
+            if teamlead_msg.strip() and '[PASS]' not in teamlead_msg.upper():
+              await self.event_bus.publish(LogEvent(
+                agent_id='teamlead',
+                event_type='autonomous',
+                message=teamlead_msg.strip().split('\n')[0][:40],
+              ))
+          except Exception:
+            logger.debug("팀장 자발적 활동 실패", exc_info=True)
+
+      except Exception:
+        logger.debug("자발적 활동 루프 에러", exc_info=True)
+
+      # 다음 활동까지 5~15분 대기
+      await asyncio.sleep(random.randint(300, 900))
+
+  def stop_autonomous_loop(self) -> None:
+    '''자발적 활동 루프를 중단한다.'''
+    self._autonomous_running = False
+
+  # ──────────────────────────────────────────────────────────────
+  # 프로젝트 완료 시 팀 회고 (Phase 3)
+  # ──────────────────────────────────────────────────────────────
+
+  async def _team_retrospective(
+    self,
+    project_title: str,
+    project_type: str,
+    all_results: dict[str, str],
+    user_input: str,
+    duration: float,
+  ) -> None:
+    '''프로젝트 완료 후 각 에이전트가 배운 점을 팀 메모리에 기록한다.
+
+    채팅에도 회고 발언이 표시되어 "실제 회고 미팅" 느낌을 준다.
+    '''
+    import asyncio
+
+    profile_names = {
+      'planner': '장그래', 'designer': '안영이',
+      'developer': '김동식', 'qa': '한석율',
+    }
+
+    await self._emit('teamlead', '프로젝트 회고를 진행하겠습니다. 각자 배운 점 한마디씩 해주세요.', 'response')
+
+    # 참여한 에이전트만 회고 (산출물이 있는 에이전트)
+    participants = set()
+    for phase_name in all_results:
+      for agent_name in ('planner', 'designer', 'developer'):
+        if agent_name in str(all_results.get(phase_name, '')):
+          participants.add(agent_name)
+    if not participants:
+      participants = {'planner', 'designer', 'developer'}
+
+    async def _one_retro(name: str) -> tuple[str, str]:
+      agent = self.agents.get(name)
+      if not agent:
+        return name, ''
+      try:
+        system = agent._build_system_prompt()
+        retro_prompt = (
+          f'프로젝트 "{project_title}"이(가) 완료되었습니다.\n'
+          f'프로젝트 유형: {project_type}\n'
+          f'소요 시간: {int(duration // 60)}분\n\n'
+          f'이번 프로젝트에서 당신({profile_names.get(name, name)})이 배운 점을 한 줄로 공유하세요.\n'
+          f'구체적 교훈이어야 합니다 (예: "IA 설계 시 모바일 우선으로 접근해야 속도가 빠르다").\n'
+          f'30자 이내, 메신저 톤, 마크다운 금지.'
+        )
+        result = await run_claude_isolated(
+          f'{system}\n\n---\n\n{retro_prompt}',
+          model='claude-haiku-4-5-20251001', timeout=20.0,
+        )
+        return name, result.strip().split('\n')[0][:80]
+      except Exception:
+        logger.debug("회고 발언 생성 실패: %s", name, exc_info=True)
+        return name, ''
+
+    results = await asyncio.gather(
+      *[_one_retro(n) for n in participants],
+      return_exceptions=False,
+    )
+
+    key_decisions = []
+    for name, lesson_text in results:
+      if not lesson_text:
+        continue
+
+      # 채팅에 회고 발언 표시
+      await self._emit(name, f'💭 {lesson_text}', 'response')
+      key_decisions.append(lesson_text)
+
+      # 팀 메모리에 교훈 저장
+      try:
+        self.team_memory.add_lesson(SharedLesson(
+          id=f'{project_title}-{name}-{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}',
+          project_title=project_title,
+          agent_name=name,
+          lesson=lesson_text,
+          category='process_improvement',
+          timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
+      except Exception:
+        logger.debug("팀 교훈 저장 실패: %s", name, exc_info=True)
+
+    # 팀장 마무리 한마디
+    await self._emit('teamlead', '좋은 회고였습니다. 다음 프로젝트에 반영하겠습니다. 수고하셨습니다 👏', 'response')
+
+    # 프로젝트 요약 저장
+    try:
+      self.team_memory.add_project_summary(ProjectSummary(
+        project_id=self._active_project_id or '',
+        title=project_title,
+        project_type=project_type,
+        outcome='success',
+        key_decisions=key_decisions[:5],
+        duration_seconds=duration,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+      ))
+    except Exception:
+      logger.debug("프로젝트 요약 저장 실패", exc_info=True)

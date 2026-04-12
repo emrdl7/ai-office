@@ -17,6 +17,9 @@ interface ArtifactEntry {
   name: string
   type: string
   size: number
+  project_title?: string
+  created_at?: string
+  state?: string
 }
 
 function formatDate(iso: string): string {
@@ -78,11 +81,6 @@ export function ArtifactModal() {
   const { toggleArtifacts } = useStore()
   const [selectedPath, setSelectedPath] = useState('')
 
-  const { data: tasks = [] } = useQuery<TaskItem[]>({
-    queryKey: ['tasks'],
-    queryFn: async () => (await fetch('/api/tasks')).json(),
-  })
-
   const { data: artifacts = [] } = useQuery<ArtifactEntry[]>({
     queryKey: ['all-artifacts'],
     queryFn: async () => (await fetch('/api/artifacts')).json(),
@@ -91,32 +89,49 @@ export function ArtifactModal() {
 
   const { data: fileData, isLoading: contentLoading } = useQuery<{ path: string; content: string }>({
     queryKey: ['artifact-content', selectedPath],
-    queryFn: async () => (await fetch(`/api/artifacts/${selectedPath}`)).json(),
+    queryFn: async () => {
+      const ext = selectedPath.split('.').pop()?.toLowerCase() ?? ''
+      // HTML 파일은 서버가 HTMLResponse로 반환하므로 text()로 읽고 래핑
+      if (ext === 'html') {
+        const text = await (await fetch(`/api/artifacts/${selectedPath}`)).text()
+        return { path: selectedPath, content: text }
+      }
+      const res = await fetch(`/api/artifacts/${selectedPath}`, {
+        headers: { 'Accept': 'application/json' },
+      })
+      return res.json()
+    },
     enabled: !!selectedPath,
   })
 
-  // 태스크 맵
-  const taskMap = new Map<string, TaskItem>()
-  for (const t of tasks) taskMap.set(t.task_id, t)
-
-  // 태스크별 산출물 그룹화 (uploads 제외는 이미 API에서 처리)
+  // 태스크별 산출물 그룹화 — API가 project_title/created_at/state를 직접 제공
   const taskGroups = new Map<string, ArtifactEntry[]>()
   for (const art of artifacts) {
     if (!taskGroups.has(art.task_id)) taskGroups.set(art.task_id, [])
     taskGroups.get(art.task_id)!.push(art)
   }
 
-  // 날짜별 태스크 그룹화
+  // 날짜별 그룹화 — artifact 자체의 메타데이터 사용 (taskMap join 불필요)
   const dateGroups = new Map<string, { task: TaskItem; files: ArtifactEntry[] }[]>()
   for (const [taskId, files] of taskGroups) {
-    const task = taskMap.get(taskId)
-    if (!task) continue
-    const dateKey = task.created_at ? formatDate(task.created_at) : '날짜 없음'
+    // .DS_Store, 빈 파일 필터링
+    const visibleFiles = files.filter(f => !f.name.startsWith('.') && f.size > 10)
+    if (visibleFiles.length === 0) continue
+
+    // 첫 번째 artifact에서 메타데이터 추출 (같은 task_id의 artifact는 모두 동일한 메타)
+    const meta = files[0]
+    const task: TaskItem = {
+      task_id: taskId,
+      state: meta.state || 'completed',
+      instruction: meta.project_title || visibleFiles[0]?.path.split('/').slice(1, -1).join('/') || taskId.slice(0, 8),
+      created_at: meta.created_at || undefined,
+    }
+
+    const dateKey = task.created_at ? formatDate(task.created_at) : '기타'
     if (!dateGroups.has(dateKey)) dateGroups.set(dateKey, [])
-    dateGroups.get(dateKey)!.push({ task, files })
+    dateGroups.get(dateKey)!.push({ task, files: visibleFiles })
   }
   const sortedDates = Array.from(dateGroups.keys()).sort((a, b) => {
-    // 날짜 문자열에서 숫자 추출하여 비교 (최신이 위)
     const da = dateGroups.get(a)![0]?.task.created_at ?? ''
     const db = dateGroups.get(b)![0]?.task.created_at ?? ''
     return db.localeCompare(da)

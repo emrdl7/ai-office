@@ -10,6 +10,7 @@ from runners.gemini_runner import run_gemini
 from runners.claude_runner import run_claude_isolated
 from log_bus.event_bus import EventBus, LogEvent
 from memory.agent_memory import AgentMemory, MemoryRecord
+from memory.team_memory import TeamMemory
 from harness.rejection_analyzer import get_past_rejections
 from improvement.prompt_evolver import PromptEvolver, PromptRule
 
@@ -39,6 +40,7 @@ class Agent:
     self.groq_runner = groq_runner
     self.event_bus = event_bus
     self.memory = AgentMemory(name, memory_root=memory_root)
+    self.team_memory = TeamMemory(memory_root=memory_root)
     self._system_prompt = self._load_prompt()
     self._conversation_history: list[dict[str, str]] = []
     self._restore_conversation_history()
@@ -103,6 +105,14 @@ class Agent:
         prompt += '\n\n' + rules_text
     except Exception:
       logger.debug("학습 규칙 로드 실패", exc_info=True)
+
+    # 팀 공유 메모리 주입 — 과거 프로젝트 교훈, 협업 패턴
+    try:
+      team_context = self.team_memory.get_team_context_text(self.name)
+      if team_context:
+        prompt += '\n\n' + team_context
+    except Exception:
+      logger.debug("팀 메모리 로드 실패", exc_info=True)
 
     return prompt
 
@@ -332,6 +342,70 @@ class Agent:
     )
     result = await self._generate(prompt, system)
     return result.strip()
+
+  async def ask_colleague(self, target_name: str, question: str, work_context: str = '') -> str:
+    '''작업 중 다른 에이전트에게 전문 의견을 요청한다.
+
+    Args:
+      target_name: 질문 대상 에이전트 ID (planner/designer/developer/qa)
+      question: 질문 내용
+      work_context: 현재 작업 맥락 (산출물 일부 등)
+
+    Returns:
+      대상 에이전트의 답변
+    '''
+    profile_names = {
+      'planner': '장그래', 'designer': '안영이',
+      'developer': '김동식', 'qa': '한석율', 'teamlead': '오상식 팀장',
+    }
+    my_name = profile_names.get(self.name, self.name)
+
+    await self._emit(f'@{profile_names.get(target_name, target_name)} {question[:80]}', 'colleague_question')
+    return question  # 실제 라우팅은 Office에서 처리
+
+  async def reflect(self, topic: str) -> str:
+    '''자발적으로 생각을 공유한다 — 자율 활동용.
+
+    Args:
+      topic: 생각할 주제 (최근 작업, 팀 상황, 아이디어 등)
+
+    Returns:
+      에이전트의 자발적 발언. 할 말이 없으면 빈 문자열.
+    '''
+    system = self._build_system_prompt(task_hint=topic)
+    profile_names = {
+      'planner': '장그래', 'designer': '안영이',
+      'developer': '김동식', 'qa': '한석율',
+    }
+
+    prompt = (
+      f'당신은 {profile_names.get(self.name, self.name)}입니다.\n'
+      f'지금은 업무 사이 쉬는 시간입니다. 아래 맥락을 보고 팀 채팅에 자발적으로 한마디 하겠습니까?\n\n'
+      f'[최근 상황]\n{topic}\n\n'
+      f'[할 수 있는 발언 유형]\n'
+      f'- 이전 작업에 대한 개선 아이디어\n'
+      f'- 동료에게 칭찬이나 응원\n'
+      f'- 업무 관련 팁이나 노하우 공유\n'
+      f'- 가벼운 잡담 (커피, 점심, 날씨 등)\n'
+      f'- 새로운 프로젝트 아이디어 제안\n\n'
+      f'할 말이 있으면 1~2문장으로 자연스럽게 말하세요. 메신저 톤, 마크다운 금지.\n'
+      f'할 말이 없으면 [PASS]만 출력하세요.\n'
+      f'50% 이상 확률로 [PASS]를 출력하세요 — 억지로 말하지 마세요.'
+    )
+
+    try:
+      result = await run_claude_isolated(
+        f'{system}\n\n---\n\n{prompt}',
+        model='claude-haiku-4-5-20251001',
+        timeout=20.0,
+      )
+      text = result.strip()
+      if '[PASS]' in text.upper() or text.upper() == 'PASS':
+        return ''
+      return text.split('\n')[0][:100]
+    except Exception:
+      logger.debug("자발적 발언 생성 실패: %s", self.name, exc_info=True)
+      return ''
 
   async def _run_with_runner(self, prompt: str, system: str = '') -> str:
     '''에이전트 역할에 맞는 러너를 선택해 텍스트를 생성한다.
