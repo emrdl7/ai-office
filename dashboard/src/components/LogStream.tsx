@@ -34,8 +34,8 @@ const EVENT_STYLE: Record<string, { badge?: string; tone?: string }> = {
   log: { tone: 'text-gray-300' },
 }
 
-// WebSocket URL
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
+// WebSocket URL (토큰은 connect 시 동적으로 추가)
+const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
 
 type ConnState = 'connecting' | 'open' | 'closed'
 const STATE_LABELS: Record<ConnState, string> = {
@@ -72,7 +72,8 @@ export function LogStream() {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
     setConnState('connecting')
-    const ws = new WebSocket(WS_URL)
+    fetch('/api/ws-token').then(r => r.json()).then(({ token }) => {
+    const ws = new WebSocket(`${WS_BASE}?token=${token}`)
     wsRef.current = ws
     ws.onopen = () => setConnState('open')
     ws.onclose = () => {
@@ -87,6 +88,7 @@ export function LogStream() {
         // JSON 파싱 실패 시 무시
       }
     }
+    }).catch(() => setConnState('closed'))
   }, [addLog])
 
   useEffect(() => {

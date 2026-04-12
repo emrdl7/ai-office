@@ -15,7 +15,7 @@ const AVATAR_IMG: Record<string, string> = {
   qa: '/avatars/qa.png',
 }
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
+const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'])
 
 function formatTime(ts: string): string {
@@ -139,7 +139,8 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   // WebSocket
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
-    const ws = new WebSocket(WS_URL)
+    fetch('/api/ws-token').then(r => r.json()).then(({ token }) => {
+    const ws = new WebSocket(`${WS_BASE}?token=${token}`)
     wsRef.current = ws
     ws.onopen = () => {
       setConnected(true)
@@ -204,6 +205,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         }
       } catch { /* 무시 */ }
     }
+    }).catch(() => {})
   }, [addLog])
 
   useEffect(() => {

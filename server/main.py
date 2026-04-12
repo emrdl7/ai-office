@@ -3,12 +3,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import asyncio
+import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -22,6 +24,9 @@ from db.task_store import save_task, update_task_state, list_tasks, get_task
 
 import logging
 logger = logging.getLogger(__name__)
+
+# WebSocket 인증 토큰 (환경변수 또는 서버 시작 시 자동 생성)
+WS_AUTH_TOKEN = os.environ.get('WS_AUTH_TOKEN') or secrets.token_urlsafe(32)
 
 # 데이터 디렉토리 생성 (MessageBus SQLite 파일용)
 Path('data').mkdir(exist_ok=True)
@@ -798,9 +803,18 @@ async def react_to_log(log_id: str, request: Request):
   return {'reactions': reactions}
 
 
+@app.get('/api/ws-token')
+async def get_ws_token():
+  '''프론트엔드에서 WebSocket 연결 시 사용할 인증 토큰 반환 (same-origin CORS로 보호)'''
+  return {'token': WS_AUTH_TOKEN}
+
+
 @app.websocket('/ws/logs')
-async def log_stream(ws: WebSocket):
+async def log_stream(ws: WebSocket, token: str = Query(default='')):
   '''실시간 에이전트 로그 스트림 (저장은 EventBus에서 처리)'''
+  if token != WS_AUTH_TOKEN:
+    await ws.close(code=4003, reason='Unauthorized')
+    return
   await ws.accept()
   q = event_bus.subscribe()
   try:
