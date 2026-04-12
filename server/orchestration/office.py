@@ -41,6 +41,25 @@ from improvement.workflow_optimizer import WorkflowOptimizer
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
 
+def _extract_keywords(text: str) -> set[str]:
+  '''간단한 한국어/영어 명사 키워드 추출 — 중복 건의 판정용.
+
+  조사, 흔한 동사/형용사는 제외. 2글자 이상 단어만.
+  '''
+  import re
+  # 의미 없는 불용어
+  stopwords = {
+    '제안', '합니다', '있습니다', '됩니다', '있습', '같습니다', '합니다만',
+    '관점', '생각', '의견', '부분', '사항', '경우', '것입니다', '것이', '것을',
+    '관련', '대한', '대해', '통해', '따라', '위해', '위한',
+    '에서', '에게', '으로', '로서', '지만', '이지만',
+    'the', 'and', 'for', 'with', 'from', 'this', 'that', 'are', 'have',
+  }
+  # 한글 2자 이상 + 영문 3자 이상 + 숫자 포함 토큰
+  tokens = re.findall(r'[가-힣]{2,}|[A-Za-z]{3,}[0-9.]*|\d+%?', text)
+  return {t.lower() for t in tokens if t.lower() not in stopwords and len(t) >= 2}
+
+
 class OfficeState(str, Enum):
   '''사무실 상태'''
   IDLE = 'idle'
@@ -2777,20 +2796,45 @@ class Office:
         except Exception:
           pass
 
-        # 주제 시드 — 30% 확률로 완전 새 주제 (연속 대화 고착 방지)
-        # AI 에이전트가 실제로 의미 있게 기여할 수 있는 주제로만 제한
+        # 주제 고착 감지 — 최근 대화에서 같은 키워드가 3번 이상 반복되면 강제 전환
+        stuck = False
+        if recent_context:
+          from collections import Counter
+          ctx_keywords = _extract_keywords(recent_context)
+          ctx_counter = Counter()
+          for line in recent_context.split('\n'):
+            for kw in _extract_keywords(line):
+              if len(kw) >= 3:  # 3자 이상만
+                ctx_counter[kw] += 1
+          # 3번 이상 반복된 키워드가 2개 이상이면 고착
+          repeated = [k for k, n in ctx_counter.items() if n >= 3]
+          if len(repeated) >= 2:
+            stuck = True
+            logger.info('자율 대화 주제 고착 감지 — 강제 전환. 반복 키워드: %s', repeated[:5])
+
+        # 주제 시드 — 30% 확률 또는 고착 감지 시 100%로 새 주제
         fresh_topics = [
           '본인 전문 영역의 구체적 기법/도구 공유 (버전, 수치 포함)',
-          '팀이 최근 겪은 QA 불합격 패턴이나 프로세스 개선점',
-          '본인 전문 영역의 공개 산업 표준/원칙 (예: WCAG, REST, PDCA 등)',
           '현재 진행 중인 업무 흐름에서 발견한 병목이나 낭비',
           '다른 팀원 전문 영역에 던지는 열린 질문',
           '과거 프로젝트 교훈 중 재적용 가능한 것',
+          '본인이 최근 학습한 새 기법/라이브러리',
+          '팀 내 역할 경계에서 오해 소지가 있는 지점',
         ]
-        use_fresh = random.random() < 0.3
+        use_fresh = stuck or random.random() < 0.3
         if use_fresh:
           seed = random.choice(fresh_topics)
-          topic = f'[완전히 새 주제로 전환] {seed}\n\n(이전 대화에 이어가지 말고 새 이야기를 꺼내세요)'
+          banned_kws = ''
+          if stuck:
+            banned_kws = (
+              f'\n\n[절대 금지: 최근에 반복된 다음 주제/키워드는 더 이상 언급 금지]\n'
+              f'- {", ".join(repeated[:8])}\n'
+              f'(같은 키워드 한 번만 더 나와도 [PASS] 처리)'
+            )
+          topic = (
+            f'[완전히 새 주제] {seed}\n'
+            f'(이전 대화에 이어가지 말고 새 이야기를 꺼내세요){banned_kws}'
+          )
         else:
           topic = f'{recent_context}\n{project_context}' if project_context else recent_context
 
@@ -3221,12 +3265,25 @@ class Office:
     if not matched_category:
       return
 
-    # 중복 체크 — 같은 에이전트가 같은 카테고리로 pending 상태 건의를 최근에 올렸으면 스킵
+    # 중복 방지 — 전체 건의(done 포함) 중 유사 내용 있으면 스킵
     try:
-      recent = list_suggestions(status='pending')
-      for s in recent[:10]:
-        if s['agent_id'] == agent_id and s['category'] == matched_category:
+      all_suggestions = list_suggestions(status='')  # 전체 상태
+      msg_keywords = _extract_keywords(message)
+      for s in all_suggestions[:30]:  # 최근 30건
+        # 1. 같은 에이전트 + 같은 카테고리 + pending이면 무조건 스킵
+        if s['agent_id'] == agent_id and s['category'] == matched_category and s['status'] == 'pending':
           return
+        # 2. 내용 키워드 유사도 60% 이상이면 중복 간주 (상태 무관)
+        s_keywords = _extract_keywords(s.get('title', '') + ' ' + s.get('content', ''))
+        if msg_keywords and s_keywords:
+          overlap = len(msg_keywords & s_keywords)
+          smaller = min(len(msg_keywords), len(s_keywords))
+          if smaller > 0 and overlap / smaller >= 0.6:
+            logger.info(
+              '건의 중복 감지 — 기존 %s (%s) 와 유사하여 재등록 스킵',
+              s['id'], s['status'],
+            )
+            return
     except Exception:
       pass
 
