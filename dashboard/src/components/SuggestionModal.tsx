@@ -17,6 +17,8 @@ interface Suggestion {
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   pending: { text: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
+  accepted_prompt: { text: '프롬프트 반영됨', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  accepted_code: { text: '코드 작업 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
   accepted: { text: '반영 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
   rejected: { text: '반려', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   done: { text: '반영 완료', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
@@ -148,11 +150,25 @@ export function SuggestionModal() {
                           {s.status === 'pending' && (
                             <>
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'accepted') }}
-                                className="text-xs px-3 py-1 rounded-lg bg-green-500 text-white
-                                  hover:bg-green-600 cursor-pointer transition-colors"
+                                onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'accepted_prompt') }}
+                                className="text-xs px-3 py-1 rounded-lg bg-emerald-500 text-white
+                                  hover:bg-emerald-600 cursor-pointer transition-colors"
+                                title="팀 메모리 + 에이전트 프롬프트에 즉시 반영 (코드 수정 없음)"
                               >
-                                수용
+                                🧠 프롬프트 반영
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (confirm('Claude CLI가 실제 프로젝트 코드를 수정합니다. 계속할까요?')) {
+                                    handleStatusChange(s.id, 'accepted_code')
+                                  }
+                                }}
+                                className="text-xs px-3 py-1 rounded-lg bg-blue-500 text-white
+                                  hover:bg-blue-600 cursor-pointer transition-colors"
+                                title="improvement/{id} 브랜치 생성 후 Claude가 코드 수정"
+                              >
+                                🔧 코드 작업
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'rejected') }}

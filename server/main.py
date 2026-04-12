@@ -994,7 +994,15 @@ async def create_suggestion_api(request: Request):
 
 @app.patch('/api/suggestions/{suggestion_id}')
 async def update_suggestion_api(suggestion_id: str, request: Request):
-  '''건의 상태/답변을 업데이트한다. 승인(accepted) 시 자가개선 패처를 백그라운드로 실행한다.'''
+  '''건의 상태/답변을 업데이트한다.
+
+  status 값:
+    - 'accepted_prompt': 프롬프트 수준 반영 (team_memory + prompt_evolver rule)
+    - 'accepted_code':  실제 코드 수정 (code_patcher 실행)
+    - 'accepted':       하위호환 — 기존 code_patcher 실행
+    - 'rejected':       반려 — 에이전트에게 유사 건의 억제 시그널
+    - 기타 문자열:       단순 상태 변경
+  '''
   from db.suggestion_store import update_suggestion, get_suggestion
   body = await request.json()
   new_status = body.get('status', '')
@@ -1006,21 +1014,99 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
   if not success:
     raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다')
 
-  # 승인 시 자가개선 패처 실행
-  if new_status == 'accepted':
-    suggestion = get_suggestion(suggestion_id)
-    if suggestion:
-      async def _run_patch():
-        from improvement.code_patcher import apply_suggestion
-        from db.suggestion_store import update_suggestion as _upd
-        ok = await apply_suggestion(suggestion)
-        if ok:
-          _upd(suggestion_id, status='done')
-        else:
-          _upd(suggestion_id, status='pending')  # 실패 시 다시 pending으로
-      asyncio.create_task(_run_patch())
+  suggestion = get_suggestion(suggestion_id)
+
+  # 프롬프트 반영 — TeamMemory + PromptEvolver에 규칙 추가 (즉시 적용)
+  if new_status == 'accepted_prompt' and suggestion:
+    await _apply_suggestion_to_prompts(suggestion)
+
+  # 코드 수정 — 기존 자가개선 패처
+  elif new_status in ('accepted_code', 'accepted') and suggestion:
+    async def _run_patch():
+      from improvement.code_patcher import apply_suggestion
+      from db.suggestion_store import update_suggestion as _upd
+      ok = await apply_suggestion(suggestion)
+      if ok:
+        _upd(suggestion_id, status='done')
+      else:
+        _upd(suggestion_id, status='pending')
+    asyncio.create_task(_run_patch())
+
+  # 반려 — 제안자 에이전트 메모리에 "유사 건의 반복 금지" 시그널
+  elif new_status == 'rejected' and suggestion:
+    try:
+      from memory.agent_memory import AgentMemory, MemoryRecord
+      from datetime import datetime as _dt, timezone as _tz
+      AgentMemory(suggestion['agent_id']).record(MemoryRecord(
+        task_id=f'suggestion-{suggestion_id}',
+        task_type='suggestion_rejected',
+        success=False,
+        feedback=f'건의 반려됨 — 유사 건의 반복 금지: "{suggestion["title"]}"',
+        tags=['suggestion_rejected', suggestion.get('category', 'general')],
+        timestamp=_dt.now(_tz.utc).isoformat(),
+      ))
+    except Exception:
+      logger.debug('반려 메모리 기록 실패', exc_info=True)
 
   return {'success': True}
+
+
+async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
+  '''프롬프트 수준 반영 — team_memory(전체 공유) + prompt_evolver(제안자 개인 규칙).'''
+  from memory.team_memory import TeamMemory, SharedLesson
+  from improvement.prompt_evolver import PromptEvolver, PromptRule
+  from datetime import datetime, timezone
+
+  sid = suggestion['id']
+  agent_id = suggestion['agent_id']
+  title = suggestion['title']
+  content = suggestion['content']
+  category = suggestion.get('category', 'general')
+  now_iso = datetime.now(timezone.utc).isoformat()
+
+  # 1. 팀 공유 메모리에 교훈으로 등록 → 모든 에이전트 시스템 프롬프트에 자동 주입
+  try:
+    TeamMemory().add_lesson(SharedLesson(
+      id=f'suggestion-{sid}',
+      project_title='건의 수용',
+      agent_name=agent_id,
+      lesson=f'{title} — {content[:200]}',
+      category='process_improvement',
+      timestamp=now_iso,
+    ))
+  except Exception:
+    logger.debug('TeamMemory add_lesson 실패', exc_info=True)
+
+  # 2. 제안자 에이전트의 PromptEvolver에 규칙 추가 → 본인 시스템 프롬프트에 주입
+  try:
+    evolver = PromptEvolver()
+    existing = evolver.load_rules(agent_id)
+    existing.append(PromptRule(
+      id=f'suggestion-{sid}',
+      created_at=now_iso,
+      source='manual',
+      category=category,
+      rule=f'{title}: {content[:300]}',
+      evidence=f'사용자 승인된 건의 #{sid}',
+      priority='high',
+      active=True,
+    ))
+    if len(existing) > 10:
+      existing = existing[-10:]
+    evolver.save_rules(agent_id, existing)
+  except Exception:
+    logger.debug('PromptEvolver save_rules 실패', exc_info=True)
+
+  # 3. 채팅에 공지
+  from config.team import display_name
+  await event_bus.publish(LogEvent(
+    agent_id='teamlead',
+    event_type='response',
+    message=(
+      f'✅ {display_name(agent_id)}의 건의 "{title[:40]}" 수용 → '
+      f'팀 메모리 + 에이전트 프롬프트에 즉시 반영했습니다.'
+    ),
+  ))
 
 
 @app.delete('/api/suggestions/{suggestion_id}')
