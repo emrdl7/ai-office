@@ -521,11 +521,11 @@ async def get_daily_quotes():
 
   # 폴백 — 정적 기본 한마디
   fallback = {
-    'teamlead': '일 앞에서 핑계는 없어.',
-    'planner': '오늘도 수를 읽어야지.',
-    'designer': '타협? 그건 제 사전에 없어요.',
-    'developer': '코드가 곧 답이다.',
-    'qa': '완벽하지 않으면 통과 없다.',
+    'teamlead': 'Stay hungry, stay foolish.',
+    'planner': '올바른 질문이 먼저다.',
+    'designer': '단순함이 궁극의 정교함이다.',
+    'developer': '문제를 정의하면 절반은 풀린 거다.',
+    'qa': '품질은 프로세스에서 나온다.',
   }
   save_quotes(fallback)
   return fallback

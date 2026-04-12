@@ -20,24 +20,24 @@ class MeetingRecord:
 
 # 에이전트 멘션 매핑 — 한국어/영어/미생 캐릭터명 모두 인식
 MENTION_MAP: dict[str, str] = {
-  # 팀장 — 오상식
+  # 팀장 — 스티브 잡스
   'teamlead': 'teamlead', '팀장': 'teamlead', '팀장님': 'teamlead',
-  '오상식': 'teamlead', '상식': 'teamlead', '상식님': 'teamlead', '오과장': 'teamlead', '오과장님': 'teamlead',
-  # 기획자 — 장그래
+  '잡스': 'teamlead', '잡스님': 'teamlead', 'Jobs': 'teamlead', 'jobs': 'teamlead',
+  # 기획자 — 피터 드러커
   'planner': 'planner', '기획자': 'planner', '기획자님': 'planner',
-  '장그래': 'planner', '그래': 'planner', '그래님': 'planner',
+  '드러커': 'planner', '드러커님': 'planner', 'Drucker': 'planner', 'drucker': 'planner',
   'Planner': 'planner', 'PM': 'planner',
-  # 디자이너 — 안영이
+  # 디자이너 — 조너선 아이브
   'designer': 'designer', '디자이너': 'designer', '디자이너님': 'designer',
-  '안영이': 'designer', '영이': 'designer', '영이님': 'designer',
+  '아이브': 'designer', '아이브님': 'designer', 'Ive': 'designer', 'ive': 'designer',
   'Designer': 'designer',
-  # 개발자 — 김동식
+  # 개발자 — 앨런 튜링
   'developer': 'developer', '개발자': 'developer', '개발자님': 'developer',
-  '김동식': 'developer', '동식': 'developer', '동식님': 'developer',
+  '튜링': 'developer', '튜링님': 'developer', 'Turing': 'developer', 'turing': 'developer',
   'Developer': 'developer',
-  # QA — 한석율
+  # QA — W. 에드워즈 데밍
   'qa': 'qa', 'QA': 'qa',
-  '한석율': 'qa', '석율': 'qa', '석율님': 'qa',
+  '데밍': 'qa', '데밍님': 'qa', 'Deming': 'qa', 'deming': 'qa',
   # 사용자(마스터)
   '마스터': 'user', '사장': 'user', '사장님': 'user', 'master': 'user',
   'Master': 'user', '보스': 'user', '대표': 'user', '대표님': 'user',

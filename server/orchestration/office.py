@@ -243,7 +243,7 @@ class Office:
 
     # greeting: 랜덤 1명만 짧은 한마디
     if chat_subtype == 'greeting':
-      profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+      profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
       responder = random.choice(['planner', 'designer', 'developer', 'qa'])
       try:
         response = await run_claude_isolated(
@@ -643,7 +643,7 @@ class Office:
     self._active_agent = agent_name
 
     # 업무 수신 확인
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     await self._emit('teamlead', f'알겠습니다. {profile_names.get(agent_name, agent_name)}에게 맡기겠습니다.', 'response')
 
     # 담당자 업무 수령 확인
@@ -1874,7 +1874,7 @@ class Office:
     import asyncio
     import random
 
-    profile_names = {'teamlead': '오상식 팀장', 'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'teamlead': '잡스 팀장', 'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
 
     # 작업자 외 팀원 중 1~2명이 리액션
@@ -1972,7 +1972,7 @@ class Office:
     '''
     from runners.json_parser import parse_json
 
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
 
     # 1. Haiku로 자문 필요 여부 빠르게 판단
     check_prompt = (
@@ -2070,7 +2070,7 @@ class Office:
     Returns:
       리뷰 결과 리스트. [CONCERN] 태그가 있으면 심각한 우려사항.
     '''
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
 
     # 리뷰어 선정: 작업자 외 관련 팀원 1~2명
     reviewer_ids = self._PEER_REVIEWERS.get(worker_name, ['planner', 'developer'])
@@ -2149,7 +2149,7 @@ class Office:
 
   async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None:
     '''그룹 전환 시 이전 담당자가 다음 담당자에게 인수인계 코멘트를 남긴다.'''
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     from_name = profile_names.get(from_agent, from_agent)
     to_name = profile_names.get(to_agent, to_agent)
     try:
@@ -2175,7 +2175,7 @@ class Office:
 
   async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None:
     '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.'''
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     try:
       response = await run_claude_isolated(
         f'당신은 {profile_names.get(agent_name, agent_name)}입니다.\n'
@@ -2194,7 +2194,7 @@ class Office:
 
   async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
     '''Haiku로 해당 캐릭터가 할 법한 문맥 리액션 한마디 생성 (15자 이내).'''
-    profile_names = {'teamlead': '오상식 팀장', 'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'teamlead': '잡스 팀장', 'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     try:
       response = await run_claude_isolated(
         f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
@@ -2265,7 +2265,7 @@ class Office:
       2. 의미 있는 내용이면 담당자에게 전달 → 담당자가 결과물에 반영
       3. 보강된 결과물 반환 (변경 없으면 원본 반환)
     '''
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
 
     config = self._resolve_reviewer(worker, prompt)
     if not config:
@@ -2353,7 +2353,7 @@ class Office:
     }
     candidates = commentary_map.get(worker, ['planner'])
     commenter = random.choice(candidates)
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
 
     try:
       response = await run_claude_isolated(
@@ -2373,7 +2373,7 @@ class Office:
 
   async def _phase_intro(self, agent_name: str, phase_name: str) -> None:
     '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.'''
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     fallback_intros = {
       'planner': '기획 구조 잡아볼게요 📋',
       'designer': '디자인 방향 잡겠습니다 🎨',
@@ -2423,7 +2423,7 @@ class Office:
 
     # @멘션 파싱
     mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
-    profile_names = {'planner': '장그래', 'designer': '안영이', 'developer': '김동식', 'qa': '한석율', 'teamlead': '오상식 팀장'}
+    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍', 'teamlead': '잡스 팀장'}
 
     if mentions:
       for raw_mention in mentions:
@@ -2438,7 +2438,7 @@ class Office:
           # 팀장에게 멘션 → Claude가 응답
           try:
             response = await run_claude_isolated(
-              f'당신은 팀장 오상식입니다. 팀이 작업 중인데 사용자가 이렇게 말했습니다:\n'
+              f'당신은 팀장 잡스입니다. 팀이 작업 중인데 사용자가 이렇게 말했습니다:\n'
               f'"{msg}"\n짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
               model='claude-haiku-4-5-20251001',
               timeout=15.0,
@@ -2687,8 +2687,8 @@ class Office:
     from orchestration.meeting import MENTION_MAP
 
     profile_names = {
-      'planner': '장그래', 'designer': '안영이',
-      'developer': '김동식', 'qa': '한석율', 'teamlead': '오상식 팀장',
+      'planner': '드러커', 'designer': '아이브',
+      'developer': '튜링', 'qa': '데밍', 'teamlead': '잡스 팀장',
     }
 
     # @멘션 + 뒤따르는 내용 추출
@@ -2821,8 +2821,8 @@ class Office:
               if reactor_agent:
                 try:
                   profile_names = {
-                    'planner': '장그래', 'designer': '안영이',
-                    'developer': '김동식', 'qa': '한석율',
+                    'planner': '드러커', 'designer': '아이브',
+                    'developer': '튜링', 'qa': '데밍',
                   }
                   react_resp = await run_gemini(
                     prompt=(
@@ -2848,7 +2848,7 @@ class Office:
           try:
             teamlead_msg = await run_gemini(
               prompt=(
-                f'당신은 팀장 오상식입니다. 팀 사무실에서 잠깐 쉬는 시간입니다.\n'
+                f'당신은 팀장 잡스입니다. 팀 사무실에서 잠깐 쉬는 시간입니다.\n'
                 f'최근 상황:\n{recent_context}\n\n'
                 f'팀장으로서 가볍게 한마디 하세요 (업무 독려, 안부, 팁 등).\n'
                 f'20자 이내, 메신저 톤, 마크다운 금지.\n'
@@ -2893,8 +2893,8 @@ class Office:
     import asyncio
 
     profile_names = {
-      'planner': '장그래', 'designer': '안영이',
-      'developer': '김동식', 'qa': '한석율',
+      'planner': '드러커', 'designer': '아이브',
+      'developer': '튜링', 'qa': '데밍',
     }
 
     await self._emit('teamlead', '프로젝트 회고를 진행하겠습니다. 각자 배운 점 한마디씩 해주세요.', 'response')

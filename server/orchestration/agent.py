@@ -355,8 +355,8 @@ class Agent:
       대상 에이전트의 답변
     '''
     profile_names = {
-      'planner': '장그래', 'designer': '안영이',
-      'developer': '김동식', 'qa': '한석율', 'teamlead': '오상식 팀장',
+      'planner': '드러커', 'designer': '아이브',
+      'developer': '튜링', 'qa': '데밍', 'teamlead': '잡스 팀장',
     }
     my_name = profile_names.get(self.name, self.name)
 
@@ -374,8 +374,8 @@ class Agent:
     '''
     system = self._build_system_prompt(task_hint=topic)
     profile_names = {
-      'planner': '장그래', 'designer': '안영이',
-      'developer': '김동식', 'qa': '한석율',
+      'planner': '드러커', 'designer': '아이브',
+      'developer': '튜링', 'qa': '데밍',
     }
 
     prompt = (

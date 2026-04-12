@@ -14,11 +14,11 @@ const AVATAR_IMG: Record<string, string> = {
 }
 
 export const AGENT_PROFILE: Record<string, { name: string; character: string; color: string; role: string }> = {
-  teamlead: { name: '팀장', character: '오상식', color: 'from-slate-600 to-slate-800', role: '팀장' },
-  planner: { name: '기획자', character: '장그래', color: 'from-blue-500 to-blue-700', role: '기획/PM' },
-  designer: { name: '디자이너', character: '안영이', color: 'from-rose-400 to-pink-600', role: '디자인' },
-  developer: { name: '개발자', character: '김동식', color: 'from-emerald-500 to-teal-700', role: '개발' },
-  qa: { name: 'QA', character: '한석율', color: 'from-amber-500 to-orange-600', role: '검수' },
+  teamlead: { name: '팀장', character: '잡스', color: 'from-slate-600 to-slate-800', role: '팀장' },
+  planner: { name: '기획자', character: '드러커', color: 'from-blue-500 to-blue-700', role: '기획/PM' },
+  designer: { name: '디자이너', character: '아이브', color: 'from-rose-400 to-pink-600', role: '디자인' },
+  developer: { name: '개발자', character: '튜링', color: 'from-emerald-500 to-teal-700', role: '개발' },
+  qa: { name: 'QA', character: '데밍', color: 'from-amber-500 to-orange-600', role: '검수' },
   user: { name: '나', character: '', color: 'from-green-500 to-emerald-600', role: '' },
   system: { name: '시스템', character: '', color: 'from-gray-500 to-gray-600', role: '' },
   meeting: { name: '회의', character: '', color: 'from-gray-500 to-gray-600', role: '' },

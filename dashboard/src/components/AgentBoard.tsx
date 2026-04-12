@@ -14,11 +14,11 @@ const AVATAR_IMG: Record<string, string> = {
 
 // 미생 캐릭터명 + 직급
 const AGENT_INFO: Record<string, { character: string; role: string }> = {
-  claude: { character: '오상식', role: '팀장' },
-  planner: { character: '장그래', role: '기획자' },
-  designer: { character: '안영이', role: '디자이너' },
-  developer: { character: '김동식', role: '개발자' },
-  qa: { character: '한석율', role: 'QA' },
+  claude: { character: '잡스', role: '팀장' },
+  planner: { character: '드러커', role: '기획자' },
+  designer: { character: '아이브', role: '디자이너' },
+  developer: { character: '튜링', role: '개발자' },
+  qa: { character: '데밍', role: 'QA' },
 }
 
 // 캐릭터 배경 그라데이션
