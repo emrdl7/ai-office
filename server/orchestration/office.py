@@ -2821,6 +2821,12 @@ class Office:
               message=message,
             ))
 
+            # 건의게시판 자동 등록 — 개선 제안/도구 요구 감지
+            try:
+              await self._auto_file_suggestion(speaker_name, message)
+            except Exception:
+              logger.debug('자동 건의 등록 실패', exc_info=True)
+
             # 30% 확률로 다른 에이전트가 반응
             if random.random() < 0.3:
               reactors = [n for n in candidates if n != speaker_name]
@@ -3029,12 +3035,17 @@ class Office:
       if not agent:
         continue
       try:
+        # 빈 감사 금지 — 구체적 후속 제안이나 관련 인사이트만
         thanks = await run_gemini(
           prompt=(
             f'당신은 {display_name(agent_id)}입니다.\n'
-            f'당신의 지난 메시지 "{log["message"][:150]}"에 좋은 반응(이모지)이 달렸습니다.\n'
-            f'짧게 감사나 재치있는 한마디 하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
-            f'할 말 없으면 [PASS].'
+            f'당신의 지난 메시지 "{log["message"][:150]}"에 호응이 있었습니다.\n\n'
+            f'[규칙]\n'
+            f'- "감사합니다", "기대에 부응하겠습니다", "화이팅" 같은 빈 답례 절대 금지\n'
+            f'- 오직 두 가지만 허용: (a) 해당 내용에 대한 구체적 후속 아이디어/보완 사항, '
+            f'(b) 관련된 실제 팁/경험 공유\n'
+            f'- 아무 할 말 없으면 [PASS]. 침묵이 빈 말보다 낫다.\n\n'
+            f'20자 이내, 메신저 톤, 마크다운 금지.'
           ),
         )
         text = thanks.strip()
@@ -3042,7 +3053,7 @@ class Office:
           await self.event_bus.publish(LogEvent(
             agent_id=agent_id,
             event_type='autonomous',
-            message=text.split('\n')[0][:40],
+            message=text.split('\n')[0][:60],
           ))
         # 답례 마킹 (성공/스킵 모두 마킹하여 루프 방지)
         conn = sqlite3.connect(str(DB_PATH))
@@ -3138,3 +3149,81 @@ class Office:
           ))
       except Exception:
         logger.debug('에이전트 피어 리액션 실패', exc_info=True)
+
+  async def _auto_file_suggestion(self, agent_id: str, message: str) -> None:
+    '''자발적 대화 중 개선 제안/도구 요구가 감지되면 건의게시판에 자동 등록.
+
+    키워드 기반 heuristic (LLM 호출 없음 → 비용 0).
+    같은 에이전트+카테고리 조합이 최근 10건 내 pending 상태면 중복 방지.
+    '''
+    from db.suggestion_store import create_suggestion, list_suggestions
+
+    # 카테고리별 트리거 키워드
+    patterns: list[tuple[str, list[str]]] = [
+      ('프로세스 개선', [
+        '워크플로', '프로세스 개선', 'QA 기준', '보고서 포맷', '인수인계',
+        '회의 방식', '리뷰 프로세스', '테스트 방법', '문서화 방식',
+      ]),
+      ('도구 부족', [
+        '도구가 있으면', '도구 필요', '자동화가 필요', '스크립트로',
+        'API가 있으면', '접근 권한', '직접 확인이 불가',
+      ]),
+      ('정보 부족', [
+        '실제 데이터', '데이터가 없', '가정하고', '추정입니다',
+        '확인할 수 없', '레퍼런스가 필요',
+      ]),
+      ('아이디어', [
+        '~면 좋을 것 같', '~했으면 좋겠', '제안하자면', '~는 어떨까',
+        '~는 어떨지', '~하자는 생각', '이러면 어떨', '개선하자',
+      ]),
+    ]
+
+    matched_category = None
+    matched_keyword = None
+    for category, keywords in patterns:
+      for kw in keywords:
+        if kw in message:
+          matched_category = category
+          matched_keyword = kw
+          break
+      if matched_category:
+        break
+
+    if not matched_category:
+      return
+
+    # 중복 체크 — 같은 에이전트가 같은 카테고리로 pending 상태 건의를 최근에 올렸으면 스킵
+    try:
+      recent = list_suggestions(status='pending')
+      for s in recent[:10]:
+        if s['agent_id'] == agent_id and s['category'] == matched_category:
+          return
+    except Exception:
+      pass
+
+    # 제목은 메시지 앞 40자, 내용은 전체 맥락
+    title = message[:40].replace('\n', ' ').strip()
+    content = (
+      f'[자발적 대화 중 감지]\n'
+      f'{display_name(agent_id)}의 발언: "{message}"\n\n'
+      f'트리거 키워드: "{matched_keyword}"\n'
+      f'카테고리: {matched_category}\n\n'
+      f'(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
+    )
+
+    try:
+      create_suggestion(
+        agent_id=agent_id,
+        title=title,
+        content=content,
+        category=matched_category,
+      )
+      # 채팅에 알림 (팀장이 말함)
+      await self._emit(
+        'teamlead',
+        f'💡 {display_name(agent_id)}의 의견을 건의게시판에 등록했습니다: "{title[:30]}..."',
+        'system_notice',
+      )
+      logger.info('자동 건의 등록: %s | %s | %s', agent_id, matched_category, title)
+    except Exception:
+      logger.debug('create_suggestion 실패', exc_info=True)
