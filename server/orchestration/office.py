@@ -2747,6 +2747,12 @@ class Office:
           await asyncio.sleep(60)
           continue
 
+        # Task #9: 내 최근 메시지에 리액션이 달렸는지 체크 → 감사 한마디
+        await self._react_to_received_reactions()
+
+        # Task #10: 동료 최근 메시지에 이모지 자동 리액션 (LLM 없이 간단 heuristic)
+        await self._agents_react_to_peers()
+
         # 최근 대화 맥락 가져오기
         recent_context = ''
         try:
@@ -2942,3 +2948,147 @@ class Office:
       ))
     except Exception:
       logger.debug("프로젝트 요약 저장 실패", exc_info=True)
+
+  # ──────────────────────────────────────────────────────────────
+  # 리액션 기반 상호작용 (Task #9, #10)
+  # ──────────────────────────────────────────────────────────────
+
+  async def _react_to_received_reactions(self) -> None:
+    '''내(에이전트) 최근 메시지에 리액션이 달렸으면 감사/답례 한마디.
+
+    같은 로그에 대해 여러 번 응답하지 않도록 data.thanked 플래그 사용.
+    '''
+    from db.log_store import load_logs
+    import random, json, sqlite3
+    from db.log_store import DB_PATH
+
+    logs = load_logs(limit=30)
+    for log in logs:
+      agent_id = log['agent_id']
+      if agent_id not in WORKER_IDS and agent_id != 'teamlead':
+        continue
+      data = log.get('data') or {}
+      reactions = data.get('reactions') or {}
+      if not reactions:
+        continue
+      # 이미 답례했으면 스킵
+      if data.get('thanked'):
+        continue
+      # user의 긍정 리액션이 있어야 답례
+      has_positive_from_user = any(
+        'user' in users for emoji, users in reactions.items()
+        if emoji in {'👍', '❤️', '🙌', '👏', '✨', '🔥', '💯', '🎉'}
+      )
+      if not has_positive_from_user:
+        continue
+      # 30% 확률만 반응 (너무 자주 말 안 하도록)
+      if random.random() > 0.3:
+        continue
+
+      agent = self.agents.get(agent_id)
+      if not agent:
+        continue
+      try:
+        thanks = await run_gemini(
+          prompt=(
+            f'당신은 {display_name(agent_id)}입니다.\n'
+            f'당신의 지난 메시지 "{log["message"][:150]}"에 좋은 반응(이모지)이 달렸습니다.\n'
+            f'짧게 감사나 재치있는 한마디 하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
+            f'할 말 없으면 [PASS].'
+          ),
+        )
+        text = thanks.strip()
+        if text and '[PASS]' not in text.upper():
+          await self.event_bus.publish(LogEvent(
+            agent_id=agent_id,
+            event_type='autonomous',
+            message=text.split('\n')[0][:40],
+          ))
+        # 답례 마킹 (성공/스킵 모두 마킹하여 루프 방지)
+        conn = sqlite3.connect(str(DB_PATH))
+        data['thanked'] = True
+        conn.execute(
+          'UPDATE chat_logs SET data=? WHERE id=?',
+          (json.dumps(data, ensure_ascii=False), log['id'])
+        )
+        conn.commit()
+        conn.close()
+        break  # 한 사이클에 한 명만 답례
+      except Exception:
+        logger.debug('리액션 답례 생성 실패: %s', agent_id, exc_info=True)
+
+  async def _agents_react_to_peers(self) -> None:
+    '''동료의 최근 메시지에 에이전트가 이모지로 리액션을 단다 (Task #10).
+
+    LLM 호출 없이 키워드 기반 heuristic으로 판단 — 토큰 비용 0.
+    '''
+    from db.log_store import load_logs, update_log_reactions
+    import random
+
+    logs = load_logs(limit=15)
+    # 최근 에이전트 메시지만 (autonomous/response)
+    candidates = [
+      l for l in logs
+      if l['agent_id'] in (*WORKER_IDS, 'teamlead')
+      and l['event_type'] in ('response', 'autonomous')
+      and l.get('message', '').strip()
+      and len(l['message']) >= 15
+    ]
+    if not candidates:
+      return
+
+    # 간단한 키워드 매핑 — 어떤 이모지를 달지 결정
+    positive_keywords = ['좋', '완료', '통과', '성공', '깔끔', '훌륭', '감사', '👏', '👍', '화이팅']
+    insight_keywords = ['분석', '전략', '인사이트', '핵심', '발견', '접근']
+    creative_keywords = ['디자인', '컨셉', '레이아웃', '컬러', '비주얼', '창의']
+    tech_keywords = ['코드', '구현', '아키텍처', 'API', '배포', '최적화']
+
+    # 한 사이클에 1~2개 메시지만 리액션
+    target_count = random.choice([1, 1, 2])
+    targets = random.sample(candidates, min(target_count, len(candidates)))
+
+    for target in targets:
+      msg = target['message']
+      target_agent = target['agent_id']
+
+      # 이미 어떤 에이전트가 리액션 했으면 중복 방지
+      existing_reactions = (target.get('data') or {}).get('reactions') or {}
+      reacted_agents = set()
+      for emoji, users in existing_reactions.items():
+        reacted_agents.update(u for u in users if u != 'user')
+
+      # 리액션 결정
+      emoji = None
+      if any(kw in msg for kw in positive_keywords):
+        emoji = random.choice(['👍', '🙌', '✨'])
+      elif any(kw in msg for kw in insight_keywords):
+        emoji = '💡'
+      elif any(kw in msg for kw in creative_keywords):
+        emoji = random.choice(['🎨', '✨'])
+      elif any(kw in msg for kw in tech_keywords):
+        emoji = random.choice(['💻', '🔧'])
+
+      if not emoji:
+        continue
+
+      # 리액션 주체: 타겟 제외 + 아직 리액션 안 한 에이전트 중 랜덤
+      reactor_pool = [
+        a for a in (*WORKER_IDS, 'teamlead')
+        if a != target_agent and a not in reacted_agents
+      ]
+      if not reactor_pool:
+        continue
+      reactor = random.choice(reactor_pool)
+
+      try:
+        reactions = update_log_reactions(target['id'], emoji, reactor)
+        if reactions is not None:
+          # 브로드캐스트로 프론트에서 배지 업데이트
+          await self.event_bus.publish(LogEvent(
+            agent_id='system',
+            event_type='reaction_update',
+            message='',
+            data={'log_id': target['id'], 'reactions': reactions},
+          ))
+      except Exception:
+        logger.debug('에이전트 피어 리액션 실패', exc_info=True)

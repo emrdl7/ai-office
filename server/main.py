@@ -825,8 +825,12 @@ async def get_log_history(request: Request, limit: int = 100):
 
 @app.post('/api/logs/{log_id}/react')
 async def react_to_log(log_id: str, request: Request):
-  '''메시지에 이모지 리액션을 추가/토글한다.'''
-  from db.log_store import update_log_reactions
+  '''메시지에 이모지 리액션을 추가/토글한다.
+
+  user 필드에 'user'(기본) 또는 agent_id('planner' 등)를 받는다.
+  리액션이 임계치를 넘으면 TeamMemory/rejection_analyzer에 학습 시그널로 기록.
+  '''
+  from db.log_store import update_log_reactions, get_log
   body = await request.json()
   emoji = body.get('emoji', '👍')
   user = body.get('user', 'user')
@@ -834,14 +838,111 @@ async def react_to_log(log_id: str, request: Request):
   if reactions is None:
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=404, content={'error': 'log not found'})
-  # 리액션 변경을 WebSocket으로 브로드캐스트
+
+  # 리액션 변경을 WebSocket으로 브로드캐스트 (채팅창 뱃지 갱신만, 저장 X)
   await event_bus.publish(LogEvent(
     agent_id='system',
     event_type='reaction_update',
     message='',
     data={'log_id': log_id, 'reactions': reactions},
   ))
+
+  # 학습 시그널 — 이모지 종류/누적 수에 따라 자동 기록
+  try:
+    await _apply_reaction_learning(log_id, reactions, emoji)
+  except Exception:
+    logger.warning("리액션 학습 훅 실패", exc_info=True)
+
   return {'reactions': reactions}
+
+
+# 긍정/부정 이모지 매핑
+POSITIVE_EMOJIS = {'👍', '❤️', '🙌', '👏', '✨', '🔥', '💯', '🎉'}
+NEGATIVE_EMOJIS = {'👎', '😡', '❌', '⚠️', '🤔'}
+POSITIVE_THRESHOLD = 2  # 2표 이상이면 성공 패턴
+NEGATIVE_THRESHOLD = 1  # 1표 받으면 rejection 기록
+
+
+async def _apply_reaction_learning(log_id: str, reactions: dict, emoji: str) -> None:
+  '''리액션이 임계치를 넘으면 학습 시스템에 시그널 기록.
+
+  - 긍정 이모지 누적 ≥ 임계치 → TeamMemory에 success_pattern 교훈 저장
+  - 부정 이모지 누적 ≥ 임계치 → rejection_analyzer에 실패 패턴 기록
+  '''
+  from db.log_store import get_log
+  log = get_log(log_id)
+  if not log:
+    return
+  # 에이전트 메시지만 학습 대상 (user/system 제외)
+  if log['agent_id'] in ('user', 'system'):
+    return
+  # 빈 메시지 또는 너무 짧은 건 학습 제외
+  if not log.get('message') or len(log['message'].strip()) < 10:
+    return
+
+  positive_total = sum(len(v) for k, v in reactions.items() if k in POSITIVE_EMOJIS)
+  negative_total = sum(len(v) for k, v in reactions.items() if k in NEGATIVE_EMOJIS)
+  agent_id = log['agent_id']
+  msg_preview = log['message'][:200]
+
+  # 이미 기록된 log_id는 재기록 방지 (data.learning_logged 플래그 사용)
+  existing_data = log.get('data') or {}
+  already = existing_data.get('learning_logged', {})
+
+  # 👍 누적 → 성공 패턴 (Task #7)
+  if emoji in POSITIVE_EMOJIS and positive_total >= POSITIVE_THRESHOLD and not already.get('positive'):
+    from memory.team_memory import TeamMemory, SharedLesson
+    from datetime import datetime, timezone
+    try:
+      TeamMemory().add_lesson(SharedLesson(
+        id=f'react-pos-{log_id[:8]}',
+        project_title='리액션 피드백',
+        agent_name=agent_id,
+        lesson=f'{agent_id}의 응답이 호응을 받음: "{msg_preview[:80]}"',
+        category='success_pattern',
+        timestamp=datetime.now(timezone.utc).isoformat(),
+      ))
+      _mark_learning_logged(log_id, 'positive')
+      logger.info('리액션 학습: %s 긍정 패턴 기록 (%d표)', agent_id, positive_total)
+    except Exception:
+      logger.debug('TeamMemory 기록 실패', exc_info=True)
+
+  # 👎 누적 → rejection 패턴 (Task #8)
+  if emoji in NEGATIVE_EMOJIS and negative_total >= NEGATIVE_THRESHOLD and not already.get('negative'):
+    from harness.rejection_analyzer import record_rejection
+    try:
+      record_rejection(
+        feedback=f'{agent_id} 응답에 👎 피드백: "{msg_preview[:120]}"',
+        task_type=f'user_reaction_{agent_id}',
+      )
+      _mark_learning_logged(log_id, 'negative')
+      logger.info('리액션 학습: %s 부정 패턴 기록 (%d표)', agent_id, negative_total)
+    except Exception:
+      logger.debug('rejection 기록 실패', exc_info=True)
+
+
+def _mark_learning_logged(log_id: str, kind: str) -> None:
+  '''해당 log_id의 data에 learning_logged 플래그를 세팅 — 중복 학습 방지.'''
+  import sqlite3, json
+  from db.log_store import DB_PATH
+  c = sqlite3.connect(str(DB_PATH))
+  c.row_factory = sqlite3.Row
+  row = c.execute('SELECT data FROM chat_logs WHERE id=?', (log_id,)).fetchone()
+  if row:
+    data = json.loads(row['data']) if row['data'] else {}
+    flags = data.get('learning_logged', {})
+    flags[kind] = True
+    data['learning_logged'] = flags
+    c.execute('UPDATE chat_logs SET data=? WHERE id=?', (json.dumps(data, ensure_ascii=False), log_id))
+    c.commit()
+  c.close()
+
+
+@app.get('/api/reactions/stats')
+async def get_reaction_stats_api(days: int = 30):
+  '''에이전트별 리액션 통계 (최근 N일).'''
+  from db.log_store import get_reaction_stats
+  return get_reaction_stats(limit_days=days)
 
 
 @app.get('/api/ws-token')

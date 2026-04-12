@@ -79,6 +79,59 @@ def update_log_reactions(log_id: str, emoji: str, user: str = 'user') -> dict | 
   return reactions
 
 
+def get_log(log_id: str) -> dict | None:
+  '''단일 로그 조회 (에이전트/메시지/데이터 포함).'''
+  c = _conn()
+  row = c.execute(
+    'SELECT id, agent_id, event_type, message, data, timestamp '
+    'FROM chat_logs WHERE id = ?', (log_id,)
+  ).fetchone()
+  c.close()
+  if not row:
+    return None
+  return {
+    'id': row['id'],
+    'agent_id': row['agent_id'],
+    'event_type': row['event_type'],
+    'message': row['message'],
+    'data': json.loads(row['data']) if row['data'] else {},
+    'timestamp': row['timestamp'],
+  }
+
+
+def get_reaction_stats(limit_days: int = 30) -> dict:
+  '''에이전트별 받은 리액션 집계 — 통계 대시보드용.
+
+  Returns:
+    {'per_agent': {agent_id: {emoji: count}}, 'totals': {emoji: count}}
+  '''
+  from datetime import datetime, timezone, timedelta
+  cutoff = (datetime.now(timezone.utc) - timedelta(days=limit_days)).isoformat()
+  c = _conn()
+  rows = c.execute(
+    'SELECT agent_id, data FROM chat_logs WHERE timestamp >= ?', (cutoff,)
+  ).fetchall()
+  c.close()
+
+  per_agent: dict[str, dict[str, int]] = {}
+  totals: dict[str, int] = {}
+  for r in rows:
+    try:
+      data = json.loads(r['data']) if r['data'] else {}
+    except json.JSONDecodeError:
+      continue
+    reactions = data.get('reactions') or {}
+    if not reactions:
+      continue
+    agent = r['agent_id']
+    agent_bucket = per_agent.setdefault(agent, {})
+    for emoji, users in reactions.items():
+      count = len(users) if isinstance(users, list) else 0
+      agent_bucket[emoji] = agent_bucket.get(emoji, 0) + count
+      totals[emoji] = totals.get(emoji, 0) + count
+  return {'per_agent': per_agent, 'totals': totals}
+
+
 def load_logs(limit: int = 200) -> list[dict]:
   '''최근 로그를 반환한다.'''
   c = _conn()

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '../config/team'
+import { ReactionStatsPanel } from './ReactionStats'
 
 export { AGENT_PROFILE }
 
@@ -216,6 +217,7 @@ function AgentCard({
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { activeChannel, setActiveChannel, toggleTheme, theme, toggleArtifacts, showArtifacts, logs } = useStore()
   const prevLogsLen = useRef(0)
+  const [showReactions, setShowReactions] = useState(false)
 
   function selectChannel(channel: ChannelId) {
     setActiveChannel(channel)
@@ -342,8 +344,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         </ul>
       </div>
 
-      {/* 건의게시판 버튼 */}
-      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800">
+      {/* 하단 메뉴 */}
+      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-1">
         <button
           onClick={() => useStore.getState().setShowSuggestions(true)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
@@ -354,7 +356,18 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <span>📋</span>
           <span>건의게시판</span>
         </button>
+        <button
+          onClick={() => setShowReactions(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
+            text-sm text-gray-600 dark:text-gray-400
+            hover:bg-gray-100 dark:hover:bg-gray-800
+            cursor-pointer transition-colors"
+        >
+          <span>📊</span>
+          <span>리액션 통계</span>
+        </button>
       </div>
+      {showReactions && <ReactionStatsPanel onClose={() => setShowReactions(false)} />}
     </aside>
   )
 }
