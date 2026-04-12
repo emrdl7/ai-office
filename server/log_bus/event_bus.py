@@ -67,14 +67,21 @@ class EventBus:
         except ValueError:
             pass  # 이미 제거된 경우 무시
 
+    # 저장하지 않는 이벤트 타입 — 순수 UI 신호이므로 히스토리에 남으면 안 됨
+    _EPHEMERAL_EVENT_TYPES = frozenset({
+        'typing',           # 입력 중... 표시
+        'reaction_update',  # 이모지 리액션 변경 신호 (메시지 아님)
+    })
+
     async def publish(self, event: LogEvent) -> None:
         '''이벤트를 모든 구독자에게 브로드캐스트 + SQLite에 영구 저장.
 
         느린 구독자의 큐가 꽉 찬 경우 해당 구독자만 드롭하고 버스는 계속 동작.
-        typing 이벤트는 저장하지 않음 (일시적 표시용).
+        UI 신호성 이벤트(typing, reaction_update)는 저장하지 않는다 —
+        저장되면 새로고침 시 빈 메시지로 재렌더링되기 때문.
         '''
         # SQLite에 즉시 저장 (WebSocket 연결 여부와 무관)
-        if event.event_type != 'typing':
+        if event.event_type not in self._EPHEMERAL_EVENT_TYPES:
             try:
                 from db.log_store import save_log
                 save_log(asdict(event))
