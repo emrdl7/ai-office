@@ -166,7 +166,7 @@ function AgentCard({
     const raw = dailyQuote || IDLE_COMMENTS[agent.agent_id] || ''
     comment = raw
     commentNode = raw ? (
-      <span className="text-gray-400 dark:text-gray-500 text-[11px] truncate italic">
+      <span className="text-gray-400 dark:text-gray-500 text-[11px] italic leading-snug">
         "{raw}"
       </span>
     ) : null
@@ -223,7 +223,7 @@ function AgentCard({
 
         {/* 한마디 */}
         {commentNode && (
-          <div className="truncate leading-tight">
+          <div className="leading-tight whitespace-normal break-words">
             {commentNode}
           </div>
         )}
