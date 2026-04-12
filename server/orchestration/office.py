@@ -2778,14 +2778,14 @@ class Office:
           pass
 
         # 주제 시드 — 30% 확률로 완전 새 주제 (연속 대화 고착 방지)
+        # AI 에이전트가 실제로 의미 있게 기여할 수 있는 주제로만 제한
         fresh_topics = [
-          '업계 최신 트렌드나 새로 본 레퍼런스에 대해',
-          '점심 메뉴, 커피, 날씨 같은 잡담',
-          '과거 프로젝트에서 아쉬웠던 점이나 개선 아이디어',
-          '요즘 배우고 있는 기술이나 방법론',
-          '팀 워크플로 개선 제안',
-          '재미있는 일화나 동료에 대한 칭찬',
-          '주말/퇴근 후 계획',
+          '본인 전문 영역의 구체적 기법/도구 공유 (버전, 수치 포함)',
+          '팀이 최근 겪은 QA 불합격 패턴이나 프로세스 개선점',
+          '본인 전문 영역의 공개 산업 표준/원칙 (예: WCAG, REST, PDCA 등)',
+          '현재 진행 중인 업무 흐름에서 발견한 병목이나 낭비',
+          '다른 팀원 전문 영역에 던지는 열린 질문',
+          '과거 프로젝트 교훈 중 재적용 가능한 것',
         ]
         use_fresh = random.random() < 0.3
         if use_fresh:
@@ -2827,8 +2827,8 @@ class Office:
             except Exception:
               logger.debug('자동 건의 등록 실패', exc_info=True)
 
-            # 30% 확률로 다른 에이전트가 반응
-            if random.random() < 0.3:
+            # 10% 확률로 다른 에이전트가 "구체적 반응"만 함 (빈 맞장구 방지)
+            if random.random() < 0.1:
               reactors = [n for n in candidates if n != speaker_name]
               reactor = random.choice(reactors)
               reactor_agent = self.agents.get(reactor)
@@ -2836,40 +2836,61 @@ class Office:
                 try:
                   react_resp = await run_gemini(
                     prompt=(
-                      f'당신은 {display_name(reactor)}입니다.\n'
-                      f'동료 {display_name(speaker_name)}이(가) '
-                      f'팀 채팅에 이렇게 말했습니다:\n"{message}"\n'
-                      f'가볍게 반응하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
-                      f'반응할 필요 없으면 [PASS]만 출력.'
+                      f'당신은 {display_name(reactor)}입니다. AI 에이전트이며 물리 경험 없음.\n'
+                      f'동료 {display_name(speaker_name)}의 발언: "{message}"\n\n'
+                      f'[반응 규칙 — 엄격]\n'
+                      f'- "맞아요/굿굿/든든/기대돼요/좋네요" 등 빈 맞장구 절대 금지 → [PASS]\n'
+                      f'- 커피/점심/날씨 등 물리 경험 언급 금지 → [PASS]\n'
+                      f'- 오직 허용: 본인 전문 영역에서 구체적 보완/반론/추가 정보 (수치·파일명·기법)\n'
+                      f'- 30자 이상, 구체 근거 포함. 없으면 [PASS].\n'
+                      f'80%는 [PASS]가 정답.'
                     ),
                   )
-                  react_text = react_resp.strip()
-                  if react_text and '[PASS]' not in react_text.upper():
+                  react_text = react_resp.strip().split('\n')[0].strip()
+                  # 이중 검증
+                  if (
+                    react_text
+                    and '[PASS]' not in react_text.upper()
+                    and len(react_text) >= 30
+                    and not any(p in react_text for p in (
+                      '굿굿', '맞아요', '좋네요', '좋아요', '든든하', '기대돼',
+                      '커피', '점심', '날씨', '퇴근', '출근',
+                    ))
+                  ):
                     await self.event_bus.publish(LogEvent(
                       agent_id=reactor,
                       event_type='autonomous',
-                      message=react_text.split('\n')[0][:50],
+                      message=react_text[:150],
                     ))
                 except Exception:
                   logger.debug("자발적 활동 반응 실패: %s", reactor, exc_info=True)
 
-        # 팀장 주기적 체크 (30% 확률)
-        if random.random() < 0.3:
+        # 팀장 주기적 체크 (10% 확률)
+        if random.random() < 0.1:
           try:
             teamlead_msg = await run_gemini(
               prompt=(
-                f'당신은 팀장 잡스입니다. 팀 사무실에서 잠깐 쉬는 시간입니다.\n'
-                f'최근 상황:\n{recent_context}\n\n'
-                f'팀장으로서 가볍게 한마디 하세요 (업무 독려, 안부, 팁 등).\n'
-                f'20자 이내, 메신저 톤, 마크다운 금지.\n'
-                f'할 말이 없으면 [PASS]만 출력.'
+                f'당신은 팀장 잡스입니다. AI 에이전트로 물리 경험 없음.\n'
+                f'최근 팀 상황:\n{recent_context}\n\n'
+                f'[규칙]\n'
+                f'- 빈 응원/감탄/맞장구 금지 ("시너지 최고", "기대된다", "굿굿" 등)\n'
+                f'- 커피/점심/날씨 등 물리 소재 금지\n'
+                f'- 오직 허용: 팀 방향 제시, 구체 우선순위 언급, 프로세스 의사결정\n'
+                f'- 30자 이상, 구체 판단 포함. 없으면 [PASS]. 90%는 [PASS]가 정답.'
               ),
             )
-            if teamlead_msg.strip() and '[PASS]' not in teamlead_msg.upper():
+            text = teamlead_msg.strip().split('\n')[0].strip()
+            if (
+              text and '[PASS]' not in text.upper()
+              and len(text) >= 30
+              and not any(p in text for p in (
+                '굿굿', '맞아요', '기대된', '즐겁게', '시너지', '커피', '점심', '날씨',
+              ))
+            ):
               await self.event_bus.publish(LogEvent(
                 agent_id='teamlead',
                 event_type='autonomous',
-                message=teamlead_msg.strip().split('\n')[0][:40],
+                message=text[:150],
               ))
           except Exception:
             logger.debug("팀장 자발적 활동 실패", exc_info=True)
@@ -3027,8 +3048,8 @@ class Office:
       # 쿨다운: 최근에 이미 많이 말했으면 스킵
       if recent_speakers.get(agent_id, 0) >= 2:
         continue
-      # 30% 확률만 반응 (너무 자주 말 안 하도록)
-      if random.random() > 0.3:
+      # 10% 확률만 반응 (빈 답례 루프 강력 억제)
+      if random.random() > 0.1:
         continue
 
       agent = self.agents.get(agent_id)
@@ -3048,12 +3069,20 @@ class Office:
             f'20자 이내, 메신저 톤, 마크다운 금지.'
           ),
         )
-        text = thanks.strip()
-        if text and '[PASS]' not in text.upper():
+        text = thanks.strip().split('\n')[0].strip()
+        # 빈 답례 재차 필터 (LLM이 규칙 무시하고 내놓을 수 있음)
+        if (
+          text and '[PASS]' not in text.upper()
+          and len(text) >= 20
+          and not any(p in text for p in (
+            '감사합니다', '감사해요', '천만에', '기대에 부응', '화이팅', '파이팅',
+            '좋습니다', '굿굿', '든든', '시너지',
+          ))
+        ):
           await self.event_bus.publish(LogEvent(
             agent_id=agent_id,
             event_type='autonomous',
-            message=text.split('\n')[0][:60],
+            message=text[:100],
           ))
         # 답례 마킹 (성공/스킵 모두 마킹하여 루프 방지)
         conn = sqlite3.connect(str(DB_PATH))
