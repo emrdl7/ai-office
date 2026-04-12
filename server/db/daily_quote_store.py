@@ -9,13 +9,9 @@ logger = logging.getLogger(__name__)
 
 STORE_PATH = Path(__file__).parent.parent / 'data' / 'daily_quotes.json'
 
-AGENT_PERSONAS = {
-  'teamlead': '스티브 잡스. 비전가이자 완벽주의자. 단순함과 탁월함에 집착. "Stay hungry, stay foolish" 스타일의 짧고 강렬한 말.',
-  'planner': '피터 드러커. 경영의 본질을 꿰뚫는 통찰. "올바른 질문"을 중시. 체계적이고 철학적.',
-  'designer': '조너선 아이브. 디테일과 본질을 추구. "디자인은 작동 방식이다." 겸손하지만 확고한 말투.',
-  'developer': '앨런 튜링. 논리적이고 형식적. 문제를 명확히 정의하는 걸 좋아함. 기계와 인간의 관계에 대한 관심.',
-  'qa': 'W. 에드워즈 데밍. 통계적 품질 관리. 시스템 사고. "품질은 검수가 아니라 프로세스에서 나온다."',
-}
+# config/team.py에서 페르소나 가져옴 — 팀원 교체 시 그 쪽만 수정하면 됨
+from config.team import TEAM
+AGENT_PERSONAS = {m.agent_id: f'{m.full_name}. {m.persona}' for m in TEAM}
 
 
 def _today() -> str:

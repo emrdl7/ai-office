@@ -519,16 +519,18 @@ async def get_daily_quotes():
   except (ClaudeRunnerError, Exception):
     pass
 
-  # 폴백 — 정적 기본 한마디
-  fallback = {
-    'teamlead': 'Stay hungry, stay foolish.',
-    'planner': '올바른 질문이 먼저다.',
-    'designer': '단순함이 궁극의 정교함이다.',
-    'developer': '문제를 정의하면 절반은 풀린 거다.',
-    'qa': '품질은 프로세스에서 나온다.',
-  }
+  # 폴백 — config/team.py에서 중앙 관리
+  from config.team import TEAM
+  fallback = {m.agent_id: m.fallback_quote for m in TEAM}
   save_quotes(fallback)
   return fallback
+
+
+@app.get('/api/team')
+async def get_team():
+  '''팀 구성 조회 — 프론트엔드에서 이름/역할/페르소나 등을 동기화한다.'''
+  from config.team import to_api_dict
+  return to_api_dict()
 
 
 @app.get('/api/team-memory')

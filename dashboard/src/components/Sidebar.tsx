@@ -3,27 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
+import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '../config/team'
 
-// 미생 캐릭터 아바타 이미지
-const AVATAR_IMG: Record<string, string> = {
-  teamlead: '/avatars/teamlead.png',
-  planner: '/avatars/planner.png',
-  designer: '/avatars/designer.png',
-  developer: '/avatars/developer.png',
-  qa: '/avatars/qa.png',
-}
+export { AGENT_PROFILE }
 
-export const AGENT_PROFILE: Record<string, { name: string; character: string; color: string; role: string }> = {
-  teamlead: { name: '팀장', character: '잡스', color: 'from-slate-600 to-slate-800', role: '팀장' },
-  planner: { name: '기획자', character: '드러커', color: 'from-blue-500 to-blue-700', role: '기획/PM' },
-  designer: { name: '디자이너', character: '아이브', color: 'from-rose-400 to-pink-600', role: '디자인' },
-  developer: { name: '개발자', character: '튜링', color: 'from-emerald-500 to-teal-700', role: '개발' },
-  qa: { name: 'QA', character: '데밍', color: 'from-amber-500 to-orange-600', role: '검수' },
-  user: { name: '나', character: '', color: 'from-green-500 to-emerald-600', role: '' },
-  system: { name: '시스템', character: '', color: 'from-gray-500 to-gray-600', role: '' },
-  meeting: { name: '회의', character: '', color: 'from-gray-500 to-gray-600', role: '' },
-  orchestrator: { name: '시스템', character: '', color: 'from-gray-500 to-gray-600', role: '' },
-}
+// 아바타 이미지 — config/team.ts의 agent_id 기반 자동 생성
+const AVATAR_IMG: Record<string, string> = Object.fromEntries(
+  AGENT_IDS.map((id) => [id, `/avatars/${id}.png`])
+)
 
 // 상태별 아바타 링 스타일
 const STATUS_RING: Record<string, string> = {
@@ -49,14 +36,8 @@ const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
   idle: { text: '온라인', cls: 'bg-green-500/20 text-green-500' },
 }
 
-// 기본 성격 코멘트 (idle 상태 fallback)
-const IDLE_COMMENTS: Record<string, string> = {
-  teamlead: '지시 대기 중',
-  planner: '다음 수를 읽는 중',
-  designer: '레퍼런스 분석 중',
-  developer: '코드 리뷰 중',
-  qa: '검수 대기',
-}
+// 기본 성격 코멘트 — config/team.ts에서 가져옴
+const IDLE_COMMENTS = TEAM_IDLE_COMMENTS
 
 // 경과 시간 훅
 function useElapsed(startedAt: string | undefined): string {

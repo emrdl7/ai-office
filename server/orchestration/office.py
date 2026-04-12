@@ -16,6 +16,10 @@ from orchestration.phase_registry import ProjectType, get_phases, get_meeting_pa
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
 from memory.team_memory import TeamMemory, SharedLesson, TeamDynamic, ProjectSummary
+from config.team import (
+  TEAM, BY_ID, AGENT_IDS, WORKER_IDS,
+  display_name, display_with_role, profile_names,
+)
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
 from runners.groq_runner import GroqRunner
 from runners.claude_runner import run_claude_isolated
@@ -243,11 +247,10 @@ class Office:
 
     # greeting: 랜덤 1명만 짧은 한마디
     if chat_subtype == 'greeting':
-      profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
       responder = random.choice(['planner', 'designer', 'developer', 'qa'])
       try:
         response = await run_claude_isolated(
-          f'당신은 {profile_names[responder]}입니다.\n'
+          f'당신은 {display_name(responder)}입니다.\n'
           f'팀장이 사용자에게 인사했습니다. 당신도 가볍게 한마디 하세요.\n'
           f'10자 이내, 이모지 1개. 메신저 톤. 마크다운 금지.\n'
           f'예: "좋은 아침이에요 ☀️", "화이팅입니다 💪"',
@@ -642,9 +645,7 @@ class Office:
     self._state = OfficeState.WORKING
     self._active_agent = agent_name
 
-    # 업무 수신 확인
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
-    await self._emit('teamlead', f'알겠습니다. {profile_names.get(agent_name, agent_name)}에게 맡기겠습니다.', 'response')
+    # 업무 수신 확인    await self._emit('teamlead', f'알겠습니다. {display_name(agent_name)}에게 맡기겠습니다.', 'response')
 
     # 담당자 업무 수령 확인
     await self._task_acknowledgment(agent_name, analysis or user_input)
@@ -761,7 +762,7 @@ class Office:
           if attempt < 2:
             self._state = OfficeState.WORKING
             self._active_agent = agent_name
-            await self._emit('teamlead', f'{profile_names.get(agent_name, agent_name)}, 보완 부탁합니다.', 'response')
+            await self._emit('teamlead', f'{display_name(agent_name)}, 보완 부탁합니다.', 'response')
             all_feedback = '\n'.join(f'- {fb}' for fb in accumulated_feedback)
             revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{all_feedback}\n\n[이전 결과물]\n{result}'
             result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
@@ -814,7 +815,7 @@ class Office:
       f'[사용자 원본 요구사항]\n{prompt[:500]}\n\n'
       f'[완성된 산출물 요약]\n{result[:3000]}\n\n'
       f'팀장으로서 사용자에게 최종 보고하세요.\n'
-      f'- 누가 어떤 작업을 했는지 (이 경우 {profile_names.get(agent_name, agent_name)}이 단독 수행)\n'
+      f'- 누가 어떤 작업을 했는지 (이 경우 {display_name(agent_name)}이 단독 수행)\n'
       f'- 핵심 결과 요약 (3~5줄)\n'
       f'- 추가 검토가 필요한 사항이 있으면 언급\n'
       f'간결하게 보고하세요.'
@@ -839,7 +840,7 @@ class Office:
       await self.event_bus.publish(LogEvent(
         agent_id='teamlead',
         event_type='response',
-        message=f'{profile_names.get(agent_name, agent_name)} 작업 완료했습니다.\n\n{summary}',
+        message=f'{display_name(agent_name)} 작업 완료했습니다.\n\n{summary}',
         data={'artifacts': saved_paths},
       ))
 
@@ -1873,8 +1874,6 @@ class Office:
     '''소단계 완료 후 다른 팀원이 성격 기반 맥락 리액션을 한다 (오피스 분위기).'''
     import asyncio
     import random
-
-    profile_names = {'teamlead': '잡스 팀장', 'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
 
     # 작업자 외 팀원 중 1~2명이 리액션
@@ -1887,9 +1886,9 @@ class Office:
         agent = self.agents.get(reactor_name)
         system = agent._build_system_prompt() if agent else ''
         prompt = (
-          f'{profile_names.get(worker, worker)}이(가) [{phase_name}] 작업을 완료했습니다.\n'
+          f'{display_name(worker)}이(가) [{phase_name}] 작업을 완료했습니다.\n'
           f'{summary_section}'
-          f'당신({profile_names.get(reactor_name, reactor_name)})의 성격으로 동료로서 1문장 짧게 반응하세요.\n'
+          f'당신({display_name(reactor_name)})의 성격으로 동료로서 1문장 짧게 반응하세요.\n'
           f'20자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.'
         )
         full = f'{system}\n\n---\n\n{prompt}' if system else prompt
@@ -1914,7 +1913,7 @@ class Office:
       # 업무 관련 피드백 수집
       if any(kw in text for kw in ('체크', '확인', '검토', '반영', '수정', '추가', '고려', '필요', '개선')):
         self._phase_feedback.append({
-          'from': profile_names.get(reactor_name, reactor_name),
+          'from': display_name(reactor_name),
           'phase': phase_name,
           'content': text,
         })
@@ -1947,7 +1946,7 @@ class Office:
           agent = self.agents.get(chain_responder)
           system = agent._build_system_prompt() if agent else ''
           prompt = (
-            f'동료 {profile_names.get(first_reactor, first_reactor)}이(가) "{first_reaction_text}"라고 했습니다.\n'
+            f'동료 {display_name(first_reactor)}이(가) "{first_reaction_text}"라고 했습니다.\n'
             f'이에 대해 가볍게 한마디 응답하세요. 15자 이내, 메신저 톤. 마크다운 금지.'
           )
           full = f'{system}\n\n---\n\n{prompt}' if system else prompt
@@ -1971,9 +1970,6 @@ class Office:
       자문 결과 텍스트. 자문 불필요 시 빈 문자열.
     '''
     from runners.json_parser import parse_json
-
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
-
     # 1. Haiku로 자문 필요 여부 빠르게 판단
     check_prompt = (
       '아래 산출물을 검토하세요. 다른 팀원의 전문 확인이 필요한 사항이 있으면 알려주세요.\n\n'
@@ -2016,8 +2012,8 @@ class Office:
         if not agent:
           continue
 
-        target_name_kr = profile_names.get(target, target)
-        worker_name_kr = profile_names.get(worker_name, worker_name)
+        target_name_kr = display_name(target)
+        worker_name_kr = display_name(worker_name)
 
         try:
           await self._emit(target, '', 'typing')
@@ -2070,8 +2066,6 @@ class Office:
     Returns:
       리뷰 결과 리스트. [CONCERN] 태그가 있으면 심각한 우려사항.
     '''
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
-
     # 리뷰어 선정: 작업자 외 관련 팀원 1~2명
     reviewer_ids = self._PEER_REVIEWERS.get(worker_name, ['planner', 'developer'])
     # 최대 2명
@@ -2081,8 +2075,8 @@ class Office:
     concern_detected = False
 
     for reviewer_id in reviewer_ids:
-      reviewer_name_kr = profile_names.get(reviewer_id, reviewer_id)
-      worker_name_kr = profile_names.get(worker_name, worker_name)
+      reviewer_name_kr = display_name(reviewer_id)
+      worker_name_kr = display_name(worker_name)
 
       try:
         await self._emit(reviewer_id, '', 'typing')
@@ -2124,7 +2118,7 @@ class Office:
     if concern_detected:
       concern_items = [r['feedback'] for r in reviews if r.get('concern')]
       concern_text = '\n'.join(f'- {item}' for item in concern_items)
-      worker_name_kr = profile_names.get(worker_name, worker_name)
+      worker_name_kr = display_name(worker_name)
       await self._emit('teamlead', f'{worker_name_kr}, 피어 리뷰에서 우려 사항이 나왔습니다. 확인 부탁합니다.', 'response')
 
       try:
@@ -2149,9 +2143,8 @@ class Office:
 
   async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None:
     '''그룹 전환 시 이전 담당자가 다음 담당자에게 인수인계 코멘트를 남긴다.'''
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
-    from_name = profile_names.get(from_agent, from_agent)
-    to_name = profile_names.get(to_agent, to_agent)
+    from_name = display_name(from_agent)
+    to_name = display_name(to_agent)
     try:
       response = await run_claude_isolated(
         f'당신은 {from_name}입니다.\n'
@@ -2175,10 +2168,9 @@ class Office:
 
   async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None:
     '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.'''
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     try:
       response = await run_claude_isolated(
-        f'당신은 {profile_names.get(agent_name, agent_name)}입니다.\n'
+        f'당신은 {display_name(agent_name)}입니다.\n'
         f'팀장이 "{phase_name}" 작업을 지시했습니다.\n'
         f'"네, 확인했습니다. [간단한 계획 한 줄]" 형태로 수령 확인하세요.\n'
         f'30자 이내, 메신저 톤. 마크다운 금지.',
@@ -2194,10 +2186,9 @@ class Office:
 
   async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
     '''Haiku로 해당 캐릭터가 할 법한 문맥 리액션 한마디 생성 (15자 이내).'''
-    profile_names = {'teamlead': '잡스 팀장', 'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     try:
       response = await run_claude_isolated(
-        f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
+        f'당신은 {display_name(reactor)}입니다.\n'
         f'{worker}이(가) "{phase_name}" 작업을 완료했습니다.\n'
         f'동료로서 가볍게 리액션 한마디 해주세요.\n'
         f'15자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.\n'
@@ -2265,8 +2256,6 @@ class Office:
       2. 의미 있는 내용이면 담당자에게 전달 → 담당자가 결과물에 반영
       3. 보강된 결과물 반환 (변경 없으면 원본 반환)
     '''
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
-
     config = self._resolve_reviewer(worker, prompt)
     if not config:
       return result
@@ -2319,7 +2308,7 @@ class Office:
       revise_prompt = (
         f'[원본 요청]\n{prompt}\n\n'
         f'[현재 산출물]\n{result}\n\n'
-        f'[{profile_names.get(reviewer_name, reviewer_name)}의 보완 내용]\n{contribution}\n\n'
+        f'[{display_name(reviewer_name)}의 보완 내용]\n{contribution}\n\n'
         f'위 보완 내용을 산출물에 자연스럽게 통합하여 완성본을 작성하세요.\n'
         f'원본 구조를 유지하면서 보완 내용을 적절한 위치에 녹여 넣으세요.'
       )
@@ -2327,7 +2316,7 @@ class Office:
       updated = await worker_agent.handle(revise_prompt, context=ctx)
       await self._emit(
         worker,
-        f'{profile_names.get(reviewer_name, reviewer_name)} 의견 반영해서 보강했습니다.',
+        f'{display_name(reviewer_name)} 의견 반영해서 보강했습니다.',
         'response',
       )
       return updated
@@ -2353,12 +2342,10 @@ class Office:
     }
     candidates = commentary_map.get(worker, ['planner'])
     commenter = random.choice(candidates)
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
-
     try:
       response = await run_claude_isolated(
-        f'당신은 {profile_names.get(commenter, commenter)}입니다.\n'
-        f'{profile_names.get(worker, worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
+        f'당신은 {display_name(commenter)}입니다.\n'
+        f'{display_name(worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
         f'결과물 미리보기:\n{result_preview[:300]}\n\n'
         f'전문가 관점에서 짧게 한마디 의견을 주세요 (30자 이내, 메신저 톤, 마크다운 금지).\n'
         f'예: "이 레이아웃 구현 문제없어 보입니다 👍", "접근성도 잘 잡혔네요 ✅"',
@@ -2373,7 +2360,6 @@ class Office:
 
   async def _phase_intro(self, agent_name: str, phase_name: str) -> None:
     '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.'''
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍'}
     fallback_intros = {
       'planner': '기획 구조 잡아볼게요 📋',
       'designer': '디자인 방향 잡겠습니다 🎨',
@@ -2382,7 +2368,7 @@ class Office:
     }
     try:
       response = await run_claude_isolated(
-        f'당신은 {profile_names.get(agent_name, agent_name)}입니다.\n'
+        f'당신은 {display_name(agent_name)}입니다.\n'
         f'"{phase_name}" 작업을 시작합니다.\n'
         f'동료들에게 작업 포부를 한마디 해주세요 (20자 이내, 메신저 톤, 이모지 1개, 마크다운 금지).\n'
         f'예: "사용자 동선 꼼꼼히 잡아볼게요 🎯", "반응형까지 깔끔하게 가겠습니다 💪"',
@@ -2423,8 +2409,6 @@ class Office:
 
     # @멘션 파싱
     mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
-    profile_names = {'planner': '드러커', 'designer': '아이브', 'developer': '튜링', 'qa': '데밍', 'teamlead': '잡스 팀장'}
-
     if mentions:
       for raw_mention in mentions:
         target_id = MENTION_MAP.get(raw_mention)
@@ -2685,12 +2669,6 @@ class Office:
     '''
     import re
     from orchestration.meeting import MENTION_MAP
-
-    profile_names = {
-      'planner': '드러커', 'designer': '아이브',
-      'developer': '튜링', 'qa': '데밍', 'teamlead': '잡스 팀장',
-    }
-
     # @멘션 + 뒤따르는 내용 추출
     mentions = re.findall(
       r'@([가-힣A-Za-z]+(?:님)?)[,.]?\s*([^@\n]{5,150})',
@@ -2716,7 +2694,7 @@ class Office:
         # 팀장에게 질문 → Claude 응답
         try:
           response = await run_claude_isolated(
-            f'당신은 팀장입니다. {profile_names.get(speaker, speaker)}이(가) 작업 중 질문했습니다:\n'
+            f'당신은 팀장입니다. {display_name(speaker)}이(가) 작업 중 질문했습니다:\n'
             f'"{question}"\n짧게 1~2문장으로 답변하세요 (메신저 톤, 마크다운 금지).',
             model='claude-haiku-4-5-20251001', timeout=20.0,
           )
@@ -2728,7 +2706,7 @@ class Office:
         if agent:
           try:
             await self._emit(target_id, '', 'typing')
-            answer = await agent.respond_to(profile_names.get(speaker, speaker), question)
+            answer = await agent.respond_to(display_name(speaker), question)
             if answer:
               await self._emit(target_id, answer[:200], 'response')
 
@@ -2820,14 +2798,10 @@ class Office:
               reactor_agent = self.agents.get(reactor)
               if reactor_agent:
                 try:
-                  profile_names = {
-                    'planner': '드러커', 'designer': '아이브',
-                    'developer': '튜링', 'qa': '데밍',
-                  }
                   react_resp = await run_gemini(
                     prompt=(
-                      f'당신은 {profile_names.get(reactor, reactor)}입니다.\n'
-                      f'동료 {profile_names.get(speaker_name, speaker_name)}이(가) '
+                      f'당신은 {display_name(reactor)}입니다.\n'
+                      f'동료 {display_name(speaker_name)}이(가) '
                       f'팀 채팅에 이렇게 말했습니다:\n"{message}"\n'
                       f'가볍게 반응하세요. 15자 이내, 메신저 톤, 마크다운 금지.\n'
                       f'반응할 필요 없으면 [PASS]만 출력.'
@@ -2891,12 +2865,6 @@ class Office:
     채팅에도 회고 발언이 표시되어 "실제 회고 미팅" 느낌을 준다.
     '''
     import asyncio
-
-    profile_names = {
-      'planner': '드러커', 'designer': '아이브',
-      'developer': '튜링', 'qa': '데밍',
-    }
-
     await self._emit('teamlead', '프로젝트 회고를 진행하겠습니다. 각자 배운 점 한마디씩 해주세요.', 'response')
 
     # 참여한 에이전트만 회고 (산출물이 있는 에이전트)
@@ -2918,7 +2886,7 @@ class Office:
           f'프로젝트 "{project_title}"이(가) 완료되었습니다.\n'
           f'프로젝트 유형: {project_type}\n'
           f'소요 시간: {int(duration // 60)}분\n\n'
-          f'이번 프로젝트에서 당신({profile_names.get(name, name)})이 배운 점을 한 줄로 공유하세요.\n'
+          f'이번 프로젝트에서 당신({display_name(name)})이 배운 점을 한 줄로 공유하세요.\n'
           f'구체적 교훈이어야 합니다 (예: "IA 설계 시 모바일 우선으로 접근해야 속도가 빠르다").\n'
           f'30자 이내, 메신저 톤, 마크다운 금지.'
         )

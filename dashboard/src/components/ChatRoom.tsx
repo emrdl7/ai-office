@@ -3,17 +3,14 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
+import { AGENT_IDS } from '../config/team'
 import type { Agent, LogEntry, Task, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
-// 미생 캐릭터 아바타 이미지
-const AVATAR_IMG: Record<string, string> = {
-  teamlead: '/avatars/teamlead.png',
-  planner: '/avatars/planner.png',
-  designer: '/avatars/designer.png',
-  developer: '/avatars/developer.png',
-  qa: '/avatars/qa.png',
-}
+// 아바타 이미지 — config/team.ts 중앙 관리
+const AVATAR_IMG: Record<string, string> = Object.fromEntries(
+  AGENT_IDS.map((id) => [id, `/avatars/${id}.png`])
+)
 
 const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'])

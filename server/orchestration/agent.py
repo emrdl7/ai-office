@@ -13,6 +13,7 @@ from memory.agent_memory import AgentMemory, MemoryRecord
 from memory.team_memory import TeamMemory
 from harness.rejection_analyzer import get_past_rejections
 from improvement.prompt_evolver import PromptEvolver, PromptRule
+from config.team import team_roster_prompt, display_name, display_with_role
 
 logger = logging.getLogger(__name__)
 
@@ -71,25 +72,8 @@ class Agent:
 
   def _build_system_prompt(self, task_hint: str = '') -> str:
     '''시스템 프롬프트 + 전문 지식 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
-    # 현재 팀 구성 강제 주입 — 과거 로그에 구 이름이 있어도 신 이름만 사용하도록
-    team_roster = (
-      '## 현재 팀 구성 (절대 규칙)\n'
-      '- 팀장: **잡스** (스티브 잡스)\n'
-      '- 기획자: **드러커** (피터 드러커)\n'
-      '- 디자이너: **아이브** (조너선 아이브)\n'
-      '- 개발자: **튜링** (앨런 튜링)\n'
-      '- QA: **데밍** (W. 에드워즈 데밍)\n\n'
-      '**중요**: 과거 대화 로그에 다음 이름이 보이더라도 절대 쓰지 마라 — '
-      '이들은 이전 팀원 이름이며 지금은 존재하지 않는다:\n'
-      '- "오상식" → 잡스\n'
-      '- "장그래" → 드러커\n'
-      '- "안영이" → 아이브\n'
-      '- "김동식" → 튜링\n'
-      '- "한석율" → 데밍\n'
-      '팀원을 언급할 때는 반드시 위 5명의 현재 이름만 사용하라.\n\n'
-      '---\n\n'
-    )
-    prompt = team_roster + self._system_prompt
+    # 현재 팀 구성 강제 주입 — config/team.py에서 중앙 관리
+    prompt = team_roster_prompt() + self._system_prompt
 
     # Layer 1 + 2: 전문 지식 주입
     from orchestration.expertise import load_expertise, detect_task_type
@@ -372,13 +356,9 @@ class Agent:
     Returns:
       대상 에이전트의 답변
     '''
-    profile_names = {
-      'planner': '드러커', 'designer': '아이브',
-      'developer': '튜링', 'qa': '데밍', 'teamlead': '잡스 팀장',
-    }
-    my_name = profile_names.get(self.name, self.name)
+    my_name = display_with_role(self.name)
 
-    await self._emit(f'@{profile_names.get(target_name, target_name)} {question[:80]}', 'colleague_question')
+    await self._emit(f'@{display_with_role(target_name)} {question[:80]}', 'colleague_question')
     return question  # 실제 라우팅은 Office에서 처리
 
   async def reflect(self, topic: str) -> str:
@@ -391,13 +371,9 @@ class Agent:
       에이전트의 자발적 발언. 할 말이 없으면 빈 문자열.
     '''
     system = self._build_system_prompt(task_hint=topic)
-    profile_names = {
-      'planner': '드러커', 'designer': '아이브',
-      'developer': '튜링', 'qa': '데밍',
-    }
 
     prompt = (
-      f'당신은 {profile_names.get(self.name, self.name)}입니다.\n'
+      f'당신은 {display_name(self.name)}입니다.\n'
       f'지금은 업무 사이 쉬는 시간입니다. 아래 맥락을 보고 팀 채팅에 자발적으로 한마디 하겠습니까?\n\n'
       f'[최근 상황]\n{topic}\n\n'
       f'[할 수 있는 발언 유형]\n'
