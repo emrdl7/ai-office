@@ -270,7 +270,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   return (
     <aside
-      className="w-64 h-full flex-shrink-0 flex flex-col
+      className="w-72 h-full flex-shrink-0 flex flex-col
         bg-white dark:bg-gray-950
         border-r border-gray-200 dark:border-gray-800"
       aria-label="채널 목록"
