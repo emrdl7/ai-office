@@ -1,5 +1,6 @@
 // 리액션 통계 패널 — 에이전트별 받은 이모지 집계
 import { useQuery } from '@tanstack/react-query'
+import { createPortal } from 'react-dom'
 import { displayName, AGENT_IDS } from '../config/team'
 
 interface ReactionStats {
@@ -17,7 +18,8 @@ export function ReactionStatsPanel({ onClose }: { onClose: () => void }) {
   const perAgent = data?.per_agent ?? {}
   const totals = data?.totals ?? {}
 
-  return (
+  // Portal로 document.body에 렌더링 — 부모의 transform context 회피
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
@@ -100,6 +102,7 @@ export function ReactionStatsPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
