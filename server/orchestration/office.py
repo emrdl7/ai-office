@@ -2777,10 +2777,34 @@ class Office:
         except Exception:
           pass
 
-        topic = f'{recent_context}\n{project_context}' if project_context else recent_context
+        # 주제 시드 — 30% 확률로 완전 새 주제 (연속 대화 고착 방지)
+        fresh_topics = [
+          '업계 최신 트렌드나 새로 본 레퍼런스에 대해',
+          '점심 메뉴, 커피, 날씨 같은 잡담',
+          '과거 프로젝트에서 아쉬웠던 점이나 개선 아이디어',
+          '요즘 배우고 있는 기술이나 방법론',
+          '팀 워크플로 개선 제안',
+          '재미있는 일화나 동료에 대한 칭찬',
+          '주말/퇴근 후 계획',
+        ]
+        use_fresh = random.random() < 0.3
+        if use_fresh:
+          seed = random.choice(fresh_topics)
+          topic = f'[완전히 새 주제로 전환] {seed}\n\n(이전 대화에 이어가지 말고 새 이야기를 꺼내세요)'
+        else:
+          topic = f'{recent_context}\n{project_context}' if project_context else recent_context
 
-        # 랜덤 에이전트 1~2명 선택
-        candidates = ['planner', 'designer', 'developer', 'qa']
+        # 최근 발언 빈도 — 너무 자주 말한 에이전트는 후보에서 제외
+        recent_speaker_count: dict[str, int] = {}
+        for l in recent[-8:]:
+          if l.get('agent_id') in ('planner', 'designer', 'developer', 'qa'):
+            recent_speaker_count[l['agent_id']] = recent_speaker_count.get(l['agent_id'], 0) + 1
+
+        # 랜덤 에이전트 1~2명 선택 (최근 2회 이상 말한 사람 제외)
+        all_candidates = ['planner', 'designer', 'developer', 'qa']
+        candidates = [c for c in all_candidates if recent_speaker_count.get(c, 0) < 2]
+        if not candidates:
+          candidates = all_candidates  # 전부 자주 말했으면 원복
         num_speakers = random.choice([1, 1, 1, 2])  # 75% 확률로 1명
         speakers = random.sample(candidates, min(num_speakers, len(candidates)))
 
@@ -2956,16 +2980,29 @@ class Office:
   async def _react_to_received_reactions(self) -> None:
     '''내(에이전트) 최근 메시지에 리액션이 달렸으면 감사/답례 한마디.
 
-    같은 로그에 대해 여러 번 응답하지 않도록 data.thanked 플래그 사용.
+    **무한 루프 방지:**
+    - 답례 대상은 response/message만 (autonomous 제외) — 답례 메시지에 또 답례 X
+    - 연속 발언 쿨다운: 같은 에이전트가 최근 5개 중 2회 이상이면 스킵
+    - 동일 log_id는 data.thanked 플래그로 재진입 차단
     '''
     from db.log_store import load_logs
     import random, json, sqlite3
     from db.log_store import DB_PATH
 
     logs = load_logs(limit=30)
+
+    # 최근 발언 빈도 집계 (쿨다운용)
+    recent_speakers: dict[str, int] = {}
+    for l in logs[-8:]:
+      if l['agent_id'] in (*WORKER_IDS, 'teamlead'):
+        recent_speakers[l['agent_id']] = recent_speakers.get(l['agent_id'], 0) + 1
+
     for log in logs:
       agent_id = log['agent_id']
       if agent_id not in WORKER_IDS and agent_id != 'teamlead':
+        continue
+      # 루프 차단: autonomous(답례 자체) 메시지는 답례 대상 제외
+      if log['event_type'] == 'autonomous':
         continue
       data = log.get('data') or {}
       reactions = data.get('reactions') or {}
@@ -2980,6 +3017,9 @@ class Office:
         if emoji in {'👍', '❤️', '🙌', '👏', '✨', '🔥', '💯', '🎉'}
       )
       if not has_positive_from_user:
+        continue
+      # 쿨다운: 최근에 이미 많이 말했으면 스킵
+      if recent_speakers.get(agent_id, 0) >= 2:
         continue
       # 30% 확률만 반응 (너무 자주 말 안 하도록)
       if random.random() > 0.3:
@@ -3026,13 +3066,19 @@ class Office:
     import random
 
     logs = load_logs(limit=15)
-    # 최근 에이전트 메시지만 (autonomous/response)
+    # 최근 에이전트 메시지만. autonomous(답례성 발언)에는 이모지 리액션 달지 않음 — 루프 차단
     candidates = [
       l for l in logs
       if l['agent_id'] in (*WORKER_IDS, 'teamlead')
-      and l['event_type'] in ('response', 'autonomous')
+      and l['event_type'] == 'response'
       and l.get('message', '').strip()
       and len(l['message']) >= 15
+      # 이미 agent 리액션 1개 이상 달린 메시지는 제외 (몰림 방지)
+      and not any(
+        u != 'user'
+        for users in ((l.get('data') or {}).get('reactions') or {}).values()
+        for u in users
+      )
     ]
     if not candidates:
       return
