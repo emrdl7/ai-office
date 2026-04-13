@@ -151,7 +151,12 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       fetch('/api/logs/history?limit=200')
         .then((r) => r.json())
         .then((data: LogEntry[]) => {
-          if (Array.isArray(data) && data.length > 0) setLogs(data)
+          if (!Array.isArray(data) || data.length === 0) return
+          const hiddenBefore = localStorage.getItem('logsHiddenBefore') || ''
+          const filtered = hiddenBefore
+            ? data.filter((l) => (l.timestamp || '') > hiddenBefore)
+            : data
+          if (filtered.length > 0) setLogs(filtered)
         })
         .catch(() => {})
       // 활성 프로젝트 복원
@@ -389,12 +394,16 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </svg>
           </button>
           <button
-            onClick={() => setLogs([])}
+            onClick={() => {
+              // 서버 DB는 보존 (에이전트가 과거 대화 참고) — 화면에서만 숨김
+              localStorage.setItem('logsHiddenBefore', new Date().toISOString())
+              setLogs([])
+            }}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
               cursor-pointer transition-colors"
             aria-label="대화 지우기"
-            title="대화 지우기"
+            title="화면에서 대화 숨기기 (서버 기록은 보존)"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
