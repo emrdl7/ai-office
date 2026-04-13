@@ -361,16 +361,26 @@ class Agent:
     await self._emit(f'@{display_with_role(target_name)} {question[:80]}', 'colleague_question')
     return question  # 실제 라우팅은 Office에서 처리
 
-  async def reflect(self, topic: str) -> str:
+  async def reflect(self, topic: str, own_recent: list[str] | None = None) -> str:
     '''자발적으로 생각을 공유한다 — 자율 활동용.
 
     Args:
       topic: 생각할 주제 (최근 작업, 팀 상황, 아이디어 등)
+      own_recent: 본인이 최근에 한 발언 목록 — 같은 주제/키워드 반복 방지용
 
     Returns:
       에이전트의 자발적 발언. 할 말이 없으면 빈 문자열.
     '''
     system = self._build_system_prompt(task_hint=topic)
+
+    own_block = ''
+    if own_recent:
+      items = '\n'.join(f'- "{m[:100]}"' for m in own_recent[:5])
+      own_block = (
+        f'[당신이 최근 직접 한 발언 — 이 중 어떤 키워드/주제도 다시 꺼내지 마라]\n'
+        f'{items}\n'
+        f'(같은 기법명·프레임워크명·약어를 다시 언급하면 [PASS]. 새 관점만 허용.)\n\n'
+      )
 
     prompt = (
       f'당신은 {display_name(self.name)}입니다.\n'
@@ -379,6 +389,7 @@ class Agent:
       f'- 커피 머신, 점심 메뉴, 퇴근길 교통, 날씨, "오늘 본 기사" 등 당신이 실제로 겪을 수 없는 소재 절대 금지\n'
       f'- "저희 사무실/회사에서..." 식의 물리 공간 언급 금지\n'
       f'- 과거 프로젝트는 team_memory에 실제 기록된 것만 참조 가능\n\n'
+      f'{own_block}'
       f'[최근 팀 채팅 맥락]\n{topic}\n\n'
       f'(팀 시드(건의/교훈/프로젝트)가 포함되어 있다면 그중 하나를 골라 구체 대상(에이전트명·건의·프로젝트명)을 명시하고 질문·반론·제안하라.)\n\n'
       f'[반드시 지킬 규칙 — 어기면 [PASS]]\n'

@@ -2864,11 +2864,23 @@ class Office:
         seed_parts: list[str] = []
         try:
           from db.suggestion_store import list_suggestions as _list_sugg
-          pendings = _list_sugg(status='pending')[:3]
-          if pendings:
+          pendings_all = _list_sugg(status='pending')
+          # 최근 대화에서 이미 언급된 건의는 시드에서 제외 (제목 키워드 기반)
+          recent_blob = (recent_context or '').lower()
+          filtered: list[dict] = []
+          for s in pendings_all:
+            title = (s.get('title') or '')
+            # 제목 핵심 토큰 하나라도 최근 대화에 이미 등장했으면 제외
+            tokens = [t for t in _extract_keywords(title) if len(t) >= 3]
+            if tokens and any(t.lower() in recent_blob for t in tokens):
+              continue
+            filtered.append(s)
+            if len(filtered) >= 3:
+              break
+          if filtered:
             seed_parts.append(
               '[아직 미해결 건의]\n'
-              + '\n'.join(f'- ({s["category"]}) {s["title"]}' for s in pendings)
+              + '\n'.join(f'- ({s["category"]}) {s["title"]}' for s in filtered)
             )
         except Exception:
           pass
@@ -2927,7 +2939,20 @@ class Office:
           if not agent:
             continue
 
-          message = await agent.reflect(topic)
+          # 본인 최근 자발적 발언 5개 로드 — 같은 주제 반복 방지
+          own_recent: list[str] = []
+          try:
+            from db.log_store import load_logs as _load_logs
+            recent_all = _load_logs(limit=60)
+            own_recent = [
+              l['message'] for l in recent_all
+              if l.get('agent_id') == speaker_name
+              and l.get('event_type') in ('autonomous', 'response')
+            ][:5]
+          except Exception:
+            pass
+
+          message = await agent.reflect(topic, own_recent=own_recent)
           if message:
             await self.event_bus.publish(LogEvent(
               agent_id=speaker_name,
