@@ -1069,6 +1069,26 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
   return {'success': True}
 
 
+def _extract_rule_body(content: str) -> str:
+  '''자동 등록 건의의 content에서 실제 발언 본문만 추출. 메타 헤더·트리거·카테고리 안내 제거.'''
+  import re
+  m = re.search(r'의 발언:\s*"([^"]+)"', content)
+  if m:
+    return m.group(1).strip()
+  # 수동 건의 등 — 앞쪽 문단만 사용 (첫 메타 라인 이후 잘라냄)
+  lines = []
+  for line in content.splitlines():
+    s = line.strip()
+    if not s:
+      if lines:
+        break
+      continue
+    if s.startswith('[') or s.startswith('단계:') or s.startswith('카테고리:') or s.startswith('트리거'):
+      continue
+    lines.append(s)
+  return ' '.join(lines)[:400] if lines else content[:300]
+
+
 async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
   '''프롬프트 수준 반영 — team_memory(전체 공유) + prompt_evolver(제안자 개인 규칙).'''
   from memory.team_memory import TeamMemory, SharedLesson
@@ -1084,8 +1104,8 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
   category = suggestion.get('category', 'general')
   user_comment = (suggestion.get('response') or '').strip()
   now_iso = datetime.now(timezone.utc).isoformat()
+  rule_body = _extract_rule_body(content)  # 메타 제거한 발언 본문
   comment_suffix = f'\n[사용자 코멘트] {user_comment}' if user_comment else ''
-  target_suffix = f'\n[대상: {apply_to}, 제안자: {agent_id}]' if target_agent else ''
 
   # 1. 팀 공유 메모리에 교훈으로 등록 → 모든 에이전트 시스템 프롬프트에 자동 주입
   try:
@@ -1093,7 +1113,7 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
       id=f'suggestion-{sid}',
       project_title='건의 수용',
       agent_name=apply_to,
-      lesson=f'{title} — {content[:200]}{comment_suffix}{target_suffix}',
+      lesson=f'{rule_body}{comment_suffix}',
       category='process_improvement',
       timestamp=now_iso,
     ))
@@ -1109,7 +1129,7 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
       created_at=now_iso,
       source='manual',
       category=category,
-      rule=f'{title}: {content[:300]}{comment_suffix}',
+      rule=f'{rule_body}{comment_suffix}',
       evidence=f'사용자 승인된 건의 #{sid} (제안자: {agent_id})' + (f' — {user_comment[:120]}' if user_comment else ''),
       priority='high',
       active=True,
