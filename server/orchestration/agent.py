@@ -397,7 +397,13 @@ class Agent:
       f'"기대돼요", "화이팅", "감사합니다", "천만에요" 같은 내용 없는 말 절대 금지.\n'
       f'2. **가상 제안 찬양 금지**: 상대가 실제로 제안한 게 없으면 "제안 좋아요" 금지.\n'
       f'3. **할루시네이션 금지**: 없는 사실을 지어내지 마라.\n'
-      f'4. **구체성 필수**: 파일명, 수치, 기법명, 프레임워크명, 명시적 트레이드오프 중 하나 이상.\n\n'
+      f'4. **구체성 필수**: 파일명, 수치, 기법명, 프레임워크명, 명시적 트레이드오프 중 하나 이상.\n'
+      f'5. **선언형 금지 — 자발적 대화는 권한 없는 잡담이다**:\n'
+      f'   - "~수용합니다", "~반영합니다", "~제안합니다", "~도입합니다", '
+      f'"~적용합니다", "~구축하겠습니다", "~제고할 수 있습니다" 같은 명령·약속·결재 톤 금지.\n'
+      f'   - 실제 작업은 사용자가 프로젝트로 지시할 때만 시작된다. 너는 그 권한이 없다.\n'
+      f'   - 대신 관찰/의견/질문/우려로 말해라: "~경향이 보인다", "~이 더 낫다고 생각한다", '
+      f'"~은 어떻게 생각하는가?", "~부분이 우려된다".\n\n'
       f'[발언 허용 유형 — 이 중 하나에 해당할 때만]\n'
       f'A. 본인 전문 영역의 구체적 기법/기준 공유 (예: "IA 설계 시 모바일 우선 모델이 응답속도 30% 빠릅니다")\n'
       f'B. 본인 전문 영역의 실제 기술 정보 (예: "Tailwind v4는 JIT 엔진을 Rust로 리라이트했습니다")\n'
@@ -429,12 +435,36 @@ class Agent:
         '교통', '퇴근', '출근길', '지하철', '버스',
         '저희 회사', '저희 사무실', '우리 사무실',
       ]
+      # 선언형 명령·약속·결재 톤 — 권한 없는 상태에서의 가짜 지시
+      banned_declaratives = [
+        '수용합니다', '반영합니다', '제안합니다', '도입합니다', '적용합니다',
+        '시행합니다', '착수합니다', '진행합니다', '결정합니다', '지시합니다',
+        '수립합니다', '구축하겠습니다', '도입하겠습니다', '반영하겠습니다',
+        '제고할 수 있습니다', '확보하겠습니다', '최우선 과제',
+        '적극 수용', '즉시 도입', '즉시도입',
+      ]
       if len(first_line) < 20:
-        return ''  # 첫 줄이 너무 짧으면 버림
+        return ''
       if any(p in text for p in banned_phrases):
         return ''
       if any(h in text for h in banned_hallucinations):
         return ''
+      if any(d in text for d in banned_declaratives):
+        logger.info('선언형 발언 드랍 [%s]: %s', self.name, first_line[:80])
+        return ''
+
+      # own_recent와 키워드 3개 이상 겹치면 드랍 (같은 주제 반복 감지)
+      if own_recent:
+        import re as _re
+        def _tokens(s: str) -> set[str]:
+          return {t for t in _re.findall(r'[A-Za-z0-9가-힣]{3,}', s)}
+        new_tokens = _tokens(text)
+        for past in own_recent:
+          overlap = new_tokens & _tokens(past)
+          # 3개 이상 겹치고 본문의 40% 이상 재사용이면 드랍
+          if len(overlap) >= 3 and new_tokens and len(overlap) / max(len(new_tokens), 1) >= 0.35:
+            logger.info('반복 주제 드랍 [%s] overlap=%s', self.name, list(overlap)[:5])
+            return ''
 
       return text  # 전체 보존 — UI에서 접기/펴기로 처리
     except Exception:
