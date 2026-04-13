@@ -438,7 +438,8 @@ async def get_agents(request: Request):
   active = state_to_active.get(state, '')
 
   # 에이전트별 모델명 — 상태에 따라 동적 표시
-  # 대기/대화 중: Haiku, 업무 중: Sonnet (fallback 시 Gemini)
+  # idle(잡담/자발적 대화): Gemini (토큰 비용 절감용)
+  # working(실제 업무): 역할별 실제 사용 모델
   is_working = state in {
     OfficeState.TEAMLEAD_THINKING, OfficeState.MEETING,
     OfficeState.WORKING, OfficeState.QA_REVIEW,
@@ -456,16 +457,21 @@ async def get_agents(request: Request):
     else:
       status = 'waiting'
 
-    if agent_id == 'teamlead':
+    # idle/대기 시에는 자발적 대화 루프가 Gemini 사용
+    if not is_working:
+      model = 'Gemini'
+    elif agent_id == 'teamlead':
       model = 'Claude Haiku'
     elif agent_id == 'qa':
       model = 'Claude Haiku'
     elif agent_id == 'planner':
-      model = 'Gemini' if is_working else 'Claude Haiku'
-    elif is_working:
+      model = 'Gemini'  # planner 업무도 Gemini 1차
+    elif agent_id == 'developer':
+      model = 'Gemini'  # developer 업무도 Gemini 1차
+    elif agent_id == 'designer':
       model = 'Claude Sonnet'
     else:
-      model = 'Claude Haiku'
+      model = 'Claude Sonnet'
 
     agents.append({
       'agent_id': agent_id,
