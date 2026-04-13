@@ -738,20 +738,44 @@ function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string;
         )}
 
         {/* 텍스트 메시지 */}
-        {log.message && (
-          <div className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-md
-            text-sm leading-relaxed">
-            {linkify(log.message)}
-          </div>
-        )}
+        {log.message && <UserMessageText text={log.message} />}
       </div>
     </div>
   )
 }
 
+function UserMessageText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const THRESHOLD = 400
+  const PREVIEW = 280
+  const isLong = text.length > THRESHOLD
+  const display = isLong && !expanded
+    ? text.slice(0, PREVIEW).replace(/\s+\S*$/, '') + '…'
+    : text
+  return (
+    <div className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-md
+      text-sm leading-relaxed">
+      {linkify(display)}
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="block mt-1.5 text-xs font-medium text-blue-100 hover:text-white
+            cursor-pointer transition-colors"
+        >
+          {expanded ? '▲ 접기' : `▼ 더보기 (${text.length - PREVIEW}자 더)`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // 에이전트 메시지 버블
+const COLLAPSE_THRESHOLD = 400  // 이 글자 수 이상이면 초기 축약
+const COLLAPSED_PREVIEW = 280   // 축약 시 보여줄 글자 수
+
 function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isResponse: boolean; onImageClick: (url: string) => void }) {
   const [showReactions, setShowReactions] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const { updateLogReactions } = useStore()
   const isAutonomous = log.event_type === 'autonomous'
   const isColleagueQ = log.event_type === 'colleague_question'
@@ -759,6 +783,12 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
   const artifactPaths = (log.data?.artifacts as string[]) ?? []
   const needsInput = !!log.data?.needs_input
   const reactions = (log.data?.reactions as Record<string, string[]>) ?? {}
+
+  // 긴 메시지는 접기/펴기 대상
+  const isLong = content.length > COLLAPSE_THRESHOLD
+  const displayContent = isLong && !expanded
+    ? content.slice(0, COLLAPSED_PREVIEW).replace(/\s+\S*$/, '') + '…'
+    : content
 
   async function handleReact(emoji: string) {
     try {
@@ -811,10 +841,22 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
         )}
         {isResponse ? (
           <div className="prose dark:prose-invert prose-sm max-w-none">
-            <Markdown>{content}</Markdown>
+            <Markdown>{displayContent}</Markdown>
           </div>
         ) : (
-          <span className="text-gray-700 dark:text-gray-300">{linkify(content)}</span>
+          <span className="text-gray-700 dark:text-gray-300">{linkify(displayContent)}</span>
+        )}
+        {isLong && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="mt-1.5 text-xs font-medium text-blue-600 dark:text-blue-400
+              hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer transition-colors"
+          >
+            {expanded
+              ? '▲ 접기'
+              : `▼ 더보기 (${content.length - COLLAPSED_PREVIEW}자 더)`
+            }
+          </button>
         )}
       </div>
 

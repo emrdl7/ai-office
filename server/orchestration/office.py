@@ -2904,7 +2904,7 @@ class Office:
                     await self.event_bus.publish(LogEvent(
                       agent_id=reactor,
                       event_type='autonomous',
-                      message=react_text[:150],
+                      message=react_text,  # 전체 보존 — UI에서 접기/펴기
                     ))
                 except Exception:
                   logger.debug("자발적 활동 반응 실패: %s", reactor, exc_info=True)
@@ -2923,10 +2923,11 @@ class Office:
                 f'- 30자 이상, 구체 판단 포함. 없으면 [PASS]. 90%는 [PASS]가 정답.'
               ),
             )
-            text = teamlead_msg.strip().split('\n')[0].strip()
+            text = teamlead_msg.strip()
+            first_line = text.split('\n')[0].strip()
             if (
               text and '[PASS]' not in text.upper()
-              and len(text) >= 30
+              and len(first_line) >= 30
               and not any(p in text for p in (
                 '굿굿', '맞아요', '기대된', '즐겁게', '시너지', '커피', '점심', '날씨',
               ))
@@ -2934,7 +2935,7 @@ class Office:
               await self.event_bus.publish(LogEvent(
                 agent_id='teamlead',
                 event_type='autonomous',
-                message=text[:150],
+                message=text,  # 전체 보존
               ))
           except Exception:
             logger.debug("팀장 자발적 활동 실패", exc_info=True)
@@ -3113,11 +3114,12 @@ class Office:
             f'20자 이내, 메신저 톤, 마크다운 금지.'
           ),
         )
-        text = thanks.strip().split('\n')[0].strip()
+        text = thanks.strip()
+        first_line = text.split('\n')[0].strip()
         # 빈 답례 재차 필터 (LLM이 규칙 무시하고 내놓을 수 있음)
         if (
           text and '[PASS]' not in text.upper()
-          and len(text) >= 20
+          and len(first_line) >= 20
           and not any(p in text for p in (
             '감사합니다', '감사해요', '천만에', '기대에 부응', '화이팅', '파이팅',
             '좋습니다', '굿굿', '든든', '시너지',
@@ -3126,7 +3128,7 @@ class Office:
           await self.event_bus.publish(LogEvent(
             agent_id=agent_id,
             event_type='autonomous',
-            message=text[:100],
+            message=text,  # 전체 보존
           ))
         # 답례 마킹 (성공/스킵 모두 마킹하여 루프 방지)
         conn = sqlite3.connect(str(DB_PATH))

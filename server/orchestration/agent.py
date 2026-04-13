@@ -406,8 +406,7 @@ class Agent:
         return ''
       first_line = text.split('\n')[0].strip()
 
-      # 출력 검증: 빈 맞장구/할루시네이션 소재 자동 거부
-      low = first_line.lower()
+      # 출력 검증: 빈 맞장구/할루시네이션 소재 자동 거부 (전체 텍스트 기준)
       banned_phrases = [
         '굿굿', '맞아요', '좋네요', '좋아요', '든든하', '기대돼', '기대됩', '기대됨',
         '천만에', '감사합니다', '감사해요', '화이팅', '파이팅', '기대에 부응',
@@ -419,13 +418,13 @@ class Agent:
         '저희 회사', '저희 사무실', '우리 사무실',
       ]
       if len(first_line) < 20:
-        return ''  # 너무 짧은 한마디는 버림
-      if any(p in first_line for p in banned_phrases):
+        return ''  # 첫 줄이 너무 짧으면 버림
+      if any(p in text for p in banned_phrases):
         return ''
-      if any(h in first_line for h in banned_hallucinations):
+      if any(h in text for h in banned_hallucinations):
         return ''
 
-      return first_line[:150]
+      return text  # 전체 보존 — UI에서 접기/펴기로 처리
     except Exception:
       logger.debug("자발적 발언 생성 실패: %s", self.name, exc_info=True)
       return ''
