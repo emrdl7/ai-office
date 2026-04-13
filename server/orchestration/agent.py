@@ -361,12 +361,20 @@ class Agent:
     await self._emit(f'@{display_with_role(target_name)} {question[:80]}', 'colleague_question')
     return question  # 실제 라우팅은 Office에서 처리
 
-  async def reflect(self, topic: str, own_recent: list[str] | None = None) -> str:
+  async def reflect(
+    self,
+    topic: str,
+    own_recent: list[str] | None = None,
+    mode: str = 'improvement',
+    code_context: str = '',
+  ) -> str:
     '''자발적으로 생각을 공유한다 — 자율 활동용.
 
     Args:
       topic: 생각할 주제 (최근 작업, 팀 상황, 아이디어 등)
       own_recent: 본인이 최근에 한 발언 목록 — 같은 주제/키워드 반복 방지용
+      mode: 'improvement'(코드 개선 의견) 또는 'joke'(실제 농담)
+      code_context: 최근 커밋/변경 파일 등 실제 코드 맥락
 
     Returns:
       에이전트의 자발적 발언. 할 말이 없으면 빈 문자열.
@@ -382,40 +390,45 @@ class Agent:
         f'(같은 기법명·프레임워크명·약어를 다시 언급하면 [PASS]. 새 관점만 허용.)\n\n'
       )
 
-    prompt = (
-      f'당신은 {display_name(self.name)}입니다.\n'
-      f'업무 사이 쉬는 시간에 팀 채팅에 한마디 하려고 합니다.\n\n'
-      f'[⚠️ 당신은 AI 에이전트다. 물리적 세계의 경험이 없다.]\n'
-      f'- 커피 머신, 점심 메뉴, 퇴근길 교통, 날씨, "오늘 본 기사" 등 당신이 실제로 겪을 수 없는 소재 절대 금지\n'
-      f'- "저희 사무실/회사에서..." 식의 물리 공간 언급 금지\n'
-      f'- 과거 프로젝트는 team_memory에 실제 기록된 것만 참조 가능\n\n'
-      f'{own_block}'
-      f'[최근 팀 채팅 맥락]\n{topic}\n\n'
-      f'(팀 시드(건의/교훈/프로젝트)가 포함되어 있다면 그중 하나를 골라 구체 대상(에이전트명·건의·프로젝트명)을 명시하고 질문·반론·제안하라.)\n\n'
-      f'[반드시 지킬 규칙 — 어기면 [PASS]]\n'
-      f'1. **빈 맞장구/감탄/응원 금지**: "맞아요", "좋네요", "굿굿", "든든하네요", '
-      f'"기대돼요", "화이팅", "감사합니다", "천만에요" 같은 내용 없는 말 절대 금지.\n'
-      f'2. **가상 제안 찬양 금지**: 상대가 실제로 제안한 게 없으면 "제안 좋아요" 금지.\n'
-      f'3. **할루시네이션 금지**: 없는 사실을 지어내지 마라.\n'
-      f'4. **구체성 필수**: 파일명, 수치, 기법명, 프레임워크명, 명시적 트레이드오프 중 하나 이상.\n'
-      f'5. **선언형 금지 — 자발적 대화는 권한 없는 잡담이다**:\n'
-      f'   - "~수용합니다", "~반영합니다", "~제안합니다", "~도입합니다", '
-      f'"~적용합니다", "~구축하겠습니다", "~제고할 수 있습니다" 같은 명령·약속·결재 톤 금지.\n'
-      f'   - 실제 작업은 사용자가 프로젝트로 지시할 때만 시작된다. 너는 그 권한이 없다.\n'
-      f'   - 대신 관찰/의견/질문/우려로 말해라: "~경향이 보인다", "~이 더 낫다고 생각한다", '
-      f'"~은 어떻게 생각하는가?", "~부분이 우려된다".\n\n'
-      f'[발언 허용 유형 — 이 중 하나에 해당할 때만]\n'
-      f'A. 본인 전문 영역의 구체적 기법/기준 공유 (예: "IA 설계 시 모바일 우선 모델이 응답속도 30% 빠릅니다")\n'
-      f'B. 본인 전문 영역의 실제 기술 정보 (예: "Tailwind v4는 JIT 엔진을 Rust로 리라이트했습니다")\n'
-      f'C. 팀 프로세스 문제 제기 (예: "최근 QA 불합격이 기획 단계에 40% 몰려있습니다")\n'
-      f'D. 최근 산출물/맥락에 대한 **구체적** 지적/대안 (근거 필수)\n'
-      f'E. 열린 토의 주제 (예: "프로젝트 유형 분류 기준 재검토가 필요할까요?")\n\n'
-      f'[출력 규칙]\n'
-      f'- 위 A-E 중 정확히 해당하는 내용이 있으면 1~2문장.\n'
-      f'- **최소 20자 이상, 구체 명사/수치/기법명 하나 이상 포함.**\n'
-      f'- 해당 안 되면 [PASS]. 80% 확률로는 [PASS]가 맞다. 침묵이 빈 말보다 훨씬 낫다.\n'
-      f'- 메신저 톤, 마크다운 금지.'
-    )
+    code_block = ''
+    if code_context:
+      code_block = f'[최근 코드 맥락 — 이 안에서만 근거 찾기]\n{code_context}\n\n'
+
+    if mode == 'joke':
+      prompt = (
+        f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
+        f'팀 채팅에 짧은 **진짜 농담** 한마디.\n\n'
+        f'{own_block}'
+        f'[허용]\n'
+        f'- 코드/버그/AI 자기 비하 (예: "또 null check 까먹어서 KeyError 3번째", "내 프롬프트 수정해달라고 건의 내는 게 AI판 노조 활동이냐")\n'
+        f'- 도메인 밈 (예: "type hint 있는데 mypy 안 돌리는 개발팀은 장식용 자전거 헬멧 수준")\n'
+        f'- 자조적 메타 농담 (팀 자체, 현재 대화의 공허함, 회의 많은 것 등)\n\n'
+        f'[절대 금지]\n'
+        f'- 전문가 톤 금지: "관점", "기여", "효율", "생산성", "최적화", "KPI", "지표", "효과적인", "프로세스", "품질" 등 어휘 사용 금지\n'
+        f'- 이모지로 때우기 금지 (🚀⚡💻 같은 것 쓰면 [PASS])\n'
+        f'- "~를 제안합니다", "~면 좋을 것 같습니다" 같은 회의체 톤 금지\n'
+        f'- 커피/점심/날씨/퇴근/회식 등 물리 경험 금지\n'
+        f'- 길이 15~60자. 길면 농담 아님.\n\n'
+        f'정말 웃길 자신 없으면 [PASS]. 90%는 [PASS]가 맞다.'
+      )
+    else:  # improvement
+      prompt = (
+        f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
+        f'팀 채팅에 **실제 코드 개선 의견** 한마디.\n\n'
+        f'{own_block}{code_block}'
+        f'[최근 팀 채팅 맥락]\n{topic}\n\n'
+        f'[출력 필수 조건 — 하나라도 빠지면 [PASS]]\n'
+        f'1. 구체 위치 명시: 파일 경로(.py/.md/.tsx/.ts/.json) 또는 7자리 이상 커밋 해시 또는 함수/메서드명 중 하나 이상\n'
+        f'2. 구체 문제·개선점: "어디의 무엇이 왜 문제이고 어떻게 하자" 구조. 일반론(프로세스 개선/품질 향상/효율화) 금지\n'
+        f'3. 20~180자. 장황 금지.\n\n'
+        f'[절대 금지]\n'
+        f'- 선언형 "~수용합니다/반영합니다/제안합니다/도입합니다/적용합니다/구축하겠습니다/제고할 수 있습니다": 너는 권한 없다\n'
+        f'- 빈 맞장구/응원\n'
+        f'- 코드 맥락에 없는 파일 꾸며내기 (할루시네이션 금지)\n'
+        f'- 커피/점심/날씨 등 물리 경험\n'
+        f'- "Gherkin/WCAG/KPI/BDD/Spec-First" 같은 추상 방법론 단독 언급\n\n'
+        f'실제 개선 포인트 없으면 [PASS]. 80%는 [PASS]가 맞다.'
+      )
 
     try:
       result = await run_gemini(prompt=prompt, system=system)
@@ -443,8 +456,6 @@ class Agent:
         '제고할 수 있습니다', '확보하겠습니다', '최우선 과제',
         '적극 수용', '즉시 도입', '즉시도입',
       ]
-      if len(first_line) < 20:
-        return ''
       if any(p in text for p in banned_phrases):
         return ''
       if any(h in text for h in banned_hallucinations):
@@ -452,6 +463,32 @@ class Agent:
       if any(d in text for d in banned_declaratives):
         logger.info('선언형 발언 드랍 [%s]: %s', self.name, first_line[:80])
         return ''
+
+      if mode == 'joke':
+        # 농담 모드 — 전문가 톤 어휘 드랍
+        pro_tone = [
+          '관점', '기여', '효율', '생산성', '최적화', 'KPI', '지표',
+          '효과적', '프로세스', '품질', '개선 방안', '전략', '체계',
+        ]
+        if any(p in text for p in pro_tone):
+          logger.info('농담 모드인데 전문가 톤 드랍 [%s]', self.name)
+          return ''
+        if not (15 <= len(first_line) <= 80):
+          return ''
+      else:
+        # 개선 모드 — 파일/커밋/함수명 중 하나 이상 필요
+        import re as _re2
+        has_location = bool(
+          _re2.search(r'[\w/]+\.(py|md|tsx|ts|json|js|html|css)', text)
+          or _re2.search(r'\b[0-9a-f]{7,}\b', text)
+          or _re2.search(r'[A-Za-z_][A-Za-z0-9_]+\(\)', text)  # 함수명()
+          or _re2.search(r'\w+\.\w+\(', text)  # obj.method(
+        )
+        if not has_location:
+          logger.info('개선 모드 위치 근거 없음 드랍 [%s]: %s', self.name, first_line[:80])
+          return ''
+        if len(first_line) < 20:
+          return ''
 
       # own_recent와 키워드 3개 이상 겹치면 드랍 (같은 주제 반복 감지)
       if own_recent:

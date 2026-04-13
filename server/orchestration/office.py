@@ -2933,6 +2933,25 @@ class Office:
         num_speakers = random.choice([1, 1, 1, 2])  # 75% 확률로 1명
         speakers = random.sample(candidates, min(num_speakers, len(candidates)))
 
+        # 최근 코드 맥락 로드 — 개선 모드 시드용 (한 루프당 한 번만 계산)
+        code_ctx = ''
+        try:
+          import subprocess as _sp
+          from pathlib import Path as _P
+          root = _P(__file__).parent.parent.parent
+          log_out = _sp.run(
+            ['git', 'log', '--oneline', '-n', '8'],
+            cwd=str(root), capture_output=True, text=True, timeout=3,
+          ).stdout.strip()
+          diff_out = _sp.run(
+            ['git', 'diff', '--stat', 'HEAD~5..HEAD'],
+            cwd=str(root), capture_output=True, text=True, timeout=3,
+          ).stdout.strip()
+          if log_out or diff_out:
+            code_ctx = f'[최근 커밋]\n{log_out}\n\n[최근 5커밋 변경 파일]\n{diff_out[:2000]}'
+        except Exception:
+          pass
+
         first_reactor = ''
         for speaker_name in speakers:
           agent = self.agents.get(speaker_name)
@@ -2952,7 +2971,11 @@ class Office:
           except Exception:
             pass
 
-          message = await agent.reflect(topic, own_recent=own_recent)
+          # 70% 개선 모드, 30% 농담 모드
+          mode = 'joke' if random.random() < 0.3 else 'improvement'
+          message = await agent.reflect(
+            topic, own_recent=own_recent, mode=mode, code_context=code_ctx,
+          )
           if message:
             await self.event_bus.publish(LogEvent(
               agent_id=speaker_name,
