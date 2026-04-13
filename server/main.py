@@ -1030,7 +1030,8 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
         from db.suggestion_store import update_suggestion as _upd
         ok = await apply_suggestion(suggestion)
         if ok:
-          _upd(suggestion_id, status='done')
+          # 브랜치 준비됨 → 사용자 검토/병합 대기
+          _upd(suggestion_id, status='review_pending')
         else:
           _upd(suggestion_id, status='pending')
       asyncio.create_task(_run_patch())
@@ -1136,6 +1137,82 @@ async def delete_suggestion_api(suggestion_id: str):
   if not delete_suggestion(suggestion_id):
     raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다')
   return {'deleted': suggestion_id}
+
+
+# --- 자가개선 브랜치 검토/병합/폐기 ---
+
+def _run_git(args: list[str]) -> tuple[int, str]:
+  import subprocess
+  from pathlib import Path
+  root = Path(__file__).parent.parent
+  r = subprocess.run(['git'] + args, cwd=str(root), capture_output=True, text=True)
+  return r.returncode, (r.stdout + r.stderr).strip()
+
+
+@app.get('/api/suggestions/{suggestion_id}/branch')
+async def get_suggestion_branch_diff(suggestion_id: str):
+  '''improvement/{id} 브랜치의 diff + 파일 목록을 반환.'''
+  branch = f'improvement/{suggestion_id}'
+  code, _ = _run_git(['rev-parse', '--verify', branch])
+  if code != 0:
+    raise HTTPException(status_code=404, detail='브랜치가 존재하지 않습니다')
+  _, files = _run_git(['diff', '--name-only', f'main...{branch}'])
+  _, stat = _run_git(['diff', '--stat', f'main...{branch}'])
+  _, patch = _run_git(['diff', f'main...{branch}'])
+  return {
+    'branch': branch,
+    'files': files.splitlines() if files else [],
+    'stat': stat,
+    'diff': patch[:80000],  # 너무 크면 잘라냄
+  }
+
+
+@app.post('/api/suggestions/{suggestion_id}/branch/merge')
+async def merge_suggestion_branch(suggestion_id: str):
+  '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done.'''
+  from db.suggestion_store import update_suggestion, get_suggestion
+  branch = f'improvement/{suggestion_id}'
+  code, out = _run_git(['rev-parse', '--verify', branch])
+  if code != 0:
+    raise HTTPException(status_code=404, detail='브랜치가 존재하지 않습니다')
+  # 현재 브랜치가 main인지 확인
+  _, cur = _run_git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  if cur.strip() != 'main':
+    raise HTTPException(status_code=409, detail=f'현재 브랜치가 main이 아닙니다: {cur}')
+  code, out = _run_git(['merge', '--no-ff', '-m', f'merge: improvement/{suggestion_id}', branch])
+  if code != 0:
+    # 충돌 등 — 병합 중단
+    _run_git(['merge', '--abort'])
+    raise HTTPException(status_code=500, detail=f'병합 실패 — 수동 확인 필요: {out[:300]}')
+  # 병합 성공 → 브랜치 삭제 + 상태 done
+  _run_git(['branch', '-d', branch])
+  update_suggestion(suggestion_id, status='done')
+  suggestion = get_suggestion(suggestion_id)
+  from config.team import display_name
+  await event_bus.publish(LogEvent(
+    agent_id='teamlead',
+    event_type='response',
+    message=(
+      f'🔀 건의 #{suggestion_id} 브랜치 병합 완료 → main에 반영됐습니다.\n'
+      f'⚠️ 서버 재시작이 필요합니다 (Python 모듈 재로딩).'
+    ),
+  ))
+  return {'merged': True, 'suggestion_id': suggestion_id}
+
+
+@app.post('/api/suggestions/{suggestion_id}/branch/discard')
+async def discard_suggestion_branch(suggestion_id: str):
+  '''improvement/{id} 브랜치를 폐기하고 건의를 rejected로.'''
+  from db.suggestion_store import update_suggestion
+  branch = f'improvement/{suggestion_id}'
+  _run_git(['branch', '-D', branch])
+  update_suggestion(suggestion_id, status='rejected', response='브랜치 폐기')
+  await event_bus.publish(LogEvent(
+    agent_id='teamlead',
+    event_type='response',
+    message=f'🗑️ 건의 #{suggestion_id} 브랜치 폐기 — 변경사항 반영되지 않았습니다.',
+  ))
+  return {'discarded': True}
 
 
 # --- 자가개선 API ---

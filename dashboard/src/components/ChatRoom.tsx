@@ -778,13 +778,23 @@ function UserMessageText({ text }: { text: string }) {
       text-sm leading-relaxed">
       {linkify(display)}
       {isLong && (
+        <div className="flex justify-center mt-3 pt-2 border-t border-white/15">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="block mt-1.5 text-xs font-medium text-blue-100 hover:text-white
-            cursor-pointer transition-colors"
+          className="inline-flex items-center gap-1 px-3 py-1 rounded-full
+            bg-blue-500/40 hover:bg-blue-400/60 backdrop-blur-sm
+            text-[11px] font-medium text-blue-50 hover:text-white
+            cursor-pointer transition-all duration-150"
         >
-          {expanded ? '▲ 접기' : `▼ 더보기 (${text.length - PREVIEW}자 더)`}
+          <span>{expanded ? '접기' : `${text.length - PREVIEW}자 더 보기`}</span>
+          <svg
+            className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
+        </div>
       )}
     </div>
   )
@@ -861,16 +871,26 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
           <span className="text-gray-700 dark:text-gray-300">{linkify(displayContent)}</span>
         )}
         {isLong && (
+          <div className="flex justify-center mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="mt-1.5 text-xs font-medium text-blue-600 dark:text-blue-400
-              hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer transition-colors"
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full
+              bg-gray-100 hover:bg-gray-200 dark:bg-gray-700/60 dark:hover:bg-gray-700
+              text-[11px] font-medium text-gray-600 hover:text-gray-800
+              dark:text-gray-300 dark:hover:text-gray-100
+              cursor-pointer transition-all duration-150"
           >
-            {expanded
-              ? '▲ 접기'
-              : `▼ 더보기 (${content.length - COLLAPSED_PREVIEW}자 더)`
-            }
+            <span>
+              {expanded ? '접기' : `${content.length - COLLAPSED_PREVIEW}자 더 보기`}
+            </span>
+            <svg
+              className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
           </button>
+          </div>
         )}
       </div>
 

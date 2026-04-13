@@ -24,6 +24,7 @@ const TYPE_BADGE: Record<string, { icon: string; label: string; color: string }>
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   pending: { text: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
   accepted: { text: '처리 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
+  review_pending: { text: '검토 대기', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
   rejected: { text: '반려', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   done: { text: '반영 완료', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 }
@@ -61,6 +62,36 @@ export function SuggestionModal() {
     const timer = setInterval(() => fetchSuggestions(), 3000)
     return () => clearInterval(timer)
   }, [suggestions])
+
+  const [branchDiff, setBranchDiff] = useState<{ id: string; stat: string; diff: string; files: string[] } | null>(null)
+
+  async function loadBranchDiff(id: string) {
+    try {
+      const r = await fetch(`/api/suggestions/${id}/branch`)
+      if (!r.ok) { alert('브랜치 정보를 가져올 수 없습니다'); return }
+      const data = await r.json()
+      setBranchDiff({ id, stat: data.stat, diff: data.diff, files: data.files || [] })
+    } catch { alert('네트워크 오류') }
+  }
+
+  async function mergeBranch(id: string) {
+    if (!confirm(`improvement/${id} 브랜치를 main으로 병합합니다. 계속할까요?\n(병합 후 서버 재시작이 필요합니다)`)) return
+    const r = await fetch(`/api/suggestions/${id}/branch/merge`, { method: 'POST' })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: '알 수 없는 오류' }))
+      alert('병합 실패: ' + (err.detail || ''))
+      return
+    }
+    setBranchDiff(null)
+    fetchSuggestions()
+  }
+
+  async function discardBranch(id: string) {
+    if (!confirm(`improvement/${id} 브랜치를 폐기합니다 (변경사항 버림). 계속할까요?`)) return
+    await fetch(`/api/suggestions/${id}/branch/discard`, { method: 'POST' })
+    setBranchDiff(null)
+    fetchSuggestions()
+  }
 
   async function handleStatusChange(id: string, status: string, response: string = '') {
     await fetch(`/api/suggestions/${id}`, {
@@ -194,8 +225,11 @@ export function SuggestionModal() {
                                   e.stopPropagation()
                                   const isCode = s.suggestion_type === 'code'
                                   if (isCode && !confirm(
-                                    '이 건의는 실제 프로젝트 코드 수정이 필요한 것으로 분류됐습니다.\n' +
-                                    'Claude CLI가 improvement 브랜치에서 소스를 수정합니다. 계속할까요?'
+                                    '이 건의는 코드 수정이 필요한 것으로 분류됐습니다.\n\n' +
+                                    '1) Claude가 improvement 브랜치에서 코드 수정\n' +
+                                    '2) 수정 완료되면 "검토 대기" 상태로 전환\n' +
+                                    '3) 사용자가 변경사항 확인 → 병합/폐기 결정\n\n' +
+                                    '계속할까요?'
                                   )) return
                                   handleStatusChange(s.id, 'accepted', comment)
                                 }}
@@ -203,7 +237,7 @@ export function SuggestionModal() {
                                   hover:bg-green-600 cursor-pointer transition-colors"
                                 title={
                                   s.suggestion_type === 'code'
-                                    ? 'Claude가 코드 수정 → improvement/{id} 브랜치'
+                                    ? 'Claude가 코드 수정 → 검토 대기 (병합은 별도 승인)'
                                     : '에이전트 프롬프트 + 팀 메모리에 즉시 반영'
                                 }
                               >
@@ -215,6 +249,32 @@ export function SuggestionModal() {
                                   hover:bg-red-600 cursor-pointer transition-colors"
                               >
                                 반려
+                              </button>
+                            </>
+                          )}
+                          {s.status === 'review_pending' && (
+                            <>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); loadBranchDiff(s.id) }}
+                                className="text-xs px-3 py-1 rounded-lg bg-purple-500 text-white
+                                  hover:bg-purple-600 cursor-pointer transition-colors"
+                              >
+                                🔍 변경사항 보기
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); mergeBranch(s.id) }}
+                                className="text-xs px-3 py-1 rounded-lg bg-green-500 text-white
+                                  hover:bg-green-600 cursor-pointer transition-colors"
+                                title="main 브랜치로 병합 (재시작 필요)"
+                              >
+                                🔀 병합
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); discardBranch(s.id) }}
+                                className="text-xs px-3 py-1 rounded-lg bg-red-500 text-white
+                                  hover:bg-red-600 cursor-pointer transition-colors"
+                              >
+                                🗑️ 폐기
                               </button>
                             </>
                           )}
@@ -236,6 +296,68 @@ export function SuggestionModal() {
           )}
         </div>
       </div>
+      {branchDiff && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
+          onClick={() => setBranchDiff(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-[92vw] max-w-4xl
+              max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                  🌿 improvement/{branchDiff.id}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {branchDiff.files.length}개 파일 변경
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => mergeBranch(branchDiff.id)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-green-500 text-white hover:bg-green-600 cursor-pointer"
+                >
+                  🔀 병합
+                </button>
+                <button
+                  onClick={() => discardBranch(branchDiff.id)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 cursor-pointer"
+                >
+                  🗑️ 폐기
+                </button>
+                <button
+                  onClick={() => setBranchDiff(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <pre className="text-xs bg-gray-50 dark:bg-gray-800 p-3 rounded-lg
+                text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{branchDiff.stat}</pre>
+              <pre className="text-xs bg-gray-900 dark:bg-black text-gray-100 p-3 rounded-lg
+                overflow-x-auto whitespace-pre leading-relaxed font-mono">
+{branchDiff.diff.split('\n').map((line, i) => {
+  const cls = line.startsWith('+') && !line.startsWith('+++')
+    ? 'text-green-400'
+    : line.startsWith('-') && !line.startsWith('---')
+      ? 'text-red-400'
+      : line.startsWith('@@')
+        ? 'text-cyan-400'
+        : line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('+++') || line.startsWith('---')
+          ? 'text-gray-500'
+          : 'text-gray-200'
+  return <div key={i} className={cls}>{line || ' '}</div>
+})}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
