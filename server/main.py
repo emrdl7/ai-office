@@ -1045,14 +1045,23 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
     try:
       from memory.agent_memory import AgentMemory, MemoryRecord
       from datetime import datetime as _dt, timezone as _tz
+      reject_reason = (suggestion.get('response') or '').strip()
+      reason_suffix = f' — 반려 이유: {reject_reason}' if reject_reason else ''
       AgentMemory(suggestion['agent_id']).record(MemoryRecord(
         task_id=f'suggestion-{suggestion_id}',
         task_type='suggestion_rejected',
         success=False,
-        feedback=f'건의 반려됨 — 유사 건의 반복 금지: "{suggestion["title"]}"',
+        feedback=f'건의 반려됨 — 유사 건의 반복 금지: "{suggestion["title"]}"{reason_suffix}',
         tags=['suggestion_rejected', suggestion.get('category', 'general')],
         timestamp=_dt.now(_tz.utc).isoformat(),
       ))
+      if reject_reason:
+        from config.team import display_name as _dn
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead',
+          event_type='response',
+          message=f'❌ {_dn(suggestion["agent_id"])}의 건의 "{suggestion["title"][:40]}" 반려\n💬 이유: {reject_reason[:200]}',
+        ))
     except Exception:
       logger.debug('반려 메모리 기록 실패', exc_info=True)
 
@@ -1070,7 +1079,9 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
   title = suggestion['title']
   content = suggestion['content']
   category = suggestion.get('category', 'general')
+  user_comment = (suggestion.get('response') or '').strip()
   now_iso = datetime.now(timezone.utc).isoformat()
+  comment_suffix = f'\n[사용자 코멘트] {user_comment}' if user_comment else ''
 
   # 1. 팀 공유 메모리에 교훈으로 등록 → 모든 에이전트 시스템 프롬프트에 자동 주입
   try:
@@ -1078,7 +1089,7 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
       id=f'suggestion-{sid}',
       project_title='건의 수용',
       agent_name=agent_id,
-      lesson=f'{title} — {content[:200]}',
+      lesson=f'{title} — {content[:200]}{comment_suffix}',
       category='process_improvement',
       timestamp=now_iso,
     ))
@@ -1094,8 +1105,8 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
       created_at=now_iso,
       source='manual',
       category=category,
-      rule=f'{title}: {content[:300]}',
-      evidence=f'사용자 승인된 건의 #{sid}',
+      rule=f'{title}: {content[:300]}{comment_suffix}',
+      evidence=f'사용자 승인된 건의 #{sid}' + (f' — {user_comment[:120]}' if user_comment else ''),
       priority='high',
       active=True,
     ))
@@ -1107,12 +1118,13 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
 
   # 3. 채팅에 공지
   from config.team import display_name
+  comment_line = f'\n💬 코멘트: {user_comment[:200]}' if user_comment else ''
   await event_bus.publish(LogEvent(
     agent_id='teamlead',
     event_type='response',
     message=(
       f'✅ {display_name(agent_id)}의 건의 "{title[:40]}" 수용 → '
-      f'팀 메모리 + 에이전트 프롬프트에 즉시 반영했습니다.'
+      f'팀 메모리 + 에이전트 프롬프트에 즉시 반영했습니다.{comment_line}'
     ),
   ))
 

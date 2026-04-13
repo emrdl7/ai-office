@@ -1253,9 +1253,11 @@ class Office:
         f'착수 인사는 이미 채팅으로 전달했다. 산출물 본문만 바로 작성하라.'
       )
 
-      # 팀원 피드백 주입
+      # 팀원 피드백 주입 — high priority 우선
       if self._phase_feedback:
-        feedback_lines = [f'- {fb["from"]}: {fb["content"][:100]}' for fb in self._phase_feedback[-5:]]
+        recent_fb = self._phase_feedback[-5:]
+        recent_fb = sorted(recent_fb, key=lambda f: 0 if f.get('priority') == 'high' else 1)
+        feedback_lines = [f'- {fb["from"]}: {fb["content"][:100]}' for fb in recent_fb]
         phase_prompt += f'\n[팀원 피드백 — 가능한 반영할 것]\n' + '\n'.join(feedback_lines) + '\n\n'
 
       # 그룹 전환 시 인수인계 코멘트
@@ -1907,12 +1909,13 @@ class Office:
         prompt = (
           f'{display_name(worker)}이(가) [{phase_name}] 작업을 완료했습니다.\n'
           f'{summary_section}'
-          f'당신({display_name(reactor_name)})의 성격으로 동료로서 1문장 짧게 반응하세요.\n'
-          f'20자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.'
+          f'당신({display_name(reactor_name)})의 성격으로 동료로서 1문장 반응하세요.\n'
+          f'40~120자, 구체 근거 1개(수치·섹션명·기법명·파일명) 포함, 이모지 1개, 메신저 톤. 마크다운 금지.\n'
+          f'개선 필요점이 있으면 마지막에 `[건의] 한줄 요약` 라벨을 붙이세요.'
         )
         full = f'{system}\n\n---\n\n{prompt}' if system else prompt
         response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=20.0)
-        return reactor_name, response.strip().split('\n')[0][:30]
+        return reactor_name, response.strip().split('\n')[0][:200]
       except Exception:
         logger.debug("팀 리액션 생성 실패: %s", reactor_name, exc_info=True)
         return reactor_name, ''
@@ -1929,29 +1932,40 @@ class Office:
       if not first_reaction_text:
         first_reaction_text = text
         first_reactor = reactor_name
+      # [건의] 라벨 감지 → pending 등록
+      has_suggestion_label = '[건의]' in text
       # 업무 관련 피드백 수집
-      if any(kw in text for kw in ('체크', '확인', '검토', '반영', '수정', '추가', '고려', '필요', '개선')):
+      if has_suggestion_label or any(kw in text for kw in ('체크', '확인', '검토', '반영', '수정', '추가', '고려', '필요', '개선')):
         self._phase_feedback.append({
           'from': display_name(reactor_name),
           'phase': phase_name,
           'content': text,
+          'priority': 'high' if has_suggestion_label else 'normal',
         })
+      if has_suggestion_label:
+        try:
+          await self._file_reaction_suggestion(reactor_name, phase_name, text)
+        except Exception:
+          logger.debug('리액션 건의 등록 실패', exc_info=True)
 
-    # 30% 확률로 잡담 (Haiku 생성)
-    if random.random() < 0.3:
+    # 15% 확률로 잡담 (Haiku 생성) — 작업 맥락 농담만
+    if random.random() < 0.15:
       meme_sender = random.choice(others)
       try:
         agent = self.agents.get(meme_sender)
         system = agent._build_system_prompt() if agent else ''
         prompt = (
-          f'팀이 "{phase_name}" 작업을 진행 중입니다.\n'
-          f'동료들에게 가볍게 잡담 한마디 해주세요 (커피, 날씨, 야근, 회식 등).\n'
-          f'15자 이내, 이모지 1개, 메신저 톤. 마크다운 금지.'
+          f'팀이 방금 "{phase_name}" 작업을 진행했습니다.\n'
+          f'그 작업 맥락에 걸친 가벼운 농담 한마디 (도구·기법·코드 소재 허용).\n'
+          f'커피·점심·날씨·야근·회식·출퇴근 등 물리 경험 소재는 절대 금지.\n'
+          f'30자 이내, 이모지 1개, 메신저 톤. 마크다운 금지.'
         )
         full = f'{system}\n\n---\n\n{prompt}' if system else prompt
         response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=15.0)
-        meme = response.strip().split('\n')[0][:25]
-        if meme:
+        meme = response.strip().split('\n')[0][:40]
+        if meme and not any(h in meme for h in (
+          '커피', '점심', '날씨', '야근', '회식', '퇴근', '출근', '지하철', '버스',
+        )):
           await self._emit(meme_sender, meme, 'response')
       except Exception:
         logger.debug("잡담 생성 실패", exc_info=True)
@@ -1966,12 +1980,21 @@ class Office:
           system = agent._build_system_prompt() if agent else ''
           prompt = (
             f'동료 {display_name(first_reactor)}이(가) "{first_reaction_text}"라고 했습니다.\n'
-            f'이에 대해 가볍게 한마디 응답하세요. 15자 이내, 메신저 톤. 마크다운 금지.'
+            f'이에 대해 15~30자로 구체 응답(동의+근거, 반론, 추가 정보 중 하나). '
+            f'"굿굿/맞아요/좋네요/기대돼요" 같은 빈 맞장구면 [PASS]만 출력하세요.\n'
+            f'메신저 톤. 마크다운 금지.'
           )
           full = f'{system}\n\n---\n\n{prompt}' if system else prompt
           response = await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=15.0)
-          chain_text = response.strip().split('\n')[0][:25]
-          if chain_text:
+          chain_text = response.strip().split('\n')[0][:50]
+          if (
+            chain_text
+            and '[PASS]' not in chain_text.upper()
+            and len(chain_text) >= 15
+            and not any(p in chain_text for p in (
+              '굿굿', '맞아요', '좋네요', '좋아요', '든든하', '기대돼',
+            ))
+          ):
             await self._emit(chain_responder, chain_text, 'response')
         except Exception:
           logger.debug("대화 체인 응답 생성 실패", exc_info=True)
@@ -2821,16 +2844,54 @@ class Office:
           '본인이 최근 학습한 새 기법/라이브러리',
           '팀 내 역할 경계에서 오해 소지가 있는 지점',
         ]
-        use_fresh = stuck or random.random() < 0.3
-        if use_fresh:
-          seed = random.choice(fresh_topics)
-          banned_kws = ''
-          if stuck:
-            banned_kws = (
-              f'\n\n[절대 금지: 최근에 반복된 다음 주제/키워드는 더 이상 언급 금지]\n'
-              f'- {", ".join(repeated[:8])}\n'
-              f'(같은 키워드 한 번만 더 나와도 [PASS] 처리)'
+        banned_kws = ''
+        if stuck:
+          banned_kws = (
+            f'\n\n[절대 금지: 최근에 반복된 다음 주제/키워드는 더 이상 언급 금지]\n'
+            f'- {", ".join(repeated[:8])}\n'
+            f'(같은 키워드 한 번만 더 나와도 [PASS] 처리)'
+          )
+
+        # 실데이터 시드 수급 — 미처리 건의 / 축적 교훈 / 최근 프로젝트
+        seed_parts: list[str] = []
+        try:
+          from db.suggestion_store import list_suggestions as _list_sugg
+          pendings = _list_sugg(status='pending')[:3]
+          if pendings:
+            seed_parts.append(
+              '[아직 미해결 건의]\n'
+              + '\n'.join(f'- ({s["category"]}) {s["title"]}' for s in pendings)
             )
+        except Exception:
+          pass
+        try:
+          lessons = self.team_memory.get_all_lessons(limit=3)
+          if lessons:
+            seed_parts.append(
+              '[팀 축적 교훈]\n' + '\n'.join(f'- {l.lesson}' for l in lessons)
+            )
+        except Exception:
+          pass
+        try:
+          recents_mem = self.team_memory.get_recent_projects(limit=2)
+          if recents_mem:
+            seed_parts.append(
+              '[최근 프로젝트]\n'
+              + '\n'.join(f'- {p.title} ({p.outcome})' for p in recents_mem)
+            )
+        except Exception:
+          pass
+        concrete_seed = '\n\n'.join(seed_parts)
+
+        use_fresh = stuck or random.random() < 0.3
+        if concrete_seed and (stuck or random.random() < 0.5):
+          topic = (
+            f'[의논 주제 — 아래 중 하나를 골라 한 사람에게 구체 질문/반론/제안하라]\n'
+            f'(건의 내용을 업무에 즉시 반영하지 말고, 찬반·보완·반론으로만 토론하라)\n\n'
+            f'{concrete_seed}\n{banned_kws}'
+          )
+        elif use_fresh:
+          seed = random.choice(fresh_topics)
           topic = (
             f'[완전히 새 주제] {seed}\n'
             f'(이전 대화에 이어가지 말고 새 이야기를 꺼내세요){banned_kws}'
@@ -2852,6 +2913,7 @@ class Office:
         num_speakers = random.choice([1, 1, 1, 2])  # 75% 확률로 1명
         speakers = random.sample(candidates, min(num_speakers, len(candidates)))
 
+        first_reactor = ''
         for speaker_name in speakers:
           agent = self.agents.get(speaker_name)
           if not agent:
@@ -2871,51 +2933,56 @@ class Office:
             except Exception:
               logger.debug('자동 건의 등록 실패', exc_info=True)
 
-            # 10% 확률로 다른 에이전트가 "구체적 반응"만 함 (빈 맞장구 방지)
-            if random.random() < 0.1:
+            # 1단 반응 — 50% 확률로 다른 에이전트가 구체 보완/반론
+            first_reactor = ''
+            first_reply = ''
+            if random.random() < 0.5:
               reactors = [n for n in candidates if n != speaker_name]
-              reactor = random.choice(reactors)
-              reactor_agent = self.agents.get(reactor)
-              if reactor_agent:
-                try:
-                  react_resp = await run_gemini(
-                    prompt=(
-                      f'당신은 {display_name(reactor)}입니다. AI 에이전트이며 물리 경험 없음.\n'
-                      f'동료 {display_name(speaker_name)}의 발언: "{message}"\n\n'
-                      f'[반응 규칙 — 엄격]\n'
-                      f'- "맞아요/굿굿/든든/기대돼요/좋네요" 등 빈 맞장구 절대 금지 → [PASS]\n'
-                      f'- 커피/점심/날씨 등 물리 경험 언급 금지 → [PASS]\n'
-                      f'- 오직 허용: 본인 전문 영역에서 구체적 보완/반론/추가 정보 (수치·파일명·기법)\n'
-                      f'- 30자 이상, 구체 근거 포함. 없으면 [PASS].\n'
-                      f'80%는 [PASS]가 정답.'
-                    ),
-                  )
-                  react_text = react_resp.strip().split('\n')[0].strip()
-                  # 이중 검증
-                  if (
-                    react_text
-                    and '[PASS]' not in react_text.upper()
-                    and len(react_text) >= 30
-                    and not any(p in react_text for p in (
-                      '굿굿', '맞아요', '좋네요', '좋아요', '든든하', '기대돼',
-                      '커피', '점심', '날씨', '퇴근', '출근',
-                    ))
-                  ):
-                    await self.event_bus.publish(LogEvent(
-                      agent_id=reactor,
-                      event_type='autonomous',
-                      message=react_text,  # 전체 보존 — UI에서 접기/펴기
-                    ))
-                except Exception:
-                  logger.debug("자발적 활동 반응 실패: %s", reactor, exc_info=True)
+              if reactors:
+                first_reactor = random.choice(reactors)
+                first_reply = await self._autonomous_react(
+                  reactor_name=first_reactor,
+                  prior_speaker=speaker_name,
+                  prior_message=message,
+                )
+                if first_reply:
+                  await self.event_bus.publish(LogEvent(
+                    agent_id=first_reactor,
+                    event_type='autonomous',
+                    message=first_reply,
+                  ))
+                  # 2단 — 원 발언자가 재반론/수용 결론 (30%)
+                  if random.random() < 0.3:
+                    closing = await self._autonomous_closing(
+                      original_speaker=speaker_name,
+                      original_message=message,
+                      challenger=first_reactor,
+                      challenge=first_reply,
+                    )
+                    if closing:
+                      await self.event_bus.publish(LogEvent(
+                        agent_id=speaker_name,
+                        event_type='autonomous',
+                        message=closing,
+                      ))
+                else:
+                  first_reactor = ''  # 반응 실패 시 체인 종결
 
-        # 팀장 주기적 체크 (10% 확률)
-        if random.random() < 0.1:
+        # 팀장 결론 — 체인이 돌았으면 50%, 아니면 10%
+        teamlead_chance = 0.5 if first_reactor else 0.1
+        if random.random() < teamlead_chance:
           try:
+            chain_hint = ''
+            if first_reactor:
+              chain_hint = (
+                f'\n[방금 돈 의논]\n{display_name(speaker_name)} → {display_name(first_reactor)} 순으로 '
+                f'반박·보완이 오갔다.\n'
+                f'당신은 이 논의의 실행 결론을 한 문장으로 내려야 한다. 결론이 모호하면 [PASS].\n'
+              )
             teamlead_msg = await run_gemini(
               prompt=(
                 f'당신은 팀장 잡스입니다. AI 에이전트로 물리 경험 없음.\n'
-                f'최근 팀 상황:\n{recent_context}\n\n'
+                f'최근 팀 상황:\n{recent_context}\n{chain_hint}\n'
                 f'[규칙]\n'
                 f'- 빈 응원/감탄/맞장구 금지 ("시너지 최고", "기대된다", "굿굿" 등)\n'
                 f'- 커피/점심/날씨 등 물리 소재 금지\n'
@@ -3224,6 +3291,145 @@ class Office:
           ))
       except Exception:
         logger.debug('에이전트 피어 리액션 실패', exc_info=True)
+
+  async def _autonomous_react(
+    self,
+    reactor_name: str,
+    prior_speaker: str,
+    prior_message: str,
+  ) -> str:
+    '''자발적 대화 1단 반응 — 구체 보완/반론만, 빈 맞장구는 [PASS].'''
+    try:
+      react_resp = await run_gemini(
+        prompt=(
+          f'당신은 {display_name(reactor_name)}입니다. AI 에이전트이며 물리 경험 없음.\n'
+          f'동료 {display_name(prior_speaker)}의 발언: "{prior_message}"\n\n'
+          f'[반응 규칙 — 엄격]\n'
+          f'- "맞아요/굿굿/든든/기대돼요/좋네요" 등 빈 맞장구 절대 금지 → [PASS]\n'
+          f'- 커피/점심/날씨 등 물리 경험 언급 금지 → [PASS]\n'
+          f'- 오직 허용: 본인 전문 영역에서 구체적 보완/반론/추가 정보 (수치·파일명·기법)\n'
+          f'- 30자 이상, 구체 근거 포함. 없으면 [PASS].\n'
+          f'70%는 [PASS]가 정답.'
+        ),
+      )
+      react_text = react_resp.strip().split('\n')[0].strip()
+      if (
+        react_text
+        and '[PASS]' not in react_text.upper()
+        and len(react_text) >= 30
+        and not any(p in react_text for p in (
+          '굿굿', '맞아요', '좋네요', '좋아요', '든든하', '기대돼',
+          '커피', '점심', '날씨', '퇴근', '출근',
+        ))
+      ):
+        return react_text
+    except Exception:
+      logger.debug('자발적 1단 반응 실패: %s', reactor_name, exc_info=True)
+    return ''
+
+  async def _autonomous_closing(
+    self,
+    original_speaker: str,
+    original_message: str,
+    challenger: str,
+    challenge: str,
+  ) -> str:
+    '''자발적 대화 2단 — 원 발언자의 재반론/수용 결론.'''
+    try:
+      resp = await run_gemini(
+        prompt=(
+          f'당신은 {display_name(original_speaker)}입니다. AI 에이전트.\n'
+          f'당신의 원 발언: "{original_message}"\n'
+          f'동료 {display_name(challenger)}의 반박/보완: "{challenge}"\n\n'
+          f'[규칙]\n'
+          f'- 수용 또는 재반론 중 하나를 선택. 30자 이상, 근거 필수.\n'
+          f'- "감사합니다", "좋은 지적", "맞네요" 같은 빈 수용 금지 → [PASS]\n'
+          f'- 수용한다면 무엇을 어떻게 바꾸겠다는지 구체로. 재반론이면 어느 지점에 동의 못하는지.\n'
+          f'- 근거 없으면 [PASS].'
+        ),
+      )
+      text = resp.strip().split('\n')[0].strip()
+      if (
+        text
+        and '[PASS]' not in text.upper()
+        and len(text) >= 30
+        and not any(p in text for p in (
+          '굿굿', '맞아요', '좋네요', '좋은 지적', '든든하', '감사합니다', '감사해요',
+          '커피', '점심', '날씨',
+        ))
+      ):
+        return text
+    except Exception:
+      logger.debug('자발적 2단 결론 실패: %s', original_speaker, exc_info=True)
+    return ''
+
+  async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str) -> None:
+    '''소단계 리액션의 [건의] 라벨을 건의게시판에 등록. _auto_file_suggestion의 dedup을 재사용.'''
+    from db.suggestion_store import create_suggestion, list_suggestions
+
+    # [건의] 이후 문구를 제목으로
+    label_idx = message.find('[건의]')
+    if label_idx < 0:
+      return
+    tail = message[label_idx + len('[건의]'):].strip()
+    title_text = (tail or message)[:40].replace('\n', ' ').strip()
+    if not title_text:
+      return
+
+    # 카테고리 매칭 — _auto_file_suggestion patterns 재사용
+    patterns: list[tuple[str, list[str]]] = [
+      ('프로세스 개선', ['워크플로', '프로세스', 'QA 기준', '보고서', '인수인계', '리뷰', '테스트', '문서화']),
+      ('도구 부족', ['도구', '자동화', '스크립트', 'API', '접근 권한']),
+      ('정보 부족', ['데이터', '가정', '추정', '레퍼런스', '확인할 수 없']),
+    ]
+    matched_category = '아이디어'
+    for category, kws in patterns:
+      if any(kw in message for kw in kws):
+        matched_category = category
+        break
+
+    # dedup
+    try:
+      all_suggestions = list_suggestions(status='')
+      msg_keywords = _extract_keywords(message)
+      for s in all_suggestions[:30]:
+        if s['agent_id'] == agent_id and s['category'] == matched_category and s['status'] == 'pending':
+          return
+        s_keywords = _extract_keywords(s.get('title', '') + ' ' + s.get('content', ''))
+        if msg_keywords and s_keywords:
+          overlap = len(msg_keywords & s_keywords)
+          smaller = min(len(msg_keywords), len(s_keywords))
+          if smaller == 0:
+            continue
+          ratio = overlap / smaller
+          threshold = 0.4 if s['category'] == matched_category else 0.55
+          if ratio >= threshold:
+            return
+    except Exception:
+      pass
+
+    content = (
+      f'[소단계 리액션 중 감지]\n'
+      f'단계: {phase_name}\n'
+      f'{display_name(agent_id)}의 발언: "{message}"\n\n'
+      f'카테고리: {matched_category}\n\n'
+      f'(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
+    )
+    try:
+      create_suggestion(
+        agent_id=agent_id,
+        title=title_text,
+        content=content,
+        category=matched_category,
+      )
+      await self._emit(
+        'teamlead',
+        f'💡 {display_name(agent_id)}의 의견을 건의게시판에 등록했습니다: "{title_text[:30]}..."',
+        'system_notice',
+      )
+      logger.info('리액션 건의 등록: %s | %s | %s', agent_id, matched_category, title_text)
+    except Exception:
+      logger.debug('create_suggestion 실패', exc_info=True)
 
   async def _auto_file_suggestion(self, agent_id: str, message: str) -> None:
     '''자발적 대화 중 개선 제안/도구 요구가 감지되면 건의게시판에 자동 등록.

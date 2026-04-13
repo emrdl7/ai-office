@@ -41,6 +41,7 @@ export function SuggestionModal() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Suggestion | null>(null)
+  const [comment, setComment] = useState('')
 
   const fetchSuggestions = () =>
     fetch('/api/suggestions')
@@ -61,13 +62,14 @@ export function SuggestionModal() {
     return () => clearInterval(timer)
   }, [suggestions])
 
-  async function handleStatusChange(id: string, status: string) {
+  async function handleStatusChange(id: string, status: string, response: string = '') {
     await fetch(`/api/suggestions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, response }),
     })
-    setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)))
+    setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status, response } : s)))
+    setComment('')
   }
 
   async function handleDelete(id: string) {
@@ -123,7 +125,10 @@ export function SuggestionModal() {
                         ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/20'
                         : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
                       }`}
-                    onClick={() => setSelected(isExpanded ? null : s)}
+                    onClick={() => {
+                      setSelected(isExpanded ? null : s)
+                      setComment('')
+                    }}
                   >
                     {/* 요약 행 */}
                     <div className="flex items-center gap-2 px-4 py-3">
@@ -159,6 +164,28 @@ export function SuggestionModal() {
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 whitespace-pre-wrap">
                           {s.content}
                         </p>
+                        {s.response && s.status !== 'pending' && (
+                          <div className="mb-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                              {s.status === 'rejected' ? '반려 이유' : '승인 코멘트'}
+                            </p>
+                            <p className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                              {s.response}
+                            </p>
+                          </div>
+                        )}
+                        {s.status === 'pending' && (
+                          <textarea
+                            value={comment}
+                            onChange={(e) => setComment(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="승인 코멘트 / 반려 이유 (선택) — 에이전트 프롬프트·메모리에 함께 반영됩니다"
+                            className="w-full mb-3 px-3 py-2 text-xs rounded-lg border border-gray-200
+                              dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700
+                              dark:text-gray-200 placeholder-gray-400 resize-y min-h-[52px]
+                              focus:outline-none focus:border-blue-400 dark:focus:border-blue-600"
+                          />
+                        )}
                         <div className="flex gap-2">
                           {s.status === 'pending' && (
                             <>
@@ -170,7 +197,7 @@ export function SuggestionModal() {
                                     '이 건의는 실제 프로젝트 코드 수정이 필요한 것으로 분류됐습니다.\n' +
                                     'Claude CLI가 improvement 브랜치에서 소스를 수정합니다. 계속할까요?'
                                   )) return
-                                  handleStatusChange(s.id, 'accepted')
+                                  handleStatusChange(s.id, 'accepted', comment)
                                 }}
                                 className="text-xs px-3 py-1 rounded-lg bg-green-500 text-white
                                   hover:bg-green-600 cursor-pointer transition-colors"
@@ -183,7 +210,7 @@ export function SuggestionModal() {
                                 승인
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'rejected') }}
+                                onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'rejected', comment) }}
                                 className="text-xs px-3 py-1 rounded-lg bg-red-500 text-white
                                   hover:bg-red-600 cursor-pointer transition-colors"
                               >

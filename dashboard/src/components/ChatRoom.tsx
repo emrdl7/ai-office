@@ -627,17 +627,29 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
 
     // 에이전트 메시지 (왼쪽)
     const isResponse = log.event_type === 'response' || log.event_type === 'autonomous' || log.event_type === 'colleague_question'
+    const isAutonomousMsg = log.event_type === 'autonomous'
     if (isNewGroup) {
       elements.push(
         <div key={log.id ?? i} className="flex gap-2 md:gap-3 py-1.5">
-          <div className="flex-shrink-0 mt-0.5">
-            <div className={`w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br ${profile.color}
+          <div className="flex-shrink-0 mt-0.5 relative self-start w-8 h-8 md:w-9 md:h-9">
+            <div className={`w-full h-full rounded-full bg-gradient-to-br ${profile.color}
               flex items-center justify-center shadow-sm overflow-hidden`}>
               {AVATAR_IMG[log.agent_id]
                 ? <img src={AVATAR_IMG[log.agent_id]} alt={profile.character}
                     className="w-full h-full object-cover" loading="lazy" />
                 : <span className="text-white text-xs font-bold">{profile.name[0]}</span>}
             </div>
+            {isAutonomousMsg && (
+              <span
+                title="자발적 발언"
+                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full
+                  bg-white dark:bg-gray-900 border border-indigo-300
+                  dark:border-indigo-600 flex items-center justify-center
+                  text-[10px] leading-none shadow-sm select-none"
+              >
+                <span className="scale-75">💭</span>
+              </span>
+            )}
           </div>
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
             <div className="flex items-baseline gap-2 mb-0.5">
@@ -822,13 +834,6 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
           <div className="flex items-center gap-1.5 mb-2 text-amber-600 dark:text-amber-400">
             <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800/50">
               답변 필요
-            </span>
-          </div>
-        )}
-        {isAutonomous && (
-          <div className="flex items-center gap-1 mb-1.5 text-indigo-500 dark:text-indigo-400">
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-800/40">
-              💭 자발적
             </span>
           </div>
         )}
