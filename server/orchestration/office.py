@@ -3452,6 +3452,26 @@ class Office:
     '''
     from db.suggestion_store import create_suggestion, list_suggestions
 
+    # 질문/문의형 발언은 건의로 등록하지 않음 — 제안이 아니라 물음
+    question_markers = (
+      '?', '까요', '까?', '실까', '을까', '는지요', '는지 궁금', '궁금합',
+      '여쭤', '물어', '문의', '확인 부탁', '의견이 궁금', '알려주세요',
+      '듣고 싶', '공유 부탁', '알고 계신', '혹시', '어떠신',
+    )
+    # 명령형/제안형 마커 — 이게 없으면 건의 아님
+    proposal_markers = (
+      '하자', '해야', '합시다', '도입', '적용', '반영', '추가', '바꾸',
+      '변경', '개선', '제안합', '권장', '필요합니다', '필수', '기준',
+      '규칙', '원칙', '의무화', '금지', '도입하', '채택',
+    )
+
+    is_question = any(m in message for m in question_markers)
+    is_proposal = any(m in message for m in proposal_markers)
+    if is_question and not is_proposal:
+      return  # 질문만 있으면 건의 아님
+    if not is_proposal:
+      return  # 제안형 마커가 하나도 없으면 건의 아님
+
     # 카테고리별 트리거 키워드
     patterns: list[tuple[str, list[str]]] = [
       ('프로세스 개선', [
