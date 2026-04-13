@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
+import { IconBrain, IconWrench, IconSearch, IconGitMerge, IconTrash, IconGitBranch } from './icons'
 
 interface Suggestion {
   id: string
@@ -16,9 +17,9 @@ interface Suggestion {
   suggestion_type?: string  // 'prompt' | 'code'
 }
 
-const TYPE_BADGE: Record<string, { icon: string; label: string; color: string }> = {
-  prompt: { icon: '🧠', label: '프롬프트', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  code: { icon: '🔧', label: '코드 수정', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+const TYPE_BADGE: Record<string, { Icon: typeof IconBrain; label: string; color: string }> = {
+  prompt: { Icon: IconBrain, label: '프롬프트', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  code: { Icon: IconWrench, label: '코드 수정', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 }
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
@@ -169,9 +170,9 @@ export function SuggestionModal() {
                       {(() => {
                         const t = TYPE_BADGE[s.suggestion_type || 'prompt']
                         return (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${t.color}`}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 ${t.color}`}
                             title={s.suggestion_type === 'code' ? '승인 시 Claude가 실제 코드 수정' : '승인 시 에이전트 프롬프트에 반영'}>
-                            {t.icon} {t.label}
+                            <t.Icon className="w-3 h-3" /> {t.label}
                           </span>
                         )
                       })()}
@@ -257,24 +258,27 @@ export function SuggestionModal() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); loadBranchDiff(s.id) }}
                                 className="text-xs px-3 py-1 rounded-lg bg-purple-500 text-white
-                                  hover:bg-purple-600 cursor-pointer transition-colors"
+                                  hover:bg-purple-600 cursor-pointer transition-colors
+                                  inline-flex items-center gap-1.5"
                               >
-                                🔍 변경사항 보기
+                                <IconSearch className="w-3.5 h-3.5" /> 변경사항 보기
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); mergeBranch(s.id) }}
                                 className="text-xs px-3 py-1 rounded-lg bg-green-500 text-white
-                                  hover:bg-green-600 cursor-pointer transition-colors"
+                                  hover:bg-green-600 cursor-pointer transition-colors
+                                  inline-flex items-center gap-1.5"
                                 title="main 브랜치로 병합 (재시작 필요)"
                               >
-                                🔀 병합
+                                <IconGitMerge className="w-3.5 h-3.5" /> 병합
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); discardBranch(s.id) }}
                                 className="text-xs px-3 py-1 rounded-lg bg-red-500 text-white
-                                  hover:bg-red-600 cursor-pointer transition-colors"
+                                  hover:bg-red-600 cursor-pointer transition-colors
+                                  inline-flex items-center gap-1.5"
                               >
-                                🗑️ 폐기
+                                <IconTrash className="w-3.5 h-3.5" /> 폐기
                               </button>
                             </>
                           )}
@@ -308,8 +312,10 @@ export function SuggestionModal() {
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
               <div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  🌿 improvement/{branchDiff.id}
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100
+                  inline-flex items-center gap-2">
+                  <IconGitBranch className="w-4 h-4 text-emerald-500" />
+                  improvement/{branchDiff.id}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {branchDiff.files.length}개 파일 변경
@@ -318,15 +324,17 @@ export function SuggestionModal() {
               <div className="flex gap-2">
                 <button
                   onClick={() => mergeBranch(branchDiff.id)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-green-500 text-white hover:bg-green-600 cursor-pointer"
+                  className="text-xs px-3 py-1.5 rounded-lg bg-green-500 text-white hover:bg-green-600 cursor-pointer
+                    inline-flex items-center gap-1.5"
                 >
-                  🔀 병합
+                  <IconGitMerge className="w-3.5 h-3.5" /> 병합
                 </button>
                 <button
                   onClick={() => discardBranch(branchDiff.id)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 cursor-pointer"
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 cursor-pointer
+                    inline-flex items-center gap-1.5"
                 >
-                  🗑️ 폐기
+                  <IconTrash className="w-3.5 h-3.5" /> 폐기
                 </button>
                 <button
                   onClick={() => setBranchDiff(null)}

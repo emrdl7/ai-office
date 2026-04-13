@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '../config/team'
+import { IconClipboard } from './icons'
 import { ReactionStatsPanel } from './ReactionStats'
 
 export { AGENT_PROFILE }
@@ -353,7 +354,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             hover:bg-gray-100 dark:hover:bg-gray-800
             cursor-pointer transition-colors"
         >
-          <span>📋</span>
+          <IconClipboard className="w-4 h-4" />
           <span>건의게시판</span>
         </button>
         <button

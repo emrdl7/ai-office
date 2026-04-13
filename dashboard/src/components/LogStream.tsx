@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import type { LogEntry } from '../types'
+import { IconChatBubble } from './icons'
 
 // 미생 캐릭터 아바타 이미지
 const AVATAR_IMG: Record<string, string> = {
@@ -244,7 +245,7 @@ export function LogStream() {
       >
         {logs.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-400">
-            <p className="text-2xl mb-2 opacity-30">💬</p>
+            <IconChatBubble className="w-8 h-8 mb-2 opacity-30" />
             <p className="text-sm">아직 대화가 없습니다</p>
             <p className="text-xs mt-1 opacity-60">작업을 지시하면 팀원들이 대화를 시작합니다</p>
           </div>

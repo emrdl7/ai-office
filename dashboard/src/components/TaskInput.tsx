@@ -3,6 +3,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Task } from '../types'
+import { IconPaperclip } from './icons'
 
 async function fetchTasks(): Promise<Task[]> {
   const res = await fetch('/api/tasks')
@@ -111,7 +112,7 @@ export function TaskInput() {
                   bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
                   border border-blue-200 dark:border-blue-800"
               >
-                📎 {f.name}
+                <IconPaperclip className="w-3 h-3" /> {f.name}
                 <button
                   onClick={() => removeFile(i)}
                   className="text-blue-400 hover:text-red-400 cursor-pointer ml-0.5"
@@ -156,7 +157,7 @@ export function TaskInput() {
             aria-label="파일 첨부"
             disabled={mutation.isPending}
           >
-            📎 첨부
+            <span className="inline-flex items-center gap-1"><IconPaperclip className="w-3.5 h-3.5" /> 첨부</span>
           </button>
           <button
             onClick={handleSubmit}
@@ -219,7 +220,7 @@ export function TaskInput() {
                           border border-blue-200 dark:border-blue-800 truncate max-w-[120px]"
                         title={name.trim()}
                       >
-                        📎 {name.trim()}
+                        <span className="inline-flex items-center gap-1"><IconPaperclip className="w-3 h-3" /> {name.trim()}</span>
                       </span>
                     ))}
                   </span>

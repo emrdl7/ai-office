@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
 import { AGENT_IDS } from '../config/team'
+import { IconFolder } from './icons'
 import type { Agent, LogEntry, Task, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
@@ -432,7 +433,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/20
           border-b border-blue-100 dark:border-blue-800
           flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
-          <span>📂</span>
+          <IconFolder className="w-3.5 h-3.5" />
           <span className="font-medium">{activeProject.title}</span>
         </div>
       )}
