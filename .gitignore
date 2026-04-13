@@ -17,3 +17,4 @@ workspace/
 __pycache__/
 *.pyc
 server/uv.lock
+.gstack/
