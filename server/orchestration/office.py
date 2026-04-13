@@ -3010,24 +3010,40 @@ class Office:
               chain_hint = (
                 f'\n[방금 돈 의논]\n{display_name(speaker_name)} → {display_name(first_reactor)} 순으로 '
                 f'반박·보완이 오갔다.\n'
-                f'당신은 이 논의의 실행 결론을 한 문장으로 내려야 한다. 결론이 모호하면 [PASS].\n'
+                f'논의 내용에 대한 관찰·관점 한 문장. 결론이 모호하면 [PASS].\n'
               )
             teamlead_msg = await run_gemini(
               prompt=(
                 f'당신은 팀장 잡스입니다. AI 에이전트로 물리 경험 없음.\n'
                 f'최근 팀 상황:\n{recent_context}\n{chain_hint}\n'
-                f'[규칙]\n'
+                f'[절대 금지 — 어기면 [PASS]]\n'
+                f'- 선언형 명령 금지: "~진행합니다", "~적용합니다", "~결정합니다", "~최우선 과제로", '
+                f'"~을 지시합니다", "~체계를 수립합니다"\n'
+                f'  (실제 프로젝트/태스크는 사용자가 지시할 때만 시작된다. 자발적 대화에서는 작업을 개시할 권한이 없다.)\n'
                 f'- 빈 응원/감탄/맞장구 금지 ("시너지 최고", "기대된다", "굿굿" 등)\n'
                 f'- 커피/점심/날씨 등 물리 소재 금지\n'
-                f'- 오직 허용: 팀 방향 제시, 구체 우선순위 언급, 프로세스 의사결정\n'
-                f'- 30자 이상, 구체 판단 포함. 없으면 [PASS]. 90%는 [PASS]가 정답.'
+                f'[허용]\n'
+                f'- 관찰 공유: "~점이 흥미롭다", "~경향이 보인다"\n'
+                f'- 의견 제시: "~이 더 효과적일 것 같다", "~을 검토해볼 가치가 있다"\n'
+                f'- 우려 표명: "~부분이 걱정된다", "~리스크가 있어 보인다"\n'
+                f'- 질문/토론 유도: "~에 대해 어떻게 생각하는가?"\n'
+                f'[출력]\n'
+                f'- 30자 이상, 구체 근거 포함. 없거나 선언형이면 [PASS]. 90%는 [PASS]가 정답.'
               ),
             )
             text = teamlead_msg.strip()
             first_line = text.split('\n')[0].strip()
+            # 선언형 명령 패턴 감지 — 발견 시 드랍
+            declarative_patterns = (
+              '진행합니다', '적용합니다', '결정합니다', '지시합니다', '수립합니다',
+              '최우선 과제', '최우선과제', '즉시 도입', '즉시도입',
+              '반영하겠습니다', '시행합니다', '착수합니다',
+            )
+            is_declarative = any(p in text for p in declarative_patterns)
             if (
               text and '[PASS]' not in text.upper()
               and len(first_line) >= 30
+              and not is_declarative
               and not any(p in text for p in (
                 '굿굿', '맞아요', '기대된', '즐겁게', '시너지', '커피', '점심', '날씨',
               ))
@@ -3035,8 +3051,10 @@ class Office:
               await self.event_bus.publish(LogEvent(
                 agent_id='teamlead',
                 event_type='autonomous',
-                message=text,  # 전체 보존
+                message=text,
               ))
+            elif is_declarative:
+              logger.info('팀장 선언형 발언 드랍: %s', first_line[:80])
           except Exception:
             logger.debug("팀장 자발적 활동 실패", exc_info=True)
 
