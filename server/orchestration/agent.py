@@ -433,32 +433,41 @@ class Agent:
   async def _run_with_runner(self, prompt: str, system: str = '') -> str:
     '''에이전트 역할에 맞는 러너를 선택해 텍스트를 생성한다.
 
-    러너 매핑:
-    - qa: Haiku (판단 전담)
-    - planner, developer: Gemini 1차 → Sonnet 폴백
-    - designer: Sonnet (창의 작업)
-    - 나머지 (groq_runner 있는 경우): Groq
+    모든 역할이 Claude 실패 시 Gemini로 폴백한다 (qa/designer도 포함).
+    러너 매핑 (1차 → 폴백):
+    - qa: Haiku → Gemini
+    - planner, developer: Gemini → Claude
+    - designer: Sonnet → Gemini
+    - 그 외: Sonnet → Gemini
     '''
     full = f'{system}\n\n---\n\n{prompt}' if system else prompt
 
     if self.name == 'qa':
-      return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=120.0)
+      try:
+        return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=120.0)
+      except Exception as e:
+        logger.warning("QA Claude 실패 → Gemini 폴백: %s", e)
+        return await run_gemini(prompt=prompt, system=system)
 
     if self.name in ('developer', 'planner'):
       try:
         return await run_gemini(prompt=prompt, system=system)
-      except Exception:
-        logger.debug("Gemini 러너 실패, Claude로 폴백", exc_info=True)
+      except Exception as e:
+        logger.warning("%s Gemini 실패 → Claude 폴백: %s", self.name, e)
         return await run_claude_isolated(full)
 
     if self.name == 'designer':
-      return await run_claude_isolated(full)
+      try:
+        return await run_claude_isolated(full)
+      except Exception as e:
+        logger.warning("Designer Claude 실패 → Gemini 폴백: %s", e)
+        return await run_gemini(prompt=prompt, system=system)
 
     # 그 외: Sonnet → Gemini 폴백
     try:
       return await run_claude_isolated(full)
-    except Exception:
-      logger.debug("Claude 러너 실패, Gemini로 폴백", exc_info=True)
+    except Exception as e:
+      logger.warning("%s Claude 실패 → Gemini 폴백: %s", self.name, e)
       return await run_gemini(prompt=prompt, system=system)
 
   async def _generate(self, prompt: str, system: str = '') -> str:
