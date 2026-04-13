@@ -1077,54 +1077,58 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
 
   sid = suggestion['id']
   agent_id = suggestion['agent_id']
+  target_agent = (suggestion.get('target_agent') or '').strip()
+  apply_to = target_agent or agent_id  # target 있으면 대상, 없으면 제안자 본인
   title = suggestion['title']
   content = suggestion['content']
   category = suggestion.get('category', 'general')
   user_comment = (suggestion.get('response') or '').strip()
   now_iso = datetime.now(timezone.utc).isoformat()
   comment_suffix = f'\n[사용자 코멘트] {user_comment}' if user_comment else ''
+  target_suffix = f'\n[대상: {apply_to}, 제안자: {agent_id}]' if target_agent else ''
 
   # 1. 팀 공유 메모리에 교훈으로 등록 → 모든 에이전트 시스템 프롬프트에 자동 주입
   try:
     TeamMemory().add_lesson(SharedLesson(
       id=f'suggestion-{sid}',
       project_title='건의 수용',
-      agent_name=agent_id,
-      lesson=f'{title} — {content[:200]}{comment_suffix}',
+      agent_name=apply_to,
+      lesson=f'{title} — {content[:200]}{comment_suffix}{target_suffix}',
       category='process_improvement',
       timestamp=now_iso,
     ))
   except Exception:
     logger.debug('TeamMemory add_lesson 실패', exc_info=True)
 
-  # 2. 제안자 에이전트의 PromptEvolver에 규칙 추가 → 본인 시스템 프롬프트에 주입
+  # 2. 대상 에이전트의 PromptEvolver에 규칙 추가
   try:
     evolver = PromptEvolver()
-    existing = evolver.load_rules(agent_id)
+    existing = evolver.load_rules(apply_to)
     existing.append(PromptRule(
       id=f'suggestion-{sid}',
       created_at=now_iso,
       source='manual',
       category=category,
       rule=f'{title}: {content[:300]}{comment_suffix}',
-      evidence=f'사용자 승인된 건의 #{sid}' + (f' — {user_comment[:120]}' if user_comment else ''),
+      evidence=f'사용자 승인된 건의 #{sid} (제안자: {agent_id})' + (f' — {user_comment[:120]}' if user_comment else ''),
       priority='high',
       active=True,
     ))
     if len(existing) > 10:
       existing = existing[-10:]
-    evolver.save_rules(agent_id, existing)
+    evolver.save_rules(apply_to, existing)
   except Exception:
     logger.debug('PromptEvolver save_rules 실패', exc_info=True)
 
   # 3. 채팅에 공지
   from config.team import display_name
   comment_line = f'\n💬 코멘트: {user_comment[:200]}' if user_comment else ''
+  target_line = f' ({display_name(apply_to)} 규칙에 적용)' if target_agent else ''
   await event_bus.publish(LogEvent(
     agent_id='teamlead',
     event_type='response',
     message=(
-      f'✅ {display_name(agent_id)}의 건의 "{title[:40]}" 수용 → '
+      f'✅ {display_name(agent_id)}의 건의 "{title[:40]}" 수용{target_line} → '
       f'팀 메모리 + 에이전트 프롬프트에 즉시 반영했습니다.{comment_line}'
     ),
   ))

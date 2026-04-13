@@ -31,7 +31,39 @@ def _conn() -> sqlite3.Connection:
     conn.commit()
   except sqlite3.OperationalError:
     pass  # 이미 존재
+  # target_agent — 건의가 적용될 대상 에이전트 (빈 값이면 제안자 본인)
+  try:
+    conn.execute('ALTER TABLE suggestions ADD COLUMN target_agent TEXT DEFAULT ""')
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass
   return conn
+
+
+# 발언에서 언급된 대상 에이전트를 감지하는 heuristic
+_TARGET_PATTERNS: list[tuple[str, list[str]]] = [
+  ('planner', ['planner.md', '@기획', '@planner', '기획자', '기획 에이전트', '기획 단계', '기획에서',
+               '드러커', '플래너']),
+  ('designer', ['designer.md', '@디자인', '@designer', '디자이너', '디자인 에이전트',
+                '아이브', 'UX', 'UI 가이드']),
+  ('developer', ['developer.md', '@개발', '@developer', '개발자', '개발 에이전트',
+                 '튜링', '개발팀']),
+  ('qa', ['qa.md', 'QA.md', '@qa', '@QA', 'QA가', 'QA는', 'QA팀', 'QA 기준', 'QA 단계',
+          '데밍', '검수자']),
+  ('teamlead', ['@팀장', '팀장이', '팀장은', '잡스가', '잡스는']),
+]
+
+
+def detect_target_agent(message: str, speaker: str = '') -> str:
+  '''발언 텍스트에서 적용 대상 에이전트를 추론. 자기 자신이나 미발견이면 빈 문자열.'''
+  text = message
+  for agent, patterns in _TARGET_PATTERNS:
+    if agent == speaker:
+      continue
+    for p in patterns:
+      if p in text:
+        return agent
+  return ''
 
 
 def classify_suggestion_type(title: str, content: str, category: str = 'general') -> str:
@@ -74,17 +106,19 @@ def create_suggestion(
   content: str,
   category: str = 'general',
   suggestion_type: str | None = None,
+  target_agent: str = '',
 ) -> dict:
-  '''건의를 등록한다. suggestion_type 미지정 시 자동 분류.'''
+  '''건의를 등록한다. suggestion_type 미지정 시 자동 분류.
+  target_agent가 지정되면 승인 시 해당 에이전트의 PromptEvolver 규칙으로 반영.'''
   c = _conn()
   suggestion_id = str(uuid.uuid4())[:8]
   now = datetime.now(timezone.utc).isoformat()
   if not suggestion_type:
     suggestion_type = classify_suggestion_type(title, content, category)
   c.execute(
-    'INSERT INTO suggestions (id, agent_id, category, title, content, status, created_at, updated_at, suggestion_type) '
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    (suggestion_id, agent_id, category, title, content, 'pending', now, now, suggestion_type),
+    'INSERT INTO suggestions (id, agent_id, category, title, content, status, created_at, updated_at, suggestion_type, target_agent) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    (suggestion_id, agent_id, category, title, content, 'pending', now, now, suggestion_type, target_agent),
   )
   c.commit()
   c.close()
@@ -92,7 +126,7 @@ def create_suggestion(
     'id': suggestion_id, 'agent_id': agent_id, 'category': category,
     'title': title, 'content': content, 'status': 'pending',
     'response': '', 'created_at': now, 'updated_at': now,
-    'suggestion_type': suggestion_type,
+    'suggestion_type': suggestion_type, 'target_agent': target_agent,
   }
 
 

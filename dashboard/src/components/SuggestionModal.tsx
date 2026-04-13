@@ -15,6 +15,7 @@ interface Suggestion {
   created_at: string
   updated_at: string
   suggestion_type?: string  // 'prompt' | 'code'
+  target_agent?: string     // 적용 대상 에이전트 (빈 값이면 제안자 본인)
 }
 
 const TYPE_BADGE: Record<string, { Icon: typeof IconBrain; label: string; color: string }> = {
@@ -182,6 +183,13 @@ export function SuggestionModal() {
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
                         {catLabel}
                       </span>
+                      {s.target_agent && s.target_agent !== s.agent_id && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full
+                          bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                          title="이 건의가 적용될 에이전트">
+                          → {AGENT_PROFILE[s.target_agent]?.character || s.target_agent}
+                        </span>
+                      )}
                       <span className="flex-1 text-sm text-gray-600 dark:text-gray-400 truncate">
                         {s.title}
                       </span>

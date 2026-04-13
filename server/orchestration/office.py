@@ -3416,12 +3416,16 @@ class Office:
     except Exception:
       pass
 
+    from db.suggestion_store import detect_target_agent
+    target = detect_target_agent(message, speaker=agent_id)
+    target_line = f'대상 에이전트: {display_name(target)}\n' if target else ''
     content = (
       f'[소단계 리액션 중 감지]\n'
       f'단계: {phase_name}\n'
       f'{display_name(agent_id)}의 발언: "{message}"\n\n'
-      f'카테고리: {matched_category}\n\n'
-      f'(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
+      f'카테고리: {matched_category}\n'
+      f'{target_line}'
+      f'\n(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
     )
     try:
       create_suggestion(
@@ -3429,6 +3433,7 @@ class Office:
         title=title_text,
         content=content,
         category=matched_category,
+        target_agent=target,
       )
       await self._emit(
         'teamlead',
@@ -3506,14 +3511,20 @@ class Office:
     except Exception:
       pass
 
+    # 대상 에이전트 감지 — 발언이 다른 에이전트의 규칙을 바꾸자는 뜻이면 그쪽으로 적용
+    from db.suggestion_store import detect_target_agent
+    target = detect_target_agent(message, speaker=agent_id)
+
     # 제목은 메시지 앞 40자, 내용은 전체 맥락
     title = message[:40].replace('\n', ' ').strip()
+    target_line = f'대상 에이전트: {display_name(target)}\n' if target else ''
     content = (
       f'[자발적 대화 중 감지]\n'
       f'{display_name(agent_id)}의 발언: "{message}"\n\n'
       f'트리거 키워드: "{matched_keyword}"\n'
-      f'카테고리: {matched_category}\n\n'
-      f'(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
+      f'카테고리: {matched_category}\n'
+      f'{target_line}'
+      f'\n(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
     )
 
     try:
@@ -3522,13 +3533,14 @@ class Office:
         title=title,
         content=content,
         category=matched_category,
+        target_agent=target,
       )
-      # 채팅에 알림 (팀장이 말함)
+      target_hint = f' → {display_name(target)}에게 적용' if target else ''
       await self._emit(
         'teamlead',
-        f'💡 {display_name(agent_id)}의 의견을 건의게시판에 등록했습니다: "{title[:30]}..."',
+        f'💡 {display_name(agent_id)}의 의견을 건의게시판에 등록했습니다{target_hint}: "{title[:30]}..."',
         'system_notice',
       )
-      logger.info('자동 건의 등록: %s | %s | %s', agent_id, matched_category, title)
+      logger.info('자동 건의 등록: %s | %s | %s | target=%s', agent_id, matched_category, title, target or '(본인)')
     except Exception:
       logger.debug('create_suggestion 실패', exc_info=True)
