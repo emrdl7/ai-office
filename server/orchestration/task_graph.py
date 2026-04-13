@@ -23,6 +23,7 @@ class TaskNode:
   description: str
   requirements: str          # QA 독립 참조용 원본 요구사항 보존 (D-08)
   assigned_to: str
+  acceptance_criteria: list[str] = field(default_factory=list)  # 완료 기준 목록
   depends_on: list[str] = field(default_factory=list)
   status: TaskStatus = TaskStatus.PENDING
   artifact_paths: list[str] = field(default_factory=list)
@@ -53,6 +54,7 @@ class TaskGraph:
       description=payload.description,
       requirements=payload.requirements,
       assigned_to=payload.assigned_to,
+      acceptance_criteria=list(payload.acceptance_criteria),
       depends_on=list(payload.depends_on),
     )
     self._nodes[payload.task_id] = node
@@ -137,6 +139,7 @@ class TaskGraph:
         'description': node.description,
         'requirements': node.requirements,
         'assigned_to': node.assigned_to,
+        'acceptance_criteria': node.acceptance_criteria,
         'depends_on': node.depends_on,
         'status': node.status.value,
         'artifact_paths': node.artifact_paths,

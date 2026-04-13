@@ -2588,10 +2588,18 @@ class Office:
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
     '''QA 에이전트가 산출물을 검수한다 (내부 처리 — 채팅에 안 보임).'''
+    ac_section = ''
+    if getattr(node, 'acceptance_criteria', None):
+      ac_lines = '\n'.join(f'- {c}' for c in node.acceptance_criteria)
+      ac_section = (
+        f'\n[완료 기준 (Acceptance Criteria) — 각 항목을 하나씩 검증]\n{ac_lines}\n'
+        f'AC 항목 중 하나라도 미달이면 status=fail.\n'
+      )
     qa_prompt = (
-      f'[원본 요구사항]\n{node.requirements}\n\n'
+      f'[원본 요구사항]\n{node.requirements}\n'
+      f'{ac_section}\n'
       f'[작업 결과물]\n{content}\n\n'
-      f'위 요구사항 대비 결과물을 검수하세요.'
+      f'위 요구사항과 완료 기준 대비 결과물을 검수하세요.'
     )
     qa_result = await qa_agent.handle(qa_prompt)
 

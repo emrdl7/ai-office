@@ -111,12 +111,19 @@ async def apply_suggestion(suggestion: dict) -> bool:
       _rollback(branch, original_branch)
       return False
 
-    # 4. 성공 — 결과 보고
+    # 4. 성공 — 변경사항을 브랜치에 커밋하고 원 브랜치로 복귀
+    #    (서버가 계속 원 브랜치에서 돌도록 — 사용자가 별도 merge 판단)
+    _git(['add', '-A'])
+    commit_msg = f'improvement(#{suggestion_id}): {suggestion["title"][:80]}'
+    _git(['commit', '-m', commit_msg])
+    _git(['checkout', original_branch])
+
     file_list = '\n'.join(f'  • {f}' for f in changed_files.strip().splitlines())
     await _emit('팀장', (
       f'✅ 건의 #{suggestion_id} 자가개선 완료!\n\n'
       f'**수정된 파일:**\n{file_list}\n\n'
-      f'**브랜치:** `{branch}`\n\n'
+      f'**브랜치:** `{branch}` (커밋 완료, 원 브랜치로 복귀)\n'
+      f'`git merge {branch}` 로 병합 검토하세요.\n\n'
       f'**Claude 작업 요약:**\n{result[:800]}'
     ))
     return True

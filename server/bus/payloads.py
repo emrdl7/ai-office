@@ -9,6 +9,7 @@ class TaskRequestPayload(BaseModel):
   task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))  # UUID 자동 생성
   description: str  # 수행할 작업 설명
   requirements: str  # 원본 요구사항 — QA 독립 참조용 (D-08)
+  acceptance_criteria: list[str] = []  # 완료 기준 목록 — 각 항목은 검증 가능한 조건
   depends_on: list[str] = []  # DAG 의존 task_id 목록
   assigned_to: str  # 실행 에이전트 id
 

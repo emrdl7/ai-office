@@ -51,7 +51,7 @@ def classify_suggestion_type(title: str, content: str, category: str = 'general'
     '데이터베이스', 'database', 'schema', '스키마',
     'websocket', 'webhook', 'sse',
     'ci/cd', '파이프라인', 'pipeline', '배포',
-    '의존성', 'dependency', '라이브러리 추가',
+    '라이브러리 추가', 'package', 'npm install', 'pip install',
     '버튼 추가', '페이지 추가', '화면 추가', '컴포넌트 추가',
     '서버에서', '클라이언트에서', '프런트', '백엔드에서',
     '파일 저장', '파일 읽기', '파일 시스템',
