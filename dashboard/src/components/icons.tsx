@@ -69,6 +69,16 @@ export const IconPaperclip = ({ className = 'w-4 h-4' }: P) => (
   </svg>
 )
 
+export const IconChart = ({ className = 'w-4 h-4' }: P) => (
+  <svg className={`${base} ${className}`} fill="none" stroke="currentColor" strokeWidth={2}
+    strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <line x1="4" y1="20" x2="20" y2="20" />
+    <rect x="6" y="12" width="3" height="8" />
+    <rect x="11" y="7" width="3" height="13" />
+    <rect x="16" y="3" width="3" height="17" />
+  </svg>
+)
+
 export const IconChatBubble = ({ className = 'w-4 h-4' }: P) => (
   <svg className={`${base} ${className}`} fill="none" stroke="currentColor" strokeWidth={2}
     strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
