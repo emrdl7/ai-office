@@ -1263,8 +1263,8 @@ async def explain_suggestion_branch(suggestion_id: str):
     f'- verdict는 엄격하게: 어지간하면 review_needed.'
   )
   try:
-    # explain은 90초 내 응답 — Gemini CLI가 멈추는 경우 빠르게 끊어 UI 대기 해소
-    raw = await run_gemini(prompt=prompt, timeout=90.0)
+    # explain은 180초 내 응답 — Gemini CLI 지연 흔함. 그래도 10분(기본)은 너무 김
+    raw = await run_gemini(prompt=prompt, timeout=180.0)
     m = _re.search(r'\{[\s\S]*\}', raw)
     data = _j.loads(m.group()) if m else None
   except Exception as e:
@@ -1296,7 +1296,9 @@ async def merge_suggestion_branch(suggestion_id: str, request: Request):
   '''
   from db.suggestion_store import update_suggestion, get_suggestion, create_suggestion, log_event
   confirm_risky = request.query_params.get('confirm_risky') == 'true'
-  skip_tests = request.query_params.get('skip_tests') == 'true'
+  # 게이트는 명시적 opt-in일 때만 동작 (ruff/pytest가 프로젝트 준비 안 돼있으면 항상 실패)
+  run_tests = request.query_params.get('run_tests') == 'true'
+  skip_tests = not run_tests
 
   branch = f'improvement/{suggestion_id}'
   code, _ = _run_git(['rev-parse', '--verify', branch])
