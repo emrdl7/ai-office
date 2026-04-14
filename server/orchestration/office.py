@@ -3166,8 +3166,11 @@ class Office:
 
     state = self._load_digest_state()
     last_ts = state.get('last_reviewed_ts', '')
-    # 실제 리뷰가 돌아간 시각 (run_ts가 없으면 last_reviewed_ts 사용)
-    last_run = state.get('last_run_ts', last_ts)
+    # 실제 리뷰가 돌아간 시각 — last_run_ts가 없으면 history 최근 ts, 그마저 없으면 last_reviewed_ts
+    last_run = state.get('last_run_ts')
+    if not last_run:
+      hist = state.get('history') or []
+      last_run = hist[0].get('ts') if hist else last_ts
 
     # 최소 간격 보호 — force여도 5분 안쪽이면 거절
     min_interval = 300 if force else 900  # 수동 5분 / 자동 15분
