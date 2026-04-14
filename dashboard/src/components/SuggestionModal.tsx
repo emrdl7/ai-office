@@ -14,12 +14,15 @@ interface Suggestion {
   response: string
   created_at: string
   updated_at: string
-  suggestion_type?: string  // 'prompt' | 'code'
+  suggestion_type?: string  // 'prompt' | 'rule' | 'code'
   target_agent?: string     // 적용 대상 에이전트 (빈 값이면 제안자 본인)
+  auto_applied?: number     // 자동 반영 여부 (0/1)
+  auto_applied_at?: string  // ISO timestamp
 }
 
 const TYPE_BADGE: Record<string, { Icon: typeof IconBrain; label: string; color: string }> = {
   prompt: { Icon: IconBrain, label: '프롬프트', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  rule: { Icon: IconBrain, label: '규칙', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
   code: { Icon: IconWrench, label: '코드 수정', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 }
 
@@ -112,6 +115,17 @@ export function SuggestionModal() {
     fetchSuggestions()
   }
 
+  async function rollbackAuto(id: string) {
+    if (!confirm(`자동 반영된 건의 #${id}를 되돌립니다.\n에이전트 규칙·팀 메모리에서 해당 항목이 제거됩니다. 계속할까요?`)) return
+    const r = await fetch(`/api/suggestions/${id}/rollback`, { method: 'POST' })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: '실패' }))
+      alert('롤백 실패: ' + (err.detail || ''))
+      return
+    }
+    fetchSuggestions()
+  }
+
   async function handleStatusChange(id: string, status: string, response: string = '') {
     await fetch(`/api/suggestions/${id}`, {
       method: 'PATCH',
@@ -158,10 +172,13 @@ export function SuggestionModal() {
             {(() => {
               const counts: Record<string, number> = { all: suggestions.length }
               suggestions.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1 })
+              // auto_applied 별도 집계
+              counts['auto_applied'] = suggestions.filter((s) => s.auto_applied === 1).length
               const tabs: [string, string][] = [
                 ['pending', '대기'],
                 ['review_pending', '검토 대기'],
                 ['accepted', '처리 중'],
+                ['auto_applied', '🤖 자동 반영'],
                 ['done', '완료'],
                 ['rejected', '반려'],
                 ['all', '전체'],
@@ -197,7 +214,9 @@ export function SuggestionModal() {
         <div className="flex-1 overflow-y-auto p-3">
           {(() => {
             const filtered = suggestions.filter((s) => {
-              if (tab !== 'all' && s.status !== tab) return false
+              if (tab === 'auto_applied') {
+                if (s.auto_applied !== 1) return false
+              } else if (tab !== 'all' && s.status !== tab) return false
               if (query && !`${s.title} ${s.content}`.toLowerCase().includes(query.toLowerCase())) return false
               return true
             })
@@ -269,6 +288,13 @@ export function SuggestionModal() {
                         <span className={`px-1.5 py-0.5 rounded-full ${statusInfo.color}`}>
                           {statusInfo.text}
                         </span>
+                        {s.auto_applied === 1 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700
+                            dark:bg-amber-900/30 dark:text-amber-400"
+                            title="팀장이 자동 반영함 — 24h 내 되돌리기 가능">
+                            🤖 자동
+                          </span>
+                        )}
                         <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
                           {catLabel}
                         </span>
@@ -348,6 +374,24 @@ export function SuggestionModal() {
                               </button>
                             </>
                           )}
+                          {s.auto_applied === 1 && s.auto_applied_at && (() => {
+                            const elapsed = (Date.now() - new Date(s.auto_applied_at).getTime()) / 36e5
+                            const remaining = 24 - elapsed
+                            if (remaining <= 0) return (
+                              <span className="text-xs text-gray-400 px-2 py-1">롤백 유예 종료</span>
+                            )
+                            return (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); rollbackAuto(s.id) }}
+                                className="text-xs px-3 py-1 rounded-lg bg-amber-500 text-white
+                                  hover:bg-amber-600 cursor-pointer transition-colors
+                                  inline-flex items-center gap-1.5"
+                                title={`자동 반영 되돌리기 — ${remaining.toFixed(1)}시간 남음`}
+                              >
+                                ↩️ 되돌리기 ({remaining.toFixed(0)}h)
+                              </button>
+                            )
+                          })()}
                           {s.status === 'review_pending' && (
                             <>
                               <button

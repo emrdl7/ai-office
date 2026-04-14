@@ -1326,6 +1326,45 @@ async def merge_suggestion_branch(suggestion_id: str):
   return {'merged': True, 'suggestion_id': suggestion_id, 'follow_ups': follow_ups}
 
 
+@app.post('/api/suggestions/{suggestion_id}/rollback')
+async def rollback_auto_applied(suggestion_id: str):
+  '''자동 반영된 건의를 되돌린다 — 24시간 유예 내에서만 가능.'''
+  from db.suggestion_store import get_suggestion, update_suggestion, _conn as _sconn
+  from improvement.auto_apply import rollback_prompt_or_rule
+  from datetime import datetime, timezone, timedelta
+  suggestion = get_suggestion(suggestion_id)
+  if not suggestion:
+    raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다')
+  if int(suggestion.get('auto_applied') or 0) != 1:
+    raise HTTPException(status_code=400, detail='자동 반영된 건의만 롤백 가능합니다')
+  applied_at = suggestion.get('auto_applied_at') or ''
+  try:
+    applied_dt = datetime.fromisoformat(applied_at.replace('Z', '+00:00'))
+    if datetime.now(timezone.utc) - applied_dt > timedelta(hours=24):
+      raise HTTPException(status_code=410, detail='24시간 롤백 유예 기간이 지났습니다')
+  except HTTPException:
+    raise
+  except Exception:
+    raise HTTPException(status_code=400, detail='반영 시각 파싱 실패')
+
+  removed = rollback_prompt_or_rule(suggestion_id)
+  c = _sconn()
+  c.execute(
+    "UPDATE suggestions SET status='rejected', auto_applied=0, response=? WHERE id=?",
+    ('자동 반영 롤백 (사용자 되돌리기)', suggestion_id),
+  )
+  c.commit(); c.close()
+  from config.team import display_name
+  await event_bus.publish(LogEvent(
+    agent_id='teamlead', event_type='system_notice',
+    message=(
+      f'↩️ 자동 반영 롤백: #{suggestion_id} "{suggestion["title"][:40]}" '
+      f'— 규칙 {removed["rules"]}건 · 교훈 {removed["lessons"]}건 제거'
+    ),
+  ))
+  return {'rolled_back': True, 'removed': removed}
+
+
 @app.post('/api/suggestions/{suggestion_id}/branch/discard')
 async def discard_suggestion_branch(suggestion_id: str):
   '''improvement/{id} 브랜치를 폐기하고 건의를 rejected로.'''

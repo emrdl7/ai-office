@@ -3220,10 +3220,15 @@ class Office:
       f'  "suggestions":[{{"title":"40자","body":"구체 문제+제안 2-3문장",'
       f'"target_agent":"planner|designer|developer|qa|teamlead|",'
       f'"category":"프로세스 개선|도구 부족|정보 부족|아이디어",'
-      f'"reasoning":"1문장"}}],\n'
+      f'"reasoning":"1문장",'
+      f'"auto_safe":true|false}}],\n'
       f'  "summary":"2-4문장",\n'
       f'  "dropped":[{{"text":"앞 40자","reason":"이유"}}]\n'
-      f'}}\n'
+      f'}}\n\n'
+      f'auto_safe 판정 기준:\n'
+      f'- true: 단순 규칙 추가/명세 작성 가이드/문서화 방식 같이 되돌리기 쉬운 변경\n'
+      f'- false: 실제 코드 생성, 다수 에이전트에 영향, 기존 규칙과 충돌 가능, 범위 모호\n'
+      f'보수적으로 판정: 조금이라도 의심되면 false.\n\n'
       f'규칙: suggestions 최대 3건·중복 금지. 수치 환각 금지. '
       f'추상 방법론 단독 언급(Gherkin/WCAG/KPI)만 있으면 건의 아님.'
     )
@@ -3245,14 +3250,23 @@ class Office:
       return {t for t in toks if t.lower() not in {x.lower() for x in stop}}
     prev_kwsets = [(_kw(p.get('title', '') + ' ' + p.get('content', '')), p.get('status'), p.get('id')) for p in all_prev[:80]]
 
+    # 24h 자동 반영 한도 계산 (target별 3건 제한)
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    auto_count_by_target: dict[str, int] = {}
+    for p in all_prev:
+      if int(p.get('auto_applied') or 0) == 1 and (p.get('auto_applied_at') or '') >= cutoff:
+        t = (p.get('target_agent') or '').strip() or '(team)'
+        auto_count_by_target[t] = auto_count_by_target.get(t, 0) + 1
+
     registered = 0
+    auto_applied = 0
     for s in (data.get('suggestions') or [])[:3]:
       title = (s.get('title') or '').strip()[:80]
       body = (s.get('body') or '').strip()
       if not title or not body:
         continue
       new_kw = _kw(title + ' ' + body)
-      # 기존 제목과 키워드 3개 이상 겹치면 중복
       skipped = False
       for prev_kws, prev_status, prev_id in prev_kwsets:
         if not prev_kws or not new_kw:
@@ -3264,18 +3278,50 @@ class Office:
           break
       if skipped:
         continue
+      target = (s.get('target_agent') or '').strip()
+      category = (s.get('category') or '아이디어').strip()
       content = (
         f'{body}\n\n[팀장 리뷰 근거]\n{(s.get("reasoning") or "").strip()}\n\n'
         f'(팀장 배치 리뷰 {datetime.now(timezone.utc).isoformat()})'
       )
       try:
-        create_suggestion(
+        created = create_suggestion(
           agent_id='teamlead', title=title, content=content,
-          category=(s.get('category') or '아이디어').strip(),
-          target_agent=(s.get('target_agent') or '').strip(),
+          category=category, target_agent=target,
         )
         existing_titles.add(title)
         registered += 1
+
+        # 자동 반영 판정
+        auto_safe = bool(s.get('auto_safe'))
+        stype = created.get('suggestion_type') or 'prompt'
+        bucket = target or '(team)'
+        eligible = (
+          auto_safe
+          and stype in ('prompt', 'rule')
+          and auto_count_by_target.get(bucket, 0) < 3
+        )
+        if eligible:
+          from improvement.auto_apply import apply_prompt_or_rule
+          from db.suggestion_store import _conn as _sconn
+          ok = await apply_prompt_or_rule(created, user_comment='')
+          if ok:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            c = _sconn()
+            c.execute(
+              'UPDATE suggestions SET status=?, auto_applied=1, auto_applied_at=? WHERE id=?',
+              ('done', now_iso, created['id']),
+            )
+            c.commit(); c.close()
+            auto_count_by_target[bucket] = auto_count_by_target.get(bucket, 0) + 1
+            auto_applied += 1
+            await self.event_bus.publish(LogEvent(
+              agent_id='teamlead', event_type='system_notice',
+              message=(
+                f'🤖 자동 반영: {display_name(target) if target else "팀"} 규칙에 "{title[:40]}" 추가 '
+                f'(#{created["id"]}) — 24시간 내 건의게시판에서 되돌리기 가능'
+              ),
+            ))
       except Exception:
         logger.debug('팀장 리뷰 건의 등록 실패', exc_info=True)
 
@@ -3295,13 +3341,13 @@ class Office:
     state['last_run_ts'] = now_ts  # 최소 간격 계산용
     self._save_digest_state(state)
 
-    msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건 중 건의 격상 {registered}건'
+    msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건, 건의 {registered}건 (자동 반영 {auto_applied}건)'
     if summary:
       msg += f'\n요약: {summary[:200]}'
     await self.event_bus.publish(LogEvent(
       agent_id='teamlead', event_type='system_notice', message=msg,
     ))
-    logger.info('팀장 리뷰 완료: 분석=%d, 건의=%d, forced=%s', len(fresh), registered, force)
+    logger.info('팀장 리뷰 완료: 분석=%d, 건의=%d, 자동=%d, forced=%s', len(fresh), registered, auto_applied, force)
 
   def stop_teamlead_review_loop(self) -> None:
     self._review_running = False

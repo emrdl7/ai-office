@@ -37,6 +37,17 @@ def _conn() -> sqlite3.Connection:
     conn.commit()
   except sqlite3.OperationalError:
     pass
+  # auto_applied — 자동 반영 여부 (0/1), auto_applied_at — 반영 시각 ISO
+  try:
+    conn.execute('ALTER TABLE suggestions ADD COLUMN auto_applied INTEGER DEFAULT 0')
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass
+  try:
+    conn.execute('ALTER TABLE suggestions ADD COLUMN auto_applied_at TEXT DEFAULT ""')
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass
   return conn
 
 
@@ -67,36 +78,55 @@ def detect_target_agent(message: str, speaker: str = '') -> str:
 
 
 def classify_suggestion_type(title: str, content: str, category: str = 'general') -> str:
-  '''건의 내용을 보고 'prompt'(에이전트 규칙 조정) 또는 'code'(실제 코드 수정)로 분류.
+  '''건의 내용을 3가지로 분류: 'prompt' | 'rule' | 'code'.
 
-  키워드 heuristic — LLM 호출 없음. 애매하면 'prompt'가 안전한 기본값
-  (코드 수정은 파괴적이므로 확신 없으면 프롬프트로).
+  - prompt: 에이전트 태도/관점 조정 (PromptEvolver 규칙)
+  - rule: 프로세스/규약/명세 기준 수립 (PromptEvolver 규칙 — high priority 메타 규칙)
+  - code: 실제 Python/TS/yml 파일을 만들거나 고쳐야 함
   '''
   text = f'{title} {content}'.lower()
 
-  # 코드 수정 명확 시그널 — API/도구/기능 신설
-  code_keywords = [
-    'api', 'endpoint', '엔드포인트', 'mcp', '도구', 'tool',
-    '기능 추가', '기능추가', '기능 개발', '신기능',
-    '자동화', '자동 저장', '자동 백업', '자동 내보내기',
-    '인증', 'auth', 'oauth', 'token',
-    '데이터베이스', 'database', 'schema', '스키마',
-    'websocket', 'webhook', 'sse',
-    'ci/cd', '파이프라인', 'pipeline', '배포',
-    '라이브러리 추가', 'package', 'npm install', 'pip install',
+  # 강한 code 시그널 — 실제 파일 작성·수정·설치가 필수인 경우
+  strong_code = [
+    '.yml', '.yaml', '.github/workflows', 'github actions',
+    '.tsx', '.ts ', '.js ', '.py ', '.mjs',
+    'npm install', 'pip install', 'yarn add', '라이브러리 설치',
     '버튼 추가', '페이지 추가', '화면 추가', '컴포넌트 추가',
-    '서버에서', '클라이언트에서', '프런트', '백엔드에서',
-    '파일 저장', '파일 읽기', '파일 시스템',
-    '외부 접근', '크롤링', '스크래핑',
+    '엔드포인트 추가', 'api 구현', 'endpoint 구현',
+    '스크립트 작성', '스크립트 추가', 'workflow 파일',
+    'websocket', 'webhook', 'sse 구현',
+    '데이터베이스 마이그레이션', '스키마 변경',
+    '크롤링', '스크래핑', 'mcp 서버 구현',
   ]
-  # 카테고리가 명시적 코드 요구면 우선
+  if any(kw in text for kw in strong_code):
+    return 'code'
+
+  # rule 시그널 — 규칙/기준/명세/규약 수립 (md 편집 수준)
+  rule_keywords = [
+    '규칙', '원칙', '가이드라인', '규약', '표준', '기준 정의', '기준 수립',
+    '명세화', '명세 작성', '명세 기준', '검수 기준', '평가 기준', '작성 규칙',
+    '작성 원칙', '문서화 방식', 'bdd', 'spec-first', 'gherkin 문법',
+    '인수 조건', '인수조건', 'acceptance criteria', '완료 기준', '합격 기준',
+    '산출물 포맷', '보고서 포맷', '템플릿 정의',
+    '프로세스 정의', '프로세스 개선', '워크플로우 정의',
+    '사용자 관점', '시나리오 작성',
+  ]
+  if any(kw in text for kw in rule_keywords):
+    return 'rule'
+
+  # 약한 code 시그널 — 파이프라인/자동화 등 인프라 작업
+  weak_code = [
+    'api', 'endpoint', 'mcp', '도구 추가', '기능 추가', '기능 개발',
+    '자동화 도구', '자동 저장', '자동 백업',
+    'ci/cd', '파이프라인', 'pipeline', '배포',
+    '외부 접근', '파일 시스템', '인증', 'auth', 'oauth',
+  ]
   if category in ('도구 부족', '데이터 부족'):
     return 'code'
-
-  if any(kw in text for kw in code_keywords):
+  if any(kw in text for kw in weak_code):
     return 'code'
 
-  # 기본값: 프롬프트 (태도/기준/프로세스/관점 변경)
+  # 기본값: 프롬프트
   return 'prompt'
 
 
