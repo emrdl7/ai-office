@@ -45,6 +45,8 @@ export function SuggestionModal() {
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Suggestion | null>(null)
   const [comment, setComment] = useState('')
+  const [tab, setTab] = useState<string>('pending')
+  const [query, setQuery] = useState('')
 
   const fetchSuggestions = () =>
     fetch('/api/suggestions')
@@ -134,83 +136,153 @@ export function SuggestionModal() {
       onClick={() => setShow(false)}
     >
       <div
-        className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-[90vw] max-w-2xl
-          max-h-[80vh] flex flex-col overflow-hidden"
+        className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-[92vw] max-w-3xl
+          max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-            건의게시판
-          </h2>
-          <button
-            onClick={() => setShow(false)}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl cursor-pointer"
-          >
-            &times;
-          </button>
+        <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-800">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
+              건의게시판
+            </h2>
+            <button
+              onClick={() => setShow(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl cursor-pointer leading-none"
+            >
+              &times;
+            </button>
+          </div>
+          {/* 탭 + 검색 */}
+          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+            {(() => {
+              const counts: Record<string, number> = { all: suggestions.length }
+              suggestions.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1 })
+              const tabs: [string, string][] = [
+                ['pending', '대기'],
+                ['review_pending', '검토 대기'],
+                ['accepted', '처리 중'],
+                ['done', '완료'],
+                ['rejected', '반려'],
+                ['all', '전체'],
+              ]
+              return tabs.map(([key, label]) => {
+                const n = counts[key] || 0
+                if (n === 0 && key !== 'pending' && key !== 'all') return null
+                const active = tab === key
+                return (
+                  <button key={key} onClick={() => setTab(key)}
+                    className={`text-xs px-2.5 py-1 rounded-full cursor-pointer transition
+                      ${active
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                    {label} {n > 0 && <span className={active ? 'opacity-80' : 'opacity-60'}>{n}</span>}
+                  </button>
+                )
+              })
+            })()}
+            <div className="flex-1" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="검색..."
+              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800
+                text-gray-700 dark:text-gray-200 placeholder-gray-400 w-32
+                focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
         </div>
 
         {/* 본문 */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {loading ? (
-            <p className="text-center text-gray-400 py-8">로딩 중...</p>
-          ) : suggestions.length === 0 ? (
-            <p className="text-center text-gray-400 py-8">건의 사항이 없습니다</p>
-          ) : (
-            <div className="space-y-3">
-              {suggestions.map((s) => {
+        <div className="flex-1 overflow-y-auto p-3">
+          {(() => {
+            const filtered = suggestions.filter((s) => {
+              if (tab !== 'all' && s.status !== tab) return false
+              if (query && !`${s.title} ${s.content}`.toLowerCase().includes(query.toLowerCase())) return false
+              return true
+            })
+            if (loading) return <p className="text-center text-gray-400 py-8">로딩 중...</p>
+            if (filtered.length === 0) return (
+              <p className="text-center text-gray-400 py-8">
+                {query ? '검색 결과 없음' : '건의 사항이 없습니다'}
+              </p>
+            )
+            return (
+            <div className="space-y-2">
+              {filtered.map((s) => {
                 const profile = AGENT_PROFILE[s.agent_id]
                 const statusInfo = STATUS_LABEL[s.status] || STATUS_LABEL.pending
                 const catLabel = CATEGORY_LABEL[s.category] || s.category
                 const isExpanded = selected?.id === s.id
+                const t = TYPE_BADGE[s.suggestion_type || 'prompt']
+                const isFollowUp = /^\[follow-up/i.test(s.title)
+                const cleanTitle = isFollowUp ? s.title.replace(/^\[follow-up\s*#?[a-f0-9]*\]\s*/i, '') : s.title
+                const parentMatch = isFollowUp ? /^\[follow-up\s*#?([a-f0-9]+)\]/i.exec(s.title) : null
+                const parentId = parentMatch?.[1] || ''
 
                 return (
                   <div
                     key={s.id}
-                    className={`rounded-xl border transition-colors cursor-pointer
+                    className={`rounded-lg border transition cursor-pointer
                       ${isExpanded
-                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/20'
-                        : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-                      }`}
+                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50/40 dark:bg-blue-950/20'
+                        : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 bg-white dark:bg-gray-900'}
+                      ${isFollowUp ? 'border-l-4 !border-l-purple-400 dark:!border-l-purple-600' : ''}`}
                     onClick={() => {
                       setSelected(isExpanded ? null : s)
                       setComment('')
                     }}
                   >
-                    {/* 요약 행 */}
-                    <div className="flex items-center gap-2 px-4 py-3">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[60px]">
-                        {profile?.character || s.agent_id}
-                      </span>
-                      {(() => {
-                        const t = TYPE_BADGE[s.suggestion_type || 'prompt']
-                        return (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 ${t.color}`}
-                            title={s.suggestion_type === 'code' ? '승인 시 Claude가 실제 코드 수정' : '승인 시 에이전트 프롬프트에 반영'}>
-                            <t.Icon className="w-3 h-3" /> {t.label}
+                    {/* 카드 — 2줄 레이아웃 */}
+                    <div className="px-3.5 py-2.5">
+                      {/* 1행: 제목 */}
+                      <div className="flex items-start gap-2">
+                        {isFollowUp && (
+                          <span className="shrink-0 mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded
+                            bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
+                            title={parentId ? `원 건의 #${parentId}의 후속` : '후속 조치'}>
+                            FOLLOW-UP
                           </span>
-                        )
-                      })()}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusInfo.color}`}>
-                        {statusInfo.text}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-                        {catLabel}
-                      </span>
-                      {s.target_agent && s.target_agent !== s.agent_id && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full
-                          bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                          title="이 건의가 적용될 에이전트">
-                          → {AGENT_PROFILE[s.target_agent]?.character || s.target_agent}
+                        )}
+                        <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 break-words">
+                          {cleanTitle}
                         </span>
-                      )}
-                      <span className="flex-1 text-sm text-gray-600 dark:text-gray-400 truncate">
-                        {s.title}
-                      </span>
-                      <span className="text-[10px] text-gray-400">
-                        {new Date(s.created_at).toLocaleDateString('ko-KR')}
-                      </span>
+                      </div>
+                      {/* 2행: 메타 */}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[10px]">
+                        <span className="text-gray-500 dark:text-gray-400 font-medium">
+                          {profile?.character || s.agent_id}
+                        </span>
+                        {s.target_agent && s.target_agent !== s.agent_id && (
+                          <span className="text-gray-400">→</span>
+                        )}
+                        {s.target_agent && s.target_agent !== s.agent_id && (
+                          <span className="text-indigo-600 dark:text-indigo-400 font-medium"
+                            title="이 건의가 적용될 에이전트">
+                            {AGENT_PROFILE[s.target_agent]?.character || s.target_agent}
+                          </span>
+                        )}
+                        <span className="text-gray-300 dark:text-gray-700">·</span>
+                        <span className={`px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 ${t.color}`}>
+                          <t.Icon className="w-3 h-3" /> {t.label}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded-full ${statusInfo.color}`}>
+                          {statusInfo.text}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                          {catLabel}
+                        </span>
+                        {parentId && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/30
+                            text-purple-600 dark:text-purple-400 font-mono"
+                            title="원 건의 ID">
+                            #{parentId}
+                          </span>
+                        )}
+                        <span className="ml-auto text-gray-400">
+                          {new Date(s.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
+                        </span>
+                      </div>
                     </div>
 
                     {/* 상세 (펼침) */}
@@ -320,7 +392,8 @@ export function SuggestionModal() {
                 )
               })}
             </div>
-          )}
+            )
+          })()}
         </div>
       </div>
       {branchDiff && (
