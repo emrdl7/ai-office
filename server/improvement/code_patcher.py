@@ -90,7 +90,7 @@ async def apply_suggestion(suggestion: dict) -> bool:
   # 락 대기 중이면 대기 안내
   if _PATCH_LOCK.locked():
     await _emit(
-      '팀장',
+      'teamlead',
       f'⏳ 건의 #{suggestion_id} — 다른 코드 패치 작업 중입니다. 대기 큐에 추가됨.',
     )
 
@@ -101,17 +101,17 @@ async def apply_suggestion(suggestion: dict) -> bool:
 async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch: str) -> bool:
   original_branch = _current_branch()
 
-  await _emit('팀장', f'📋 건의 #{suggestion_id} 결재 승인 — 자가개선을 시작합니다.')
+  await _emit('teamlead', f'📋 건의 #{suggestion_id} 결재 승인 — 자가개선을 시작합니다.')
 
   # 1. feature 브랜치 생성
   if _branch_exists(branch):
     _git(['branch', '-D', branch])
   code, out = _git(['checkout', '-b', branch])
   if code != 0:
-    await _emit('팀장', f'⚠️ 브랜치 생성 실패: {out}', 'error')
+    await _emit('teamlead', f'⚠️ 브랜치 생성 실패: {out}', 'error')
     return False
 
-  await _emit('팀장', f'🌿 브랜치 `{branch}` 생성 완료 — Claude가 코드를 수정합니다.')
+  await _emit('teamlead', f'🌿 브랜치 `{branch}` 생성 완료 — Claude가 코드를 수정합니다.')
 
   try:
     # 2. Claude CLI로 코드 수정
@@ -127,7 +127,7 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
     _, changed_files = _git(['diff', '--name-only', original_branch])
 
     if not changed_files.strip():
-      await _emit('팀장', f'ℹ️ 건의 #{suggestion_id}: 변경된 파일 없음 — 구현 불가 또는 이미 적용된 상태입니다.\n\n{result}', 'message')
+      await _emit('teamlead', f'ℹ️ 건의 #{suggestion_id}: 변경된 파일 없음 — 구현 불가 또는 이미 적용된 상태입니다.\n\n{result}', 'message')
       _rollback(branch, original_branch)
       return False
 
@@ -139,7 +139,7 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
     _git(['checkout', original_branch])
 
     file_list = '\n'.join(f'  • {f}' for f in changed_files.strip().splitlines())
-    await _emit('팀장', (
+    await _emit('teamlead', (
       f'✅ 건의 #{suggestion_id} 자가개선 완료!\n\n'
       f'**수정된 파일:**\n{file_list}\n\n'
       f'**브랜치:** `{branch}` (커밋 완료, 원 브랜치로 복귀)\n'
@@ -149,12 +149,12 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
     return True
 
   except ClaudeRunnerError as e:
-    await _emit('팀장', f'❌ 자가개선 실패 (Claude 오류): {e}', 'error')
+    await _emit('teamlead', f'❌ 자가개선 실패 (Claude 오류): {e}', 'error')
     _rollback(branch, original_branch)
     return False
   except Exception as e:
     logger.warning("자가개선 중 예기치 않은 오류 발생: %s", e, exc_info=True)
-    await _emit('팀장', f'❌ 자가개선 중 오류 발생: {e}', 'error')
+    await _emit('teamlead', f'❌ 자가개선 중 오류 발생: {e}', 'error')
     _rollback(branch, original_branch)
     return False
 
