@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 BRANCH_PREFIX = 'improvement'
 
+# 코드 패치는 워킹트리를 공유하므로 직렬화 필요
+# (branch checkout/commit/switch가 동시에 겹치면 엉킴)
+_PATCH_LOCK = asyncio.Lock()
+
 
 def _git(args: list[str]) -> tuple[int, str]:
   '''git 명령을 동기로 실행하고 (returncode, stdout+stderr) 반환.'''
@@ -76,9 +80,25 @@ def _build_patch_prompt(suggestion: dict) -> str:
 
 
 async def apply_suggestion(suggestion: dict) -> bool:
-  '''건의사항을 feature 브랜치에서 Claude CLI로 코드에 반영한다. 성공 시 True.'''
+  '''건의사항을 feature 브랜치에서 Claude CLI로 코드에 반영한다. 성공 시 True.
+
+  동일 워킹트리를 사용하므로 전역 락으로 직렬화한다.
+  '''
   suggestion_id = suggestion['id']
   branch = f'{BRANCH_PREFIX}/{suggestion_id}'
+
+  # 락 대기 중이면 대기 안내
+  if _PATCH_LOCK.locked():
+    await _emit(
+      '팀장',
+      f'⏳ 건의 #{suggestion_id} — 다른 코드 패치 작업 중입니다. 대기 큐에 추가됨.',
+    )
+
+  async with _PATCH_LOCK:
+    return await _apply_suggestion_locked(suggestion, suggestion_id, branch)
+
+
+async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch: str) -> bool:
   original_branch = _current_branch()
 
   await _emit('팀장', f'📋 건의 #{suggestion_id} 결재 승인 — 자가개선을 시작합니다.')
