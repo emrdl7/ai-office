@@ -1485,28 +1485,29 @@ async def rollback_auto_applied(suggestion_id: str):
 
 @app.post('/api/suggestions/{suggestion_id}/branch/supplement')
 async def supplement_suggestion_branch(suggestion_id: str, request: Request):
-  '''improvement/{id} 브랜치에 Claude를 재실행해 보완 커밋을 추가.
+  '''improvement/{id} 브랜치에 Claude를 최대 max_iterations 반복 실행해 보완.
 
-  AI 리뷰 risks + 사용자 추가 지시를 합쳐 Claude에게 이어받기 요청.
-  _PATCH_LOCK으로 직렬화. 성공 시 explain 캐시 무효화 (새 tip).
+  각 반복:
+    1) Claude 재실행(지난 risks + 사용자 지시)
+    2) 변경 커밋
+    3) 새 explain 생성
+    4) recommendation이 merge 또는 discard면 즉시 중단
   '''
-  from db.suggestion_store import get_suggestion, log_event
+  from db.suggestion_store import get_suggestion, log_event, update_suggestion
   from improvement.code_patcher import _PATCH_LOCK, _git, _current_branch
   from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
   body = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
   extra_instruction = (body.get('instruction') or '').strip()
+  try:
+    max_iters = int(body.get('max_iterations') or 3)
+  except Exception:
+    max_iters = 3
+  max_iters = max(1, min(max_iters, 5))
 
   branch = f'improvement/{suggestion_id}'
   code, _ = _run_git(['rev-parse', '--verify', branch])
   if code != 0:
     raise HTTPException(status_code=404, detail='브랜치가 존재하지 않습니다')
-
-  suggestion = get_suggestion(suggestion_id) or {}
-  # 캐시된 explain의 risks가 있으면 근거로 주입
-  _, tip = _run_git(['rev-parse', branch])
-  tip = tip.strip()
-  explain = _BRANCH_EXPLAIN_CACHE.get(tip) or {}
-  risks = explain.get('risks') or []
 
   if _PATCH_LOCK.locked():
     raise HTTPException(status_code=409, detail='다른 코드 패치 진행 중 — 완료 후 재시도')
@@ -1515,77 +1516,182 @@ async def supplement_suggestion_branch(suggestion_id: str, request: Request):
     from pathlib import Path as _P
     root = _P(__file__).parent.parent.parent
     async with _PATCH_LOCK:
+      # UI 상태: supplementing
+      update_suggestion(suggestion_id, status='supplementing')
+      suggestion = get_suggestion(suggestion_id) or {}
       await event_bus.publish(LogEvent(
         agent_id='teamlead', event_type='system_notice',
-        message=f'🛠️ 건의 #{suggestion_id} 보완 작업 시작 — 기존 브랜치에 Claude 재실행',
+        message=f'🛠️ 건의 #{suggestion_id} 보완 시작 — 최대 {max_iters}회 반복',
       ))
       original_branch = _current_branch()
-      rc, out = _git(['checkout', branch])
-      if rc != 0:
-        await event_bus.publish(LogEvent(
-          agent_id='teamlead', event_type='system_notice',
-          message=f'❌ 보완 실패 — 브랜치 체크아웃 오류: {out[:200]}',
-        ))
-        return
-      prompt = (
-        f'# AI Office 자가개선 — 보완 작업\n\n'
-        f'프로젝트 루트: {root}\n\n'
-        f'## 원 건의 #{suggestion_id}\n'
-        f'제목: {suggestion.get("title", "")}\n'
-        f'내용: {suggestion.get("content", "")[:1500]}\n\n'
-        f'## 이전 구현 요약\n'
-        f'{explain.get("intent", "(AI 리뷰 없음)")}\n\n'
-        f'## 보완해야 할 위험·부족분 (AI 리뷰)\n'
-        + ('\n'.join(f'- {r}' for r in risks) if risks else '(없음)')
-        + (f'\n\n## 사용자 추가 지시\n{extra_instruction}' if extra_instruction else '')
-        + (
-          f'\n\n## 작업 지침\n'
-          f'- 이미 현재 브랜치에 일부 구현이 있다. 덮어쓰지 말고 **추가·보완**하라.\n'
-          f'- 위 위험·부족분을 우선 해결. 범위 벗어난 건 건드리지 마라.\n'
-          f'- 기존 스타일 유지.\n'
-          f'- 변경 파일·이유를 마지막에 요약.'
+
+      success_iters = 0
+      final_verdict = 'needs_fix'
+      prev_risks_sig = ''
+      import time as _time
+      loop_start = _time.monotonic()
+      LOOP_BUDGET_SEC = 25 * 60  # 전체 보완 루프 최대 25분
+
+      for it in range(1, max_iters + 1):
+        if _time.monotonic() - loop_start > LOOP_BUDGET_SEC:
+          await event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=f'⏱️ [{it}/{max_iters}] 전체 보완 예산(25분) 초과 — 루프 중단',
+          ))
+          break
+        _, cur_tip = _run_git(['rev-parse', branch])
+        cur_tip = cur_tip.strip()
+        explain = _BRANCH_EXPLAIN_CACHE.get(cur_tip) or {}
+        risks = explain.get('risks') or []
+        prev_intent = explain.get('intent', '')
+
+        rc, out = _git(['checkout', branch])
+        if rc != 0:
+          await event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=f'❌ [{it}/{max_iters}] 보완 중단 — 체크아웃 오류: {out[:200]}',
+          ))
+          break
+
+        prompt = (
+          f'# AI Office 자가개선 — 보완 반복 {it}/{max_iters}\n\n'
+          f'프로젝트 루트: {root}\n\n'
+          f'## 원 건의 #{suggestion_id}\n'
+          f'제목: {suggestion.get("title", "")}\n'
+          f'내용: {suggestion.get("content", "")[:1500]}\n\n'
+          f'## 이전 구현 요약\n{prev_intent or "(없음)"}\n\n'
+          f'## 보완해야 할 위험·부족분 (AI 리뷰)\n'
+          + ('\n'.join(f'- {r}' for r in risks) if risks else '(없음)')
+          + (f'\n\n## 사용자 추가 지시 (초기)\n{extra_instruction}' if extra_instruction and it == 1 else '')
+          + (
+            f'\n\n## 작업 지침\n'
+            f'- 이미 브랜치에 구현이 있다. 덮어쓰지 말고 **추가·보완**.\n'
+            f'- 위 위험·부족분을 우선 해결. 범위 벗어난 건 건드리지 마라.\n'
+            f'- 기존 스타일 유지. 변경 파일·이유 마지막에 요약.'
+          )
         )
-      )
-      try:
-        result = await run_claude_isolated(prompt=prompt, timeout=600.0, max_turns=20)
-      except ClaudeRunnerError as e:
+
+        try:
+          result = await run_claude_isolated(prompt=prompt, timeout=600.0, max_turns=20)
+        except ClaudeRunnerError as e:
+          await event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=f'❌ [{it}/{max_iters}] Claude 오류: {e}',
+          ))
+          break
+
+        _, changed = _git(['diff', '--name-only', 'HEAD'])
+        _, untracked = _git(['ls-files', '--others', '--exclude-standard'])
+        if not (changed.strip() or untracked.strip()):
+          await event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=f'ℹ️ [{it}/{max_iters}] 추가 변경 없음 — 루프 종료',
+          ))
+          break
+
+        _git(['add', '-A'])
+        _git(['commit', '-m', f'supplement(#{suggestion_id}): iter {it}/{max_iters} — AI 리뷰 위험 보완'])
+        _, new_tip = _run_git(['rev-parse', branch])
+        new_tip = new_tip.strip()
+        _BRANCH_EXPLAIN_CACHE.pop(cur_tip, None)
+        log_event(suggestion_id, 'branch_supplemented', {
+          'iter': it, 'old_tip': cur_tip, 'new_tip': new_tip,
+        })
+        success_iters += 1
+
+        # 원 브랜치 복귀 후 새 explain 수행 (recommendation 판정용)
         _git(['checkout', original_branch])
-        await event_bus.publish(LogEvent(
-          agent_id='teamlead', event_type='system_notice',
-          message=f'❌ 보완 실패 (Claude): {e}',
-        ))
-        return
-      # 변경분 커밋
-      _, changed = _git(['diff', '--name-only', 'HEAD'])
-      _, untracked = _git(['ls-files', '--others', '--exclude-standard'])
-      has_changes = bool(changed.strip() or untracked.strip())
-      if not has_changes:
-        _git(['checkout', original_branch])
-        await event_bus.publish(LogEvent(
-          agent_id='teamlead', event_type='system_notice',
-          message=f'ℹ️ 보완 작업 완료 — 추가 변경 없음\n\n{result[:600]}',
-        ))
-        return
-      _git(['add', '-A'])
-      _git(['commit', '-m', f'supplement(#{suggestion_id}): AI 리뷰 위험 보완'])
-      _git(['checkout', original_branch])
-      # explain 캐시 무효화 (새 tip으로)
-      _, new_tip = _run_git(['rev-parse', branch])
-      _BRANCH_EXPLAIN_CACHE.pop(tip, None)
-      log_event(suggestion_id, 'branch_supplemented', {'old_tip': tip, 'new_tip': new_tip.strip()})
-      _, files = _git(['diff', '--name-only', 'main', branch])
-      file_list = '\n'.join(f'  • {f}' for f in files.strip().splitlines()[:10])
+        try:
+          new_explain = await _compute_branch_explain(suggestion_id, branch)
+          final_verdict = new_explain.get('recommendation', 'needs_fix')
+          await event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=(
+              f'🛠️ [{it}/{max_iters}] 보완 커밋 완료 — AI 판단: {final_verdict}\n'
+              f'Claude 요약: {result[:200]}'
+            ),
+          ))
+          if final_verdict in ('merge', 'discard'):
+            break
+          # 수렴 실패 감지 — risks가 같거나 오히려 늘면 루프 가치 없음
+          new_risks = new_explain.get('risks') or []
+          sig = '|'.join(sorted(r[:60] for r in new_risks))
+          if prev_risks_sig and sig == prev_risks_sig:
+            await event_bus.publish(LogEvent(
+              agent_id='teamlead', event_type='system_notice',
+              message=f'🔁 [{it}/{max_iters}] 위험사항이 변하지 않음 — 수렴 실패로 중단. 수동 확인 권장.',
+            ))
+            break
+          prev_risks_sig = sig
+        except Exception as e:
+          logger.warning('보완 루프 explain 실패: %s', e)
+          # explain 실패해도 계속 진행하지 않고 정지 (무한 보완 방지)
+          await event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=f'⚠️ [{it}/{max_iters}] AI 리뷰 생성 실패 — 루프 중단. 수동 확인 필요.',
+          ))
+          break
+
+      # 마무리: status 복원
+      update_suggestion(suggestion_id, status='review_pending')
       await event_bus.publish(LogEvent(
         agent_id='teamlead', event_type='system_notice',
         message=(
-          f'✅ 건의 #{suggestion_id} 보완 완료 — 다시 AI 리뷰를 확인하세요.\n'
-          f'수정 파일:\n{file_list}\n\n'
-          f'Claude 요약:\n{result[:500]}'
+          f'✅ 건의 #{suggestion_id} 보완 종료 — 총 {success_iters}회 커밋, 최종 판단={final_verdict}. '
+          f'"변경사항 보기"에서 확인하세요.'
         ),
       ))
 
   asyncio.create_task(_run())
-  return {'queued': True, 'message': '보완 작업 대기열 투입 — 완료 시 채팅 공지'}
+  return {'queued': True, 'max_iterations': max_iters, 'message': f'최대 {max_iters}회 반복 보완 대기열 투입'}
+
+
+async def _compute_branch_explain(suggestion_id: str, branch: str) -> dict:
+  '''보완 루프 내부에서 explain 로직 재사용 — 캐시에 저장하고 반환.'''
+  from db.suggestion_store import get_suggestion
+  from runners.gemini_runner import run_gemini
+  from runners.claude_runner import run_claude_isolated
+  import json as _j, re as _re
+  _, stat = _run_git(['diff', '--stat', f'main...{branch}'])
+  _, patch = _run_git(['diff', f'main...{branch}'])
+  _, log = _run_git(['log', f'main..{branch}', '--pretty=%s%n%b', '-n', '5'])
+  suggestion = get_suggestion(suggestion_id) or {}
+  prompt = (
+    f'당신은 시니어 엔지니어 리뷰어입니다. 변경사항을 분석해 JSON만 출력하세요.\n\n'
+    f'[원 건의]\n제목: {suggestion.get("title", "")}\n내용: {suggestion.get("content", "")[:800]}\n\n'
+    f'[커밋 메시지]\n{log[:600]}\n\n[변경 통계]\n{stat}\n\n[패치]\n{patch[:30000]}\n\n'
+    f'스키마: {{"intent":"2-3문장","effects":["..."],"risks":["..."],"verdict":"merge_safe|review_needed|risky",'
+    f'"verdict_reason":"...","recommendation":"merge|discard|needs_fix","recommendation_reason":"..."}}\n'
+    f'규칙: 구체적으로, 위험 최소 1개, verdict는 엄격하게.'
+  )
+  data = None
+  try:
+    raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=90.0)
+    m = _re.search(r'\{[\s\S]*\}', raw)
+    if m: data = _j.loads(m.group())
+  except Exception:
+    try:
+      raw = await run_gemini(prompt=prompt, timeout=120.0)
+      m = _re.search(r'\{[\s\S]*\}', raw)
+      if m: data = _j.loads(m.group())
+    except Exception:
+      pass
+  if not isinstance(data, dict):
+    return {}
+  _, tip = _run_git(['rev-parse', branch])
+  tip = tip.strip()
+  result = {
+    'intent': (data.get('intent') or '').strip(),
+    'effects': [str(x).strip() for x in (data.get('effects') or []) if x],
+    'risks': [str(x).strip() for x in (data.get('risks') or []) if x],
+    'verdict': data.get('verdict', 'review_needed'),
+    'verdict_reason': (data.get('verdict_reason') or '').strip(),
+    'recommendation': data.get('recommendation', 'needs_fix'),
+    'recommendation_reason': (data.get('recommendation_reason') or '').strip(),
+    'commit': tip,
+  }
+  _BRANCH_EXPLAIN_CACHE[tip] = result
+  return result
 
 
 @app.post('/api/suggestions/{suggestion_id}/branch/discard')

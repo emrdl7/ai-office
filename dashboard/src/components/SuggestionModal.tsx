@@ -30,6 +30,7 @@ const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   pending: { text: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
   accepted: { text: '처리 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
   review_pending: { text: '검토 대기', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+  supplementing: { text: '보완 중...', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse' },
   rejected: { text: '반려', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   done: { text: '반영 완료', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 }
@@ -72,10 +73,10 @@ export function SuggestionModal() {
     fetchSuggestions().finally(() => setLoading(false))
   }, [show])
 
-  // accepted 상태(반영 중) 항목이 있으면 3초마다 자동 갱신
+  // accepted/supplementing 상태(작업 중) 항목이 있으면 3초마다 자동 갱신
   useEffect(() => {
-    const hasPending = suggestions.some((s) => s.status === 'accepted')
-    if (!hasPending) return
+    const hasActive = suggestions.some((s) => s.status === 'accepted' || s.status === 'supplementing')
+    if (!hasActive) return
     const timer = setInterval(() => fetchSuggestions(), 3000)
     return () => clearInterval(timer)
   }, [suggestions])
@@ -129,22 +130,26 @@ export function SuggestionModal() {
 
   async function supplementBranch(id: string) {
     const instruction = prompt(
-      '추가 지시사항 (선택) — AI 리뷰의 위험사항 외에 더 보완할 내용이 있으면 입력:',
+      '추가 지시사항 (선택) — AI 리뷰 위험사항 외에 더 보완할 내용:',
       '',
     )
-    if (instruction === null) return  // 사용자가 cancel
+    if (instruction === null) return
+    const iterStr = prompt('자동 반복 최대 횟수 (1~5, 기본 3)', '3')
+    if (iterStr === null) return
+    const max_iterations = Math.min(5, Math.max(1, parseInt(iterStr || '3', 10) || 3))
     const r = await fetch(`/api/suggestions/${id}/branch/supplement`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instruction }),
+      body: JSON.stringify({ instruction, max_iterations }),
     })
     if (!r.ok) {
       const err = await r.json().catch(() => ({ detail: '실패' }))
       alert('보완 요청 실패: ' + (err.detail || ''))
       return
     }
-    alert('보완 작업이 대기열에 들어갔습니다. 완료되면 채팅에 공지됩니다.\n완료 후 "변경사항 보기"를 다시 열어주세요.')
+    alert(`보완 대기열 투입 — 최대 ${max_iterations}회 반복. 진행 상황은 채팅에 공지됩니다.\n중간 수렴(merge/discard 판정) 시 조기 종료.`)
     setBranchDiff(null)
+    fetchSuggestions()
   }
 
   async function rollbackAuto(id: string) {
@@ -274,12 +279,16 @@ export function SuggestionModal() {
                 return (
                   <div
                     key={s.id}
-                    className={`rounded-lg border transition cursor-pointer
+                    className={`rounded-lg border transition
+                      ${s.status === 'supplementing' || s.status === 'accepted'
+                        ? 'opacity-70 cursor-not-allowed'
+                        : 'cursor-pointer'}
                       ${isExpanded
                         ? 'border-blue-300 dark:border-blue-700 bg-blue-50/40 dark:bg-blue-950/20'
                         : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 bg-white dark:bg-gray-900'}
                       ${isFollowUp ? 'border-l-4 !border-l-purple-400 dark:!border-l-purple-600' : ''}`}
                     onClick={() => {
+                      if (s.status === 'supplementing' || s.status === 'accepted') return
                       setSelected(isExpanded ? null : s)
                       setComment('')
                       if (!isExpanded) loadEvents(s.id)
