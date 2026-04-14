@@ -1238,6 +1238,7 @@ async def explain_suggestion_branch(suggestion_id: str):
   suggestion = get_suggestion(suggestion_id) or {}
 
   from runners.gemini_runner import run_gemini
+  from runners.claude_runner import run_claude_isolated
   import json as _j, re as _re
 
   prompt = (
@@ -1262,17 +1263,31 @@ async def explain_suggestion_branch(suggestion_id: str):
     f'- 위험이 없어 보여도 최소 1개는 찾아서 기술 (테스트 누락/엣지 케이스/되돌리기 어려움 등).\n'
     f'- verdict는 엄격하게: 어지간하면 review_needed.'
   )
+  data = None
+  last_err = ''
+  # 1차: Claude Haiku (큰 컨텍스트에 안정적)
   try:
-    # explain은 180초 내 응답 — Gemini CLI 지연 흔함. 그래도 10분(기본)은 너무 김
-    raw = await run_gemini(prompt=prompt, timeout=180.0)
+    raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=90.0)
     m = _re.search(r'\{[\s\S]*\}', raw)
-    data = _j.loads(m.group()) if m else None
+    if m:
+      data = _j.loads(m.group())
   except Exception as e:
-    logger.warning('브랜치 설명 생성 실패: %s', e)
-    return {'error': f'AI 분석 실패 ({type(e).__name__}) — diff를 직접 확인하세요'}
+    last_err = f'claude: {type(e).__name__}: {str(e)[:120]}'
+    logger.warning('Claude explain 실패 → Gemini 폴백: %s', last_err)
+
+  # 2차: Gemini 폴백
+  if not isinstance(data, dict):
+    try:
+      raw = await run_gemini(prompt=prompt, timeout=120.0)
+      m = _re.search(r'\{[\s\S]*\}', raw)
+      if m:
+        data = _j.loads(m.group())
+    except Exception as e:
+      last_err = last_err + f' | gemini: {type(e).__name__}: {str(e)[:120]}'
+      logger.warning('Gemini explain 실패: %s', last_err)
 
   if not isinstance(data, dict):
-    return {'error': 'AI 분석 JSON 파싱 실패 — diff를 직접 확인하세요'}
+    return {'error': f'AI 분석 실패 — {last_err or "응답 없음"}'}
 
   result = {
     'intent': (data.get('intent') or '').strip(),
