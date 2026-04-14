@@ -1083,6 +1083,135 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
   return {'success': True}
 
 
+async def auto_triage_new_suggestion(suggestion_id: str):
+  '''새 건의가 등록되면 LLM이 실행 가치를 판정해 자동 accept/reject/hold.
+
+  - accept: code → 자동 패치 + 자동 병합 파이프라인 / prompt|rule → 즉시 auto_apply
+  - reject: 명확히 부적절·중복 → 즉시 rejected + 사유
+  - hold: 애매하면 pending 유지 (사람 판단)
+
+  Safety:
+  - 이미 pending이 아니면 no-op (중복 트리거 방지)
+  - 24h 트리거 한도 15건 (폭주 방지)
+  - 회로 차단기: 24h 롤백 1+ → hold
+  - SUGGESTION_AUTO_TRIAGE_OFF=1 이면 비활성화 (수동 모드)
+  '''
+  import os as _os
+  import asyncio as _a
+  import json as _j
+  import re as _re
+  from datetime import datetime, timezone, timedelta
+  from db.suggestion_store import (
+    get_suggestion, update_suggestion, log_event, count_rollbacks_since, _conn as _sconn,
+  )
+  from runners.claude_runner import run_claude_isolated
+
+  if _os.environ.get('SUGGESTION_AUTO_TRIAGE_OFF', '').lower() in ('1', 'true', 'yes'):
+    return
+
+  # 갓 생성된 DB 트랜잭션 충돌 피하려 1초 유예
+  await _a.sleep(1.0)
+
+  s = get_suggestion(suggestion_id)
+  if not s or s.get('status') != 'pending':
+    return  # 이미 누가 처리함
+
+  # 일일 triage 한도 체크 (24h 15건)
+  cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+  c = _sconn()
+  row = c.execute(
+    'SELECT COUNT(*) FROM suggestion_events WHERE kind IN (?,?) AND ts>=? AND payload LIKE ?',
+    ('auto_triage_accept', 'auto_triage_reject', cutoff, '%'),
+  ).fetchone()
+  c.close()
+  if row and row[0] >= 15:
+    log_event(suggestion_id, 'auto_triage_hold', {'reason': 'daily_budget_exhausted'})
+    return
+
+  # 회로 차단기
+  if count_rollbacks_since(hours=24) > 0:
+    log_event(suggestion_id, 'auto_triage_hold', {'reason': 'recent_rollback'})
+    return
+
+  # LLM 판정 (Haiku, 저비용)
+  title = s.get('title', '')
+  content = s.get('content', '')[:1200]
+  stype = s.get('suggestion_type', 'prompt')
+  target = s.get('target_agent', '') or '팀 전체'
+
+  prompt = (
+    f'건의가 접수됐습니다. 실행 가치를 보수적으로 판정하세요.\n\n'
+    f'[타입] {stype}\n[대상] {target}\n[제목] {title}\n[내용]\n{content}\n\n'
+    f'판정 기준:\n'
+    f'- accept: 구체·실행 가능하고 범위 명확하며 이미 해결된 주제가 아닐 때\n'
+    f'- reject: 추상 방법론만 언급, 이미 반영된 주제의 재탕, 범위 너무 큼, 아키텍처 의사결정 필요, 토론·질문 성격\n'
+    f'- hold: 판단이 애매하거나 사람의 추가 맥락이 필요할 때 (보수적 기본값)\n\n'
+    f'JSON만 출력: {{"decision":"accept|reject|hold","reason":"1문장"}}'
+  )
+  decision = 'hold'
+  reason = 'LLM 응답 없음'
+  try:
+    raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=30.0)
+    m = _re.search(r'\{[\s\S]*?\}', raw)
+    if m:
+      d = _j.loads(m.group())
+      decision = (d.get('decision') or 'hold').strip()
+      reason = (d.get('reason') or '').strip()
+  except Exception as e:
+    logger.warning('auto_triage LLM 실패: %s', e)
+    return
+
+  if decision == 'reject':
+    update_suggestion(suggestion_id, status='rejected', response=f'자동 판정 반려: {reason}')
+    log_event(suggestion_id, 'auto_triage_reject', {'reason': reason})
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message=f'🚫 자동 반려 #{suggestion_id}: {reason[:150]}',
+    ))
+    return
+
+  if decision != 'accept':
+    log_event(suggestion_id, 'auto_triage_hold', {'reason': reason})
+    return
+
+  # accept — 타입별 분기
+  log_event(suggestion_id, 'auto_triage_accept', {'reason': reason, 'suggestion_type': stype})
+  await event_bus.publish(LogEvent(
+    agent_id='teamlead', event_type='system_notice',
+    message=f'✅ 자동 승인 #{suggestion_id}: {reason[:150]}',
+  ))
+
+  if stype in ('prompt', 'rule'):
+    from improvement.auto_apply import apply_prompt_or_rule
+    ok = await apply_prompt_or_rule(s, user_comment='')
+    if ok:
+      now_iso = datetime.now(timezone.utc).isoformat()
+      cc = _sconn()
+      cc.execute(
+        'UPDATE suggestions SET status=?, auto_applied=1, auto_applied_at=? WHERE id=?',
+        ('done', now_iso, suggestion_id),
+      )
+      cc.commit(); cc.close()
+      log_event(suggestion_id, 'auto_applied', {'via': 'triage', 'target_agent': s.get('target_agent')})
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'🤖 자동 반영 #{suggestion_id} — 24h 내 되돌리기 가능',
+      ))
+  else:  # code
+    update_suggestion(suggestion_id, status='accepted')
+    log_event(suggestion_id, 'approved', {'via': 'triage'})
+    async def _run():
+      from improvement.code_patcher import apply_suggestion
+      from db.suggestion_store import update_suggestion as _upd
+      ok = await apply_suggestion(s)
+      if ok:
+        _upd(suggestion_id, status='review_pending')
+        _a.create_task(_auto_merge_pipeline(suggestion_id))
+      else:
+        _upd(suggestion_id, status='pending')
+    _a.create_task(_run())
+
+
 async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3):
   '''승인 후 Claude 패치가 끝난 상태에서 호출.
 
@@ -1727,11 +1856,13 @@ async def merge_suggestion_branch(suggestion_id: str, request: Request):
           f'AI 리뷰 판정: {explain.get("verdict", "review_needed")}\n'
           f'근거: {explain.get("verdict_reason", "")}\n'
         )
-        create_suggestion(
+        fu_created = create_suggestion(
           agent_id='teamlead', title=title[:80], content=content,
           category='프로세스 개선', target_agent='',
         )
         follow_ups += 1
+        # follow-up도 auto_triage
+        asyncio.create_task(auto_triage_new_suggestion(fu_created['id']))
       except Exception:
         logger.debug('follow-up 등록 실패', exc_info=True)
 

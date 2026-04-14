@@ -3332,6 +3332,14 @@ class Office:
             ))
         elif circuit_tripped and auto_safe and stype in ('prompt', 'rule'):
           log_event(created['id'], 'circuit_breaker_block', {'rollbacks_7d': global_rollback_7d})
+        else:
+          # auto_safe가 False이거나 code 타입 → triage에게 맡김
+          try:
+            from main import auto_triage_new_suggestion
+            import asyncio as _a_triage
+            _a_triage.create_task(auto_triage_new_suggestion(created['id']))
+          except Exception:
+            logger.debug('auto_triage 호출 실패', exc_info=True)
       except Exception:
         logger.debug('팀장 리뷰 건의 등록 실패', exc_info=True)
 
@@ -3808,7 +3816,7 @@ class Office:
       f'\n(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
     )
     try:
-      create_suggestion(
+      created = create_suggestion(
         agent_id=agent_id,
         title=title_text,
         content=content,
@@ -3821,6 +3829,11 @@ class Office:
         'system_notice',
       )
       logger.info('리액션 건의 등록: %s | %s | %s', agent_id, matched_category, title_text)
+      try:
+        from main import auto_triage_new_suggestion
+        asyncio.create_task(auto_triage_new_suggestion(created['id']))
+      except Exception:
+        logger.debug('auto_triage 호출 실패', exc_info=True)
     except Exception:
       logger.debug('create_suggestion 실패', exc_info=True)
 
@@ -3939,5 +3952,11 @@ class Office:
         'system_notice',
       )
       logger.info('자동 건의 등록: %s | %s | %s | target=%s', agent_id, matched_category, title, target or '(본인)')
+      # 자동 판정 트리거
+      try:
+        from main import auto_triage_new_suggestion
+        asyncio.create_task(auto_triage_new_suggestion(created['id']))
+      except Exception:
+        logger.debug('auto_triage 호출 실패', exc_info=True)
     except Exception:
       logger.debug('create_suggestion 실패', exc_info=True)
