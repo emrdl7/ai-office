@@ -3159,13 +3159,28 @@ class Office:
   async def _run_single_review(self, force: bool = False) -> None:
     '''배치 리뷰 1회 실행. 락은 호출자가 소유.
 
-    force=True면 트리거 조건(30건/30분) 무시하고 무조건 실행 (수동 트리거용).
+    force=True면 트리거 조건 무시. 단 최소 간격(5분)은 유지해 연타 방지.
     '''
     import json as _j
     from datetime import datetime, timezone
 
     state = self._load_digest_state()
     last_ts = state.get('last_reviewed_ts', '')
+    # 실제 리뷰가 돌아간 시각 (run_ts가 없으면 last_reviewed_ts 사용)
+    last_run = state.get('last_run_ts', last_ts)
+
+    # 최소 간격 보호 — force여도 5분 안쪽이면 거절
+    min_interval = 300 if force else 900  # 수동 5분 / 자동 15분
+    if last_run:
+      try:
+        last_dt = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
+        elapsed_run = (datetime.now(timezone.utc) - last_dt).total_seconds()
+        if elapsed_run < min_interval:
+          logger.info('리뷰 간격 미충족 — %.0fs < %ds (force=%s)', elapsed_run, min_interval, force)
+          return
+      except Exception:
+        pass
+
     from db.log_store import load_logs as _load
     recent = _load(limit=200)
     fresh = [
@@ -3175,13 +3190,13 @@ class Office:
       and (not last_ts or l.get('timestamp', '') > last_ts)
     ]
     if not force:
-      if len(fresh) < 30:
+      if len(fresh) < 40:
         need_time_trigger = False
         if last_ts:
           try:
             last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
             elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
-            if elapsed >= 1800 and len(fresh) >= 10:
+            if elapsed >= 3600 and len(fresh) >= 15:  # 1시간+15건
               need_time_trigger = True
           except Exception:
             pass
@@ -3217,15 +3232,34 @@ class Office:
       return
 
     from db.suggestion_store import create_suggestion, list_suggestions
-    existing_titles = {s.get('title', '') for s in list_suggestions(status='pending')}
+    # pending + done 모두 포함해 중복 판단 (이미 해결된 주제 다시 올리지 않기)
+    all_prev = list_suggestions(status='')
+    import re as _re_dedup
+    def _kw(s: str) -> set[str]:
+      # 영문 3자+ / 한글 2자+ 토큰, 불용어 제거
+      toks = set(_re_dedup.findall(r'[A-Za-z][A-Za-z0-9]{2,}|[가-힣]{2,}', s or ''))
+      stop = {'건의', '제안', '도입', '적용', '기반', '관련', '활용', '개선', '자동화', '통합', '연계', '구축', '시스템', '파일럿', '워크플로우'}
+      return {t for t in toks if t.lower() not in {x.lower() for x in stop}}
+    prev_kwsets = [(_kw(p.get('title', '') + ' ' + p.get('content', '')), p.get('status'), p.get('id')) for p in all_prev[:80]]
+
     registered = 0
     for s in (data.get('suggestions') or [])[:3]:
       title = (s.get('title') or '').strip()[:80]
       body = (s.get('body') or '').strip()
       if not title or not body:
         continue
-      # 제목 중복 간단 체크
-      if any(title[:20] in t or t[:20] in title for t in existing_titles):
+      new_kw = _kw(title + ' ' + body)
+      # 기존 제목과 키워드 3개 이상 겹치면 중복
+      skipped = False
+      for prev_kws, prev_status, prev_id in prev_kwsets:
+        if not prev_kws or not new_kw:
+          continue
+        overlap = new_kw & prev_kws
+        if len(overlap) >= 3:
+          logger.info('리뷰 건의 중복 — #%s(%s)와 %d어 겹침: %s', prev_id, prev_status, len(overlap), list(overlap)[:5])
+          skipped = True
+          break
+      if skipped:
         continue
       content = (
         f'{body}\n\n[팀장 리뷰 근거]\n{(s.get("reasoning") or "").strip()}\n\n'
@@ -3255,6 +3289,7 @@ class Office:
       })
       state['history'] = state['history'][:30]
     state['last_reviewed_ts'] = fresh[0]['timestamp']
+    state['last_run_ts'] = now_ts  # 최소 간격 계산용
     self._save_digest_state(state)
 
     msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건 중 건의 격상 {registered}건'

@@ -2,13 +2,8 @@ name: Accessibility — WCAG Contrast Check
 
 on:
   push:
-    paths:
-      - 'dashboard/src/**/*.css'
-      - 'dashboard/scripts/check-contrast.mjs'
+    branches: [main]
   pull_request:
-    paths:
-      - 'dashboard/src/**/*.css'
-      - 'dashboard/scripts/check-contrast.mjs'
 
 jobs:
   contrast:
