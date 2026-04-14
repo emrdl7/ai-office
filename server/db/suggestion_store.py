@@ -48,7 +48,87 @@ def _conn() -> sqlite3.Connection:
     conn.commit()
   except sqlite3.OperationalError:
     pass
+  # 건의 감사 로그 — kind 예: auto_filed/dedup_skipped/review_promoted/auto_applied/
+  # rollback/approved/rejected/branch_created/branch_merged/branch_discarded/test_failed
+  conn.execute('''
+    CREATE TABLE IF NOT EXISTS suggestion_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      suggestion_id TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      payload TEXT DEFAULT '{}'
+    )
+  ''')
+  conn.execute('CREATE INDEX IF NOT EXISTS idx_events_sid ON suggestion_events(suggestion_id)')
+  conn.execute('CREATE INDEX IF NOT EXISTS idx_events_kind ON suggestion_events(kind, ts)')
+  conn.commit()
   return conn
+
+
+def log_event(suggestion_id: str, kind: str, payload: dict | None = None) -> None:
+  '''건의 감사 이벤트 기록.'''
+  import json as _json
+  c = _conn()
+  c.execute(
+    'INSERT INTO suggestion_events (suggestion_id, ts, kind, payload) VALUES (?, ?, ?, ?)',
+    (
+      suggestion_id,
+      datetime.now(timezone.utc).isoformat(),
+      kind,
+      _json.dumps(payload or {}, ensure_ascii=False),
+    ),
+  )
+  c.commit()
+  c.close()
+
+
+def list_events(suggestion_id: str = '', limit: int = 200) -> list[dict]:
+  '''건의 이벤트 목록 (시계열, 최신순).'''
+  import json as _json
+  c = _conn()
+  if suggestion_id:
+    rows = c.execute(
+      'SELECT * FROM suggestion_events WHERE suggestion_id=? ORDER BY ts DESC LIMIT ?',
+      (suggestion_id, limit),
+    ).fetchall()
+  else:
+    rows = c.execute(
+      'SELECT * FROM suggestion_events ORDER BY ts DESC LIMIT ?', (limit,),
+    ).fetchall()
+  c.close()
+  out = []
+  for r in rows:
+    d = dict(r)
+    try:
+      d['payload'] = _json.loads(d.get('payload') or '{}')
+    except Exception:
+      d['payload'] = {}
+    out.append(d)
+  return out
+
+
+def count_rollbacks_since(hours: int = 168, target_agent: str | None = None) -> int:
+  '''최근 N시간 내 rollback 이벤트 수. target 필터 옵션.'''
+  import json as _json
+  from datetime import timedelta
+  cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+  c = _conn()
+  rows = c.execute(
+    'SELECT payload FROM suggestion_events WHERE kind=? AND ts>=?',
+    ('rollback', cutoff),
+  ).fetchall()
+  c.close()
+  if target_agent is None:
+    return len(rows)
+  n = 0
+  for r in rows:
+    try:
+      p = _json.loads(r['payload'] or '{}')
+      if p.get('target_agent') == target_agent:
+        n += 1
+    except Exception:
+      pass
+  return n
 
 
 # 발언에서 언급된 대상 에이전트를 감지하는 heuristic
@@ -65,15 +145,88 @@ _TARGET_PATTERNS: list[tuple[str, list[str]]] = [
 ]
 
 
+_DEDUP_STOPWORDS = {
+  '건의', '제안', '도입', '적용', '기반', '관련', '활용', '개선', '자동화', '통합',
+  '연계', '구축', '시스템', '파일럿', '워크플로우', '워크플로', '방식', '방안', '검수',
+  '명세', '기준', '규약', '가이드', '가이드라인', '규칙', '원칙', '표준', '프로세스',
+  '관리', '강화', '고도화', '통합', '정의', '추가', '확장', '필요', '수립', '처리',
+  '업무', '작업', '산출', '산출물', '체계', '고려', '생각', '논의',
+}
+
+
+def _kw_set(s: str) -> set[str]:
+  '''의미 키워드 set — stop word 제외.'''
+  import re as _re
+  toks = set(_re.findall(r'[A-Za-z][A-Za-z0-9]{2,}|[가-힣]{2,}', s or ''))
+  return {t for t in toks if t.lower() not in {x.lower() for x in _DEDUP_STOPWORDS}}
+
+
+def is_duplicate(title: str, content: str, scope: str = 'all') -> tuple[bool, str]:
+  '''새 건의가 기존 건의와 의미상 중복인지 판정.
+
+  scope: 'pending' | 'all' (done/rejected까지 포함).
+  반환: (중복여부, 사유 또는 매칭된 기존 id).
+  '''
+  c = _conn()
+  if scope == 'pending':
+    rows = c.execute(
+      "SELECT id, title, content, status FROM suggestions WHERE status='pending' ORDER BY created_at DESC LIMIT 80"
+    ).fetchall()
+  else:
+    rows = c.execute(
+      "SELECT id, title, content, status FROM suggestions ORDER BY created_at DESC LIMIT 80"
+    ).fetchall()
+  c.close()
+  new_kws = _kw_set(f'{title} {content}')
+  new_title_kws = _kw_set(title)
+  if not new_kws:
+    return (False, '')
+  for r in rows:
+    prev_title = r['title'] or ''
+    prev_content = r['content'] or ''
+    prev_kws = _kw_set(f'{prev_title} {prev_content}')
+    if not prev_kws:
+      continue
+    overlap = new_kws & prev_kws
+    smaller = min(len(new_kws), len(prev_kws))
+    ratio = len(overlap) / smaller if smaller else 0
+    # 전체 키워드 겹침이 0.45 이상 또는 제목 키워드가 2개 이상 겹치면 중복
+    title_overlap = len(new_title_kws & _kw_set(prev_title))
+    if len(overlap) >= 3 and ratio >= 0.45:
+      return (True, f'{r["id"]}({r["status"]}) keyword_overlap={ratio:.2f}')
+    if title_overlap >= 2 and len(new_title_kws) >= 3:
+      return (True, f'{r["id"]}({r["status"]}) title_overlap={title_overlap}')
+  return (False, '')
+
+
+_ATTRIBUTION_VERBS = (
+  '해라', '해야', '하자', '합시다', '바꿔', '바꾸', '추가', '반영', '도입',
+  '적용', '정의', '수정', '개선', '명세', '규칙', '프롬프트', '규약', '기준',
+  '의 역할', '에게 적용', '이 적용',
+)
+
+
 def detect_target_agent(message: str, speaker: str = '') -> str:
-  '''발언 텍스트에서 적용 대상 에이전트를 추론. 자기 자신이나 미발견이면 빈 문자열.'''
+  '''발언 텍스트에서 적용 대상 에이전트를 추론. 자기 자신/미발견/단순 언급은 빈 문자열.
+
+  단순히 "QA가 지적한대로" 같은 인용 언급은 제외하고, 매치 주변 20자 윈도 안에
+  귀속 동사(해라/바꿔/적용/명세 등)가 있을 때만 target으로 확정한다.
+  '''
   text = message
   for agent, patterns in _TARGET_PATTERNS:
     if agent == speaker:
       continue
     for p in patterns:
-      if p in text:
+      idx = text.find(p)
+      if idx < 0:
+        continue
+      # 매치 주변 ±20자 윈도
+      start = max(0, idx - 20)
+      end = min(len(text), idx + len(p) + 20)
+      window = text[start:end]
+      if any(v in window for v in _ATTRIBUTION_VERBS):
         return agent
+      # 귀속 동사 없으면 단순 인용으로 간주, 다음 패턴/에이전트 계속
   return ''
 
 
@@ -128,6 +281,52 @@ def classify_suggestion_type(title: str, content: str, category: str = 'general'
 
   # 기본값: 프롬프트
   return 'prompt'
+
+
+async def classify_suggestion_type_2stage(title: str, content: str, category: str = 'general') -> str:
+  '''2단계 분류: 키워드 결과가 rule이면서 강한 code 시그널도 공존하는 경계 케이스만
+  Haiku에 한 번 물어 보수적으로 확정. 호출측은 비동기 문맥일 때 이 함수를 쓴다.'''
+  base = classify_suggestion_type(title, content, category)
+  text = f'{title} {content}'.lower()
+  # 경계: rule + strong_code 잠복 (예: "규칙으로 정하자: 웹훅 엔드포인트 추가")
+  suspicious = False
+  if base == 'rule':
+    borderline = [
+      'endpoint', 'webhook', '엔드포인트', 'api 엔드포인트', '라이브러리', '.py', '.ts', '.tsx',
+      '워크플로 파일', 'workflow 파일', 'github actions', 'yml',
+      '설치', 'install', '구현', '빌드',
+    ]
+    if any(b in text for b in borderline):
+      suspicious = True
+  # 경계: code로 분류됐지만 내용이 "규칙"/"명세" 중심이라 rule일 가능성
+  elif base == 'code':
+    rule_markers = ['규칙', '원칙', '기준', '명세 작성', '인수 조건', '합격 기준', 'acceptance criteria']
+    if any(m in text for m in rule_markers) and len(text) < 600:
+      suspicious = True
+  if not suspicious:
+    return base
+  try:
+    from runners.claude_runner import run_claude_isolated
+    prompt = (
+      f'건의를 정확히 하나로 분류: prompt | rule | code.\n'
+      f'- prompt: 에이전트 태도/관점 변화 (프롬프트 편집)\n'
+      f'- rule: 규약·기준·명세 추가 (md 편집 수준)\n'
+      f'- code: 실제 파일 생성·수정·라이브러리 설치\n\n'
+      f'[제목]\n{title}\n\n[내용]\n{content[:800]}\n\n'
+      f'JSON만 출력: {{"type":"prompt|rule|code","reason":"1문장"}}'
+    )
+    raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=15.0)
+    import re as _re, json as _json
+    m = _re.search(r'\{[\s\S]*?\}', raw)
+    if m:
+      d = _json.loads(m.group())
+      t = (d.get('type') or '').strip()
+      if t in ('prompt', 'rule', 'code'):
+        return t
+  except Exception:
+    pass
+  # 실패 시 안전한 기본값 — 자동 반영 가능한 prompt로 떨어뜨리지 않고 원 분류 유지
+  return base
 
 
 def create_suggestion(

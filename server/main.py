@@ -1025,6 +1025,13 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
 
   suggestion = get_suggestion(suggestion_id)
 
+  # 승인/반려 감사 이벤트
+  if new_status in ('accepted', 'rejected') and suggestion:
+    from db.suggestion_store import log_event as _le
+    _le(suggestion_id, 'approved' if new_status == 'accepted' else 'rejected', {
+      'response': (body.get('response') or '')[:200],
+    })
+
   # 승인 — 저장된 suggestion_type 보고 자동 분기
   if new_status == 'accepted' and suggestion:
     stype = suggestion.get('suggestion_type') or 'prompt'
@@ -1158,6 +1165,20 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
   ))
 
 
+@app.get('/api/suggestions/{suggestion_id}/events')
+async def get_suggestion_events(suggestion_id: str):
+  '''건의의 감사 이벤트 시계열.'''
+  from db.suggestion_store import list_events
+  return list_events(suggestion_id=suggestion_id, limit=200)
+
+
+@app.get('/api/suggestion-events')
+async def get_all_events(limit: int = 200):
+  '''전체 감사 이벤트 최신순 (분석용).'''
+  from db.suggestion_store import list_events
+  return list_events(limit=limit)
+
+
 @app.delete('/api/suggestions/{suggestion_id}')
 async def delete_suggestion_api(suggestion_id: str):
   '''건의를 삭제한다.'''
@@ -1265,9 +1286,17 @@ async def explain_suggestion_branch(suggestion_id: str):
 
 
 @app.post('/api/suggestions/{suggestion_id}/branch/merge')
-async def merge_suggestion_branch(suggestion_id: str):
-  '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done + 위험 follow-up 자동 등록.'''
-  from db.suggestion_store import update_suggestion, get_suggestion, create_suggestion
+async def merge_suggestion_branch(suggestion_id: str, request: Request):
+  '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done + 위험 follow-up 자동 등록.
+
+  게이트:
+  - AI 리뷰 verdict='risky'면 409 (쿼리 ?confirm_risky=true로 우회)
+  - pytest/ruff 체크 (쿼리 ?skip_tests=true로 생략 가능)
+  '''
+  from db.suggestion_store import update_suggestion, get_suggestion, create_suggestion, log_event
+  confirm_risky = request.query_params.get('confirm_risky') == 'true'
+  skip_tests = request.query_params.get('skip_tests') == 'true'
+
   branch = f'improvement/{suggestion_id}'
   code, _ = _run_git(['rev-parse', '--verify', branch])
   if code != 0:
@@ -1280,6 +1309,61 @@ async def merge_suggestion_branch(suggestion_id: str):
   _, tip = _run_git(['rev-parse', branch])
   tip = tip.strip()
 
+  # risky 게이트
+  explain_cache = _BRANCH_EXPLAIN_CACHE.get(tip)
+  if explain_cache and explain_cache.get('verdict') == 'risky' and not confirm_risky:
+    raise HTTPException(
+      status_code=409,
+      detail='RISKY_UNCONFIRMED: AI 리뷰가 위험으로 판정했습니다. ?confirm_risky=true로 강제하세요.',
+    )
+
+  # 테스트/린트 게이트
+  if not skip_tests:
+    import asyncio as _a
+    import subprocess as _sp
+
+    async def _check(cmd: list[str], cwd: str) -> tuple[int, str]:
+      proc = await _a.create_subprocess_exec(
+        *cmd, cwd=cwd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
+      )
+      try:
+        out, _ = await _a.wait_for(proc.communicate(), timeout=300)
+      except _a.TimeoutError:
+        proc.kill()
+        return (124, 'timeout')
+      return (proc.returncode, (out or b'').decode(errors='ignore')[-3000:])
+
+    from pathlib import Path as _P
+    root = _P(__file__).parent.parent.parent
+    server_dir = _P(__file__).parent
+
+    # 병합 전에 브랜치를 임시 worktree로 체크아웃 (현재 main을 변경하지 않음)
+    import tempfile as _tf
+    tmpdir = _tf.mkdtemp(prefix='improvement-wt-')
+    _, wt_out = _run_git(['worktree', 'add', '--detach', tmpdir, branch])
+    try:
+      wt_server = str(_P(tmpdir) / 'server')
+      rc_lint, out_lint = await _check(['uv', 'run', 'ruff', 'check', '.'], wt_server)
+      rc_test, out_test = (0, 'skipped')
+      # tests 경로가 있으면 실행
+      if (_P(wt_server) / 'tests').exists():
+        rc_test, out_test = await _check(['uv', 'run', 'pytest', '-x', '-q'], wt_server)
+      if rc_lint != 0 or rc_test != 0:
+        log_event(suggestion_id, 'test_failed', {
+          'lint_rc': rc_lint, 'test_rc': rc_test,
+          'lint_tail': out_lint[-500:], 'test_tail': out_test[-500:],
+        })
+        update_suggestion(
+          suggestion_id,
+          response=f'테스트/린트 실패 — lint_rc={rc_lint}, test_rc={rc_test}',
+        )
+        raise HTTPException(
+          status_code=409,
+          detail=f'TEST_FAILED: lint_rc={rc_lint}, test_rc={rc_test}. 확인 후 수정하거나 ?skip_tests=true로 우회.',
+        )
+    finally:
+      _run_git(['worktree', 'remove', '--force', tmpdir])
+
   code, out = _run_git(['merge', '--no-ff', '-m', f'merge: improvement/{suggestion_id}', branch])
   if code != 0:
     _run_git(['merge', '--abort'])
@@ -1287,6 +1371,7 @@ async def merge_suggestion_branch(suggestion_id: str):
   _run_git(['branch', '-d', branch])
   update_suggestion(suggestion_id, status='done')
   suggestion = get_suggestion(suggestion_id)
+  log_event(suggestion_id, 'branch_merged', {'tip': tip})
 
   # 병합 후 follow-up 자동 등록 — AI 리뷰의 risks를 새 건의로 승격
   follow_ups = 0
@@ -1354,6 +1439,12 @@ async def rollback_auto_applied(suggestion_id: str):
     ('자동 반영 롤백 (사용자 되돌리기)', suggestion_id),
   )
   c.commit(); c.close()
+  from db.suggestion_store import log_event as _logev
+  _logev(suggestion_id, 'rollback', {
+    'target_agent': suggestion.get('target_agent') or '',
+    'removed_rules': removed.get('rules', 0),
+    'removed_lessons': removed.get('lessons', 0),
+  })
   from config.team import display_name
   await event_bus.publish(LogEvent(
     agent_id='teamlead', event_type='system_notice',
@@ -1368,10 +1459,11 @@ async def rollback_auto_applied(suggestion_id: str):
 @app.post('/api/suggestions/{suggestion_id}/branch/discard')
 async def discard_suggestion_branch(suggestion_id: str):
   '''improvement/{id} 브랜치를 폐기하고 건의를 rejected로.'''
-  from db.suggestion_store import update_suggestion
+  from db.suggestion_store import update_suggestion, log_event
   branch = f'improvement/{suggestion_id}'
   _run_git(['branch', '-D', branch])
   update_suggestion(suggestion_id, status='rejected', response='브랜치 폐기')
+  log_event(suggestion_id, 'branch_discarded', {})
   await event_bus.publish(LogEvent(
     agent_id='teamlead',
     event_type='response',

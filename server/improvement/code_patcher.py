@@ -116,20 +116,36 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
   try:
     # 2. Claude CLI로 코드 수정
     prompt = _build_patch_prompt(suggestion)
-    result = await run_claude_isolated(
-      prompt=prompt,
-      timeout=300.0,
-      max_turns=20,
-    )
+    timed_out = False
+    try:
+      result = await run_claude_isolated(
+        prompt=prompt,
+        timeout=600.0,  # 5분 → 10분으로 연장 (CI 워크플로 등 복잡 작업 여유)
+        max_turns=20,
+      )
+    except ClaudeRunnerError as e:
+      if 'timeout' in str(e).lower() or '타임아웃' in str(e):
+        timed_out = True
+        result = f'⏱️ Claude CLI 타임아웃 (600초) — 중간 결과물 확인 필요'
+      else:
+        raise
 
     # 3. 변경 사항 확인
     _, diff_stat = _git(['diff', '--stat', original_branch])
     _, changed_files = _git(['diff', '--name-only', original_branch])
 
     if not changed_files.strip():
-      await _emit('teamlead', f'ℹ️ 건의 #{suggestion_id}: 변경된 파일 없음 — 구현 불가 또는 이미 적용된 상태입니다.\n\n{result}', 'message')
+      note = '타임아웃 + ' if timed_out else ''
+      await _emit('teamlead', f'ℹ️ 건의 #{suggestion_id}: {note}변경된 파일 없음 — 구현 불가 또는 이미 적용된 상태입니다.\n\n{result}', 'message')
       _rollback(branch, original_branch)
       return False
+
+    # 타임아웃이어도 변경 파일이 있으면 partial 결과를 커밋해 사용자 검토에 넘김
+    if timed_out:
+      await _emit('teamlead', (
+        f'⏱️ 건의 #{suggestion_id}: 타임아웃이지만 부분 결과물 존재 — '
+        f'{len(changed_files.strip().splitlines())}파일 변경됨. 검토 대기로 전환합니다.'
+      ), 'message')
 
     # 4. 성공 — 변경사항을 브랜치에 커밋하고 원 브랜치로 복귀
     #    (서버가 계속 원 브랜치에서 돌도록 — 사용자가 별도 merge 판단)

@@ -50,6 +50,16 @@ export function SuggestionModal() {
   const [comment, setComment] = useState('')
   const [tab, setTab] = useState<string>('pending')
   const [query, setQuery] = useState('')
+  const [events, setEvents] = useState<Record<string, Array<{id: number; ts: string; kind: string; payload: Record<string, unknown>}>>>({})
+
+  async function loadEvents(id: string) {
+    if (events[id]) return
+    try {
+      const r = await fetch(`/api/suggestions/${id}/events`)
+      const data = await r.json()
+      setEvents((prev) => ({ ...prev, [id]: data }))
+    } catch { /* 무시 */ }
+  }
 
   const fetchSuggestions = () =>
     fetch('/api/suggestions')
@@ -250,6 +260,7 @@ export function SuggestionModal() {
                     onClick={() => {
                       setSelected(isExpanded ? null : s)
                       setComment('')
+                      if (!isExpanded) loadEvents(s.id)
                     }}
                   >
                     {/* 카드 — 2줄 레이아웃 */}
@@ -317,6 +328,29 @@ export function SuggestionModal() {
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 whitespace-pre-wrap">
                           {s.content}
                         </p>
+                        {events[s.id] && events[s.id].length > 0 && (
+                          <div className="mb-3 rounded-lg bg-gray-50 dark:bg-gray-800/40 px-3 py-2">
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">이력</p>
+                            <div className="space-y-0.5">
+                              {events[s.id].slice(0, 8).map((ev) => (
+                                <div key={ev.id} className="flex items-center gap-2 text-[11px]">
+                                  <span className="text-gray-400 font-mono">
+                                    {new Date(ev.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-white dark:bg-gray-700
+                                    text-gray-700 dark:text-gray-200 font-medium">
+                                    {ev.kind}
+                                  </span>
+                                  {Object.keys(ev.payload || {}).length > 0 && (
+                                    <span className="text-gray-500 dark:text-gray-400 truncate">
+                                      {Object.entries(ev.payload).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {s.response && s.status !== 'pending' && (
                           <div className="mb-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
                             <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">

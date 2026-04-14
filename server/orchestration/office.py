@@ -3230,16 +3230,11 @@ class Office:
     if not isinstance(data, dict):
       return
 
-    from db.suggestion_store import create_suggestion, list_suggestions
-    # pending + done 모두 포함해 중복 판단 (이미 해결된 주제 다시 올리지 않기)
+    from db.suggestion_store import (
+      create_suggestion, list_suggestions, is_duplicate, log_event,
+      count_rollbacks_since, classify_suggestion_type_2stage,
+    )
     all_prev = list_suggestions(status='')
-    import re as _re_dedup
-    def _kw(s: str) -> set[str]:
-      # 영문 3자+ / 한글 2자+ 토큰, 불용어 제거
-      toks = set(_re_dedup.findall(r'[A-Za-z][A-Za-z0-9]{2,}|[가-힣]{2,}', s or ''))
-      stop = {'건의', '제안', '도입', '적용', '기반', '관련', '활용', '개선', '자동화', '통합', '연계', '구축', '시스템', '파일럿', '워크플로우'}
-      return {t for t in toks if t.lower() not in {x.lower() for x in stop}}
-    prev_kwsets = [(_kw(p.get('title', '') + ' ' + p.get('content', '')), p.get('status'), p.get('id')) for p in all_prev[:80]]
 
     # 24h 자동 반영 한도 계산 (target별 3건 제한)
     from datetime import timedelta
@@ -3250,6 +3245,13 @@ class Office:
         t = (p.get('target_agent') or '').strip() or '(team)'
         auto_count_by_target[t] = auto_count_by_target.get(t, 0) + 1
 
+    # 회로 차단기: 최근 7일 rollback 2건 이상이면 auto_apply 전면 중단
+    global_rollback_7d = count_rollbacks_since(hours=168)
+    circuit_tripped = global_rollback_7d >= 2
+    # dry-run 환경변수
+    import os as _os
+    dry_run = _os.environ.get('SUGGESTION_AUTO_APPLY_DRYRUN', '').lower() in ('1', 'true', 'yes')
+
     registered = 0
     auto_applied = 0
     for s in (data.get('suggestions') or [])[:3]:
@@ -3257,17 +3259,10 @@ class Office:
       body = (s.get('body') or '').strip()
       if not title or not body:
         continue
-      new_kw = _kw(title + ' ' + body)
-      skipped = False
-      for prev_kws, prev_status, prev_id in prev_kwsets:
-        if not prev_kws or not new_kw:
-          continue
-        overlap = new_kw & prev_kws
-        if len(overlap) >= 3:
-          logger.info('리뷰 건의 중복 — #%s(%s)와 %d어 겹침: %s', prev_id, prev_status, len(overlap), list(overlap)[:5])
-          skipped = True
-          break
-      if skipped:
+      # 통합 dedup 함수
+      dup, reason = is_duplicate(title, body)
+      if dup:
+        logger.info('리뷰 건의 중복 skip: %s', reason)
         continue
       target = (s.get('target_agent') or '').strip()
       category = (s.get('category') or '아이디어').strip()
@@ -3280,19 +3275,40 @@ class Office:
           agent_id='teamlead', title=title, content=content,
           category=category, target_agent=target,
         )
+        # 경계 케이스 2-stage 재분류
+        refined_type = await classify_suggestion_type_2stage(title, content, category)
+        if refined_type != created.get('suggestion_type'):
+          from db.suggestion_store import _conn as _sconn
+          _c = _sconn()
+          _c.execute('UPDATE suggestions SET suggestion_type=? WHERE id=?', (refined_type, created['id']))
+          _c.commit(); _c.close()
+          created['suggestion_type'] = refined_type
+        log_event(created['id'], 'review_promoted', {
+          'target_agent': target, 'category': category,
+          'suggestion_type': refined_type, 'auto_safe': bool(s.get('auto_safe')),
+        })
         existing_titles.add(title)
         registered += 1
 
         # 자동 반영 판정
         auto_safe = bool(s.get('auto_safe'))
-        stype = created.get('suggestion_type') or 'prompt'
+        stype = refined_type
         bucket = target or '(team)'
+        target_rollbacks = count_rollbacks_since(hours=168, target_agent=target) if target else 0
         eligible = (
           auto_safe
           and stype in ('prompt', 'rule')
           and auto_count_by_target.get(bucket, 0) < 3
+          and not circuit_tripped
+          and target_rollbacks == 0  # 해당 target에 롤백 이력 있으면 차단
         )
-        if eligible:
+        if eligible and dry_run:
+          log_event(created['id'], 'auto_apply_dryrun', {'bucket': bucket})
+          await self.event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message=f'🧪 [DRYRUN] 자동 반영 후보: "{title[:40]}" → {display_name(target) if target else "팀"} (#{created["id"]})',
+          ))
+        elif eligible:
           from improvement.auto_apply import apply_prompt_or_rule
           from db.suggestion_store import _conn as _sconn
           ok = await apply_prompt_or_rule(created, user_comment='')
@@ -3306,6 +3322,7 @@ class Office:
             c.commit(); c.close()
             auto_count_by_target[bucket] = auto_count_by_target.get(bucket, 0) + 1
             auto_applied += 1
+            log_event(created['id'], 'auto_applied', {'target_agent': target, 'bucket': bucket})
             await self.event_bus.publish(LogEvent(
               agent_id='teamlead', event_type='system_notice',
               message=(
@@ -3313,6 +3330,8 @@ class Office:
                 f'(#{created["id"]}) — 24시간 내 건의게시판에서 되돌리기 가능'
               ),
             ))
+        elif circuit_tripped and auto_safe and stype in ('prompt', 'rule'):
+          log_event(created['id'], 'circuit_breaker_block', {'rollbacks_7d': global_rollback_7d})
       except Exception:
         logger.debug('팀장 리뷰 건의 등록 실패', exc_info=True)
 
@@ -3333,7 +3352,9 @@ class Office:
     state['last_run_ts'] = now_ts  # 최소 간격 계산용
     self._save_digest_state(state)
 
-    msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건, 건의 {registered}건 (자동 반영 {auto_applied}건)'
+    circuit_note = ' ⚠️ 자동반영 일시중단(최근7일 롤백 2건+)' if circuit_tripped else ''
+    dryrun_note = ' 🧪 DRYRUN' if dry_run else ''
+    msg = f'📋 팀장 리뷰 완료{circuit_note}{dryrun_note} — 분석 {len(fresh)}건, 건의 {registered}건 (자동 반영 {auto_applied}건)'
     if summary:
       msg += f'\n요약: {summary[:200]}'
     await self.event_bus.publish(LogEvent(
@@ -3793,7 +3814,7 @@ class Office:
       '채택하자', '채택해야', '의무화', '금지한다', '금지해야',
       '필수로', '필수적으로', '규칙으로 정하', '원칙으로 정하',
       '정해야 한다', '정해야한다', '정하자',
-      '~해야 합니다', '되어야 합니다', '필요합니다', '필요해요',
+      '~해야 합니다', '되어야 합니다',
     )
     if not any(m in message for m in strong_proposal):
       return  # 강한 제안 시그널 없으면 건의 아님
@@ -3832,36 +3853,9 @@ class Office:
     if not matched_category:
       return
 
-    # 중복 방지 — 전체 건의(done 포함) 중 유사 내용 있으면 스킵
-    try:
-      all_suggestions = list_suggestions(status='')
-      msg_keywords = _extract_keywords(message)
-      for s in all_suggestions[:30]:
-        if s['agent_id'] == agent_id and s['category'] == matched_category and s['status'] == 'pending':
-          return
-        s_keywords = _extract_keywords(s.get('title', '') + ' ' + s.get('content', ''))
-        if msg_keywords and s_keywords:
-          overlap = len(msg_keywords & s_keywords)
-          smaller = min(len(msg_keywords), len(s_keywords))
-          if smaller == 0:
-            continue
-          ratio = overlap / smaller
-          # 같은 카테고리면 관대(0.4), 다른 카테고리면 엄격(0.55)
-          threshold = 0.4 if s['category'] == matched_category else 0.55
-          if ratio >= threshold:
-            logger.info(
-              '건의 중복 감지 — 기존 %s (%s, cat=%s) 유사도 %.2f 재등록 스킵',
-              s['id'], s['status'], s['category'], ratio,
-            )
-            return
-    except Exception:
-      pass
-
-    # 대상 에이전트 감지 — 발언이 다른 에이전트의 규칙을 바꾸자는 뜻이면 그쪽으로 적용
-    from db.suggestion_store import detect_target_agent
+    # 대상 에이전트 감지 (맥락 가드 적용) + 제목/내용 조립
+    from db.suggestion_store import detect_target_agent, is_duplicate, log_event
     target = detect_target_agent(message, speaker=agent_id)
-
-    # 제목은 메시지 앞 40자, 내용은 전체 맥락
     title = message[:40].replace('\n', ' ').strip()
     target_line = f'대상 에이전트: {display_name(target)}\n' if target else ''
     content = (
@@ -3873,14 +3867,31 @@ class Office:
       f'\n(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
     )
 
+    # 통합 의미 기반 dedup
+    dup, reason = is_duplicate(title, content)
+    if dup:
+      logger.info('자동 건의 중복 skip: %s | reason=%s', title[:30], reason)
+      # dedup 스킵 이벤트는 대상 없이 기록 (분석/튜닝용)
+      try:
+        log_event('(skipped)', 'dedup_skipped', {
+          'reason': reason, 'title': title, 'speaker': agent_id,
+        })
+      except Exception:
+        pass
+      return
+
     try:
-      create_suggestion(
+      created = create_suggestion(
         agent_id=agent_id,
         title=title,
         content=content,
         category=matched_category,
         target_agent=target,
       )
+      log_event(created['id'], 'auto_filed', {
+        'speaker': agent_id, 'target_agent': target,
+        'category': matched_category, 'trigger_keyword': matched_keyword,
+      })
       target_hint = f' → {display_name(target)}에게 적용' if target else ''
       await self._emit(
         'teamlead',

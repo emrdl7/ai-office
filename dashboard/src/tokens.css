@@ -17,7 +17,7 @@
   --color-text-secondary: #4b5563;  /* gray-600  (on bg-primary: ~7.0:1  ✓) */
   --color-text-inverse:   #f9fafb;  /* gray-50   (on bg-sidebar: high   ✓) */
   --color-text-link:      #1d4ed8;  /* blue-700  (on bg-primary: ~6.1:1  ✓) */
-  --color-text-mention:   #60a5fa;  /* blue-400  (on bubble-agent: ~5.8:1 ✓) */
+  --color-text-mention:   #93c5fd;  /* blue-300  (on bubble-agent: ~4.6:1 ✓) */
 
   /* ── 인터랙션색 ── */
   --color-action-bg:      #2563eb;  /* blue-600 — 버튼·CTA 배경 */
@@ -63,7 +63,9 @@
   /* ── 텍스트색 ── */
   --color-text-primary:   #f3f4f6;  /* gray-100  (on bg-primary: ~18.4:1 ✓) */
   --color-text-secondary: #9ca3af;  /* gray-400  (on bg-primary: ~7.8:1  ✓) */
-  --color-text-inverse:   #111827;  /* gray-900 */
+  /* --color-text-inverse 다크 오버라이드 제거:
+     dark 팔레트에 밝은 배경이 없어 유효한 대비 쌍을 구성할 수 없음.
+     라이트 모드 값(#f9fafb)을 그대로 사용합니다. */
   --color-text-link:      #60a5fa;  /* blue-400  (on bg-surface: ~5.8:1  ✓) */
   --color-text-mention:   #93c5fd;  /* blue-300  (on bubble-agent: high  ✓) */
 }
