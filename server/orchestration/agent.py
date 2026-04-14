@@ -456,12 +456,22 @@ class Agent:
         '제고할 수 있습니다', '확보하겠습니다', '최우선 과제',
         '적극 수용', '즉시 도입', '즉시도입',
       ]
+      # LLM 보일러플레이트 인사/대기 문구 — 절대 금지
+      banned_boilerplate = [
+        '설정이 완료', '설정을 완료', '준비가 완료', '준비를 완료',
+        '다음 명령을 기다', '명령을 대기', '명령을 기다리', '대기하고 있습니다',
+        '무엇을 도와', '어떻게 도와', '도와드릴까', '도와드리겠습니다',
+        '어시스턴트', '제가 도와', '말씀해 주세요', '말씀해주세요',
+      ]
       if any(p in text for p in banned_phrases):
         return ''
       if any(h in text for h in banned_hallucinations):
         return ''
       if any(d in text for d in banned_declaratives):
         logger.info('선언형 발언 드랍 [%s]: %s', self.name, first_line[:80])
+        return ''
+      if any(b in text for b in banned_boilerplate):
+        logger.info('보일러플레이트 드랍 [%s]: %s', self.name, first_line[:80])
         return ''
 
       if mode == 'joke':
