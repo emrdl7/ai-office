@@ -66,6 +66,8 @@ async def lifespan(app: FastAPI):
 
   # 에이전트 자발적 활동 백그라운드 루프 시작
   office._autonomous_task = asyncio.create_task(office.start_autonomous_loop())
+  # 팀장 배치 리뷰 루프 시작 (주기적 대화 분석 + 건의 격상 + 요약 압축)
+  office._teamlead_review_task = asyncio.create_task(office.start_teamlead_review_loop())
   yield
   office.stop_autonomous_loop()
   await office.groq_runner.stop()

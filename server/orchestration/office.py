@@ -2803,8 +2803,9 @@ class Office:
         # Task #10: 동료 최근 메시지에 이모지 자동 리액션 (LLM 없이 간단 heuristic)
         await self._agents_react_to_peers()
 
-        # 최근 대화 맥락 가져오기
+        # 최근 대화 맥락 — 팀장 리뷰 요약이 있으면 우선 사용 (반복 차단)
         recent_context = ''
+        digest = getattr(self, 'latest_digest_summary', '') or self._load_digest_state().get('last_summary', '')
         try:
           from db.log_store import load_logs
           recent = load_logs(limit=15)
@@ -2814,7 +2815,15 @@ class Office:
             if l['event_type'] in ('response', 'message', 'autonomous')
             and l['agent_id'] != 'system'
           ]
-          recent_context = '\n'.join(chat_lines[-10:]) if chat_lines else '(조용한 사무실)'
+          last_raw = '\n'.join(chat_lines[-5:]) if chat_lines else ''
+          if digest:
+            recent_context = (
+              f'[팀장 요약 — 이전 대화 압축본]\n{digest}\n\n'
+              f'[직전 대화 5건]\n{last_raw}' if last_raw else
+              f'[팀장 요약 — 이전 대화 압축본]\n{digest}'
+            )
+          else:
+            recent_context = '\n'.join(chat_lines[-10:]) if chat_lines else '(조용한 사무실)'
         except Exception:
           recent_context = '(조용한 사무실)'
 
@@ -3090,6 +3099,184 @@ class Office:
   def stop_autonomous_loop(self) -> None:
     '''자발적 활동 루프를 중단한다.'''
     self._autonomous_running = False
+
+  # ──────────────────────────────────────────────────────────────
+  # 팀장 배치 리뷰 — 대화 분석 → 건의 격상 + 요약 압축
+  # ──────────────────────────────────────────────────────────────
+
+  _DIGEST_PATH = Path(__file__).parent.parent / 'data' / 'team_digests.json'
+
+  def _load_digest_state(self) -> dict:
+    import json as _j
+    try:
+      return _j.loads(self._DIGEST_PATH.read_text())
+    except Exception:
+      return {'last_reviewed_ts': '', 'last_summary': '', 'history': []}
+
+  def _save_digest_state(self, state: dict) -> None:
+    import json as _j
+    try:
+      self._DIGEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+      self._DIGEST_PATH.write_text(_j.dumps(state, ensure_ascii=False, indent=2))
+    except Exception:
+      logger.debug('digest 저장 실패', exc_info=True)
+
+  async def start_teamlead_review_loop(self) -> None:
+    '''팀장 역할로 최근 대화를 배치 분석한다.
+
+    트리거: 30분 경과 OR 직전 리뷰 이후 30건 이상 새 메시지.
+    동작:
+      1) 지난 리뷰 이후 autonomous/response 메시지 수집
+      2) Gemini로 구조화 JSON 분석 (suggestions / summary / dropped)
+      3) suggestions는 create_suggestion (agent_id='teamlead')
+      4) summary는 team_digests.json + self.latest_digest_summary에 저장
+      → 이후 start_autonomous_loop 시드가 raw 대신 요약을 참조 (반복 차단)
+    '''
+    import asyncio
+    import json as _j
+    from datetime import datetime, timezone
+
+    self._review_running = True
+    self.latest_digest_summary: str = self._load_digest_state().get('last_summary', '')
+
+    await asyncio.sleep(60)  # 서버 기동 직후 부담 줄이려 60초 대기
+
+    while self._review_running:
+      try:
+        state = self._load_digest_state()
+        last_ts = state.get('last_reviewed_ts', '')
+
+        # 지난 리뷰 이후 메시지 수집
+        from db.log_store import load_logs as _load
+        recent = _load(limit=200)
+        fresh = [
+          l for l in recent
+          if l.get('event_type') in ('autonomous', 'response')
+          and l.get('agent_id') != 'system'
+          and (not last_ts or l.get('timestamp', '') > last_ts)
+        ]
+
+        # 트리거 조건 — 30건 이상이면 즉시, 아니면 30분 후 재검사
+        if len(fresh) < 30:
+          # 시간 기반 보조 — 마지막 리뷰로부터 30분 이상 경과 + 10건 이상이면 진행
+          need_time_trigger = False
+          if last_ts:
+            try:
+              last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
+              elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+              if elapsed >= 1800 and len(fresh) >= 10:
+                need_time_trigger = True
+            except Exception:
+              pass
+          if not need_time_trigger:
+            await asyncio.sleep(120)
+            continue
+
+        # 분석 프롬프트
+        convo = '\n'.join(
+          f'[{l["agent_id"]}] {l["message"][:300]}' for l in reversed(fresh[:80])
+        )
+        prompt = (
+          f'당신은 팀장 잡스입니다. 아래는 지난 배치 이후 팀의 자발적 대화입니다.\n'
+          f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 선언형 발언("~진행합니다")은 신뢰하지 마세요.\n\n'
+          f'[대화]\n{convo}\n\n'
+          f'다음 작업을 수행해 **JSON만** 출력하세요:\n'
+          f'1) 건의로 격상할 만한 실제 실행 가능한 제안 추출 (구체 파일/커밋/함수/규칙 언급 필수)\n'
+          f'2) 나머지는 2~4문장으로 압축 요약 (다음 대화 시드용)\n'
+          f'3) 껍데기/반복/선언 발언은 버림 목록에 간단히 사유 포함\n\n'
+          f'출력 스키마:\n'
+          f'{{\n'
+          f'  "suggestions": [\n'
+          f'    {{"title": "40자 이내", "body": "구체 문제+제안 2-3문장",\n'
+          f'      "target_agent": "planner|designer|developer|qa|teamlead|",\n'
+          f'      "category": "프로세스 개선|도구 부족|정보 부족|아이디어",\n'
+          f'      "reasoning": "왜 이게 건의 가치가 있는지 1문장"}}\n'
+          f'  ],\n'
+          f'  "summary": "2-4문장 압축 요약",\n'
+          f'  "dropped": [{{"text": "버린 발언 앞 40자", "reason": "왜 버렸는지"}}]\n'
+          f'}}\n\n'
+          f'규칙:\n'
+          f'- suggestions는 최대 3개. 확신 없으면 빈 배열.\n'
+          f'- 수치 주장은 근거 파일/벤치마크 없이는 포함 금지.\n'
+          f'- 추상 방법론 단독 언급(Gherkin/WCAG/KPI 등)만 있으면 건의 아님.\n'
+          f'- target_agent는 규칙이 적용될 대상. 팀 전체면 빈 문자열.'
+        )
+        raw = await run_gemini(prompt=prompt)
+
+        # JSON 파싱
+        data = None
+        try:
+          import re as _re
+          m = _re.search(r'\{[\s\S]*\}', raw)
+          if m:
+            data = _j.loads(m.group())
+        except Exception:
+          logger.debug('팀장 리뷰 JSON 파싱 실패', exc_info=True)
+
+        if not isinstance(data, dict):
+          await asyncio.sleep(300)
+          continue
+
+        # 건의 등록
+        from db.suggestion_store import create_suggestion
+        registered = 0
+        for s in (data.get('suggestions') or [])[:3]:
+          try:
+            title = (s.get('title') or '').strip()[:80]
+            body = (s.get('body') or '').strip()
+            target = (s.get('target_agent') or '').strip()
+            cat = (s.get('category') or '아이디어').strip()
+            reasoning = (s.get('reasoning') or '').strip()
+            if not title or not body:
+              continue
+            content = (
+              f'{body}\n\n'
+              f'[팀장 리뷰 근거]\n{reasoning}\n\n'
+              f'(팀장 배치 리뷰 {datetime.now(timezone.utc).isoformat()} — 대화 분석으로 격상됨)'
+            )
+            create_suggestion(
+              agent_id='teamlead',
+              title=title,
+              content=content,
+              category=cat,
+              target_agent=target,
+            )
+            registered += 1
+          except Exception:
+            logger.debug('팀장 리뷰 건의 등록 실패', exc_info=True)
+
+        # 요약 저장
+        summary = (data.get('summary') or '').strip()
+        now_ts = datetime.now(timezone.utc).isoformat()
+        if summary:
+          self.latest_digest_summary = summary
+          state['last_summary'] = summary
+          state.setdefault('history', []).insert(0, {
+            'ts': now_ts,
+            'summary': summary,
+            'new_suggestions': registered,
+            'dropped': data.get('dropped', [])[:10],
+          })
+          state['history'] = state['history'][:30]  # 최근 30건만 유지
+        state['last_reviewed_ts'] = fresh[0]['timestamp'] if fresh else now_ts
+        self._save_digest_state(state)
+
+        # 채팅 공지
+        msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건 중 건의 격상 {registered}건'
+        if summary:
+          msg += f'\n요약: {summary[:200]}'
+        await self.event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice', message=msg,
+        ))
+        logger.info('팀장 리뷰 완료: 분석=%d, 건의=%d', len(fresh), registered)
+
+      except Exception:
+        logger.debug('팀장 리뷰 루프 에러', exc_info=True)
+
+      await asyncio.sleep(300)  # 5분 간격 재검사 (실제 리뷰는 트리거 조건 충족 시)
+
+  def stop_teamlead_review_loop(self) -> None:
+    self._review_running = False
 
   # ──────────────────────────────────────────────────────────────
   # 프로젝트 완료 시 팀 회고 (Phase 3)
