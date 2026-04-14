@@ -4,12 +4,27 @@ import subprocess
 from pathlib import Path
 
 from log_bus.event_bus import LogEvent, event_bus
-from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
+from runners.claude_runner import run_claude_isolated, ClaudeRunnerError, ClaudeTimeoutError, PermanentClaudeRunnerError
 import logging
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# 지수 백오프 재시도 설정
+_RETRY_MAX = 3        # 최대 재시도 횟수 (초기 시도 제외)
+_RETRY_BASE = 2.0     # 기본 대기 초 (2^n 배수로 증가)
+_RETRY_MAX_DELAY = 30.0  # 대기 상한 (초) — 600초 타임아웃의 5% 이내로 제한
+# ↑ 최악의 경우 총 실행 시간: 600s × (1 + _RETRY_MAX) + 대기(2+4+8)초 ≈ 2414초(약 40분).
+#   이는 의도된 동작 — 일시적 API 과부하를 감수하고 최종 성공을 목표로 한다.
+#   빠른 실패가 필요하면 _RETRY_MAX를 1~2로 줄이거나 apply_suggestion 호출 측의 timeout을 조정하라.
+
+# 호출자용 힌트 — apply_suggestion 한 건의 최대 소요 시간(초) 상한선
+# 계산: Claude 단일 timeout × 총 시도 횟수 + 대기 합계(2+4+…+2^_RETRY_MAX)
+_APPLY_TOTAL_TIMEOUT_HINT: float = 600.0 * (1 + _RETRY_MAX) + sum(
+  min(_RETRY_BASE ** (i + 1), _RETRY_MAX_DELAY) for i in range(_RETRY_MAX)
+)
+# 필요 시 asyncio.wait_for(apply_suggestion(...), timeout=_APPLY_TOTAL_TIMEOUT_HINT + buffer)
 BRANCH_PREFIX = 'improvement'
 
 # 코드 패치는 워킹트리를 공유하므로 직렬화 필요
@@ -86,6 +101,50 @@ async def _emit(agent_id: str, message: str, event_type: str = 'message'):
     event_type=event_type,
     message=message,
   ))
+
+
+async def _run_with_backoff(
+  suggestion_id: str,
+  prompt: str,
+  timeout: float,
+  max_turns: int,
+) -> str:
+  '''지수 백오프로 run_claude_isolated를 재시도한다.
+
+  타임아웃 오류(ClaudeTimeoutError)는 재시도하지 않고 즉시 re-raise한다.
+  그 외 ClaudeRunnerError는 최대 _RETRY_MAX회 재시도하고,
+  초과 시 원본 오류를 체인으로 보존해 re-raise한다.
+  '''
+  last_error: ClaudeRunnerError | None = None
+  for attempt in range(1 + _RETRY_MAX):
+    try:
+      return await run_claude_isolated(
+        prompt=prompt,
+        timeout=timeout,
+        max_turns=max_turns,
+      )
+    except ClaudeTimeoutError:
+      raise  # 타임아웃은 재시도 없이 즉시 전파
+    except PermanentClaudeRunnerError:
+      raise  # 영구적 오류(CLI 인수 오류 등)는 재시도해도 무의미 — 즉시 전파
+    except ClaudeRunnerError as e:
+      last_error = e
+      if attempt >= _RETRY_MAX:
+        raise ClaudeRunnerError(
+          f'재시도 {_RETRY_MAX}회 초과 — 마지막 오류: {e}'
+        ) from e
+      delay = min(_RETRY_BASE ** (attempt + 1), _RETRY_MAX_DELAY)
+      logger.warning(
+        '건의 #%s Claude 오류 (시도 %d/%d), %.0f초 후 재시도: %s',
+        suggestion_id, attempt + 1, _RETRY_MAX, delay, e,
+      )
+      await _emit(
+        'teamlead',
+        f'⚠️ 건의 #{suggestion_id} Claude 오류 — {delay:.0f}초 후 재시도 ({attempt + 1}/{_RETRY_MAX}): {e}',
+      )
+      await asyncio.sleep(delay)
+  # 여기에 도달하지 않음 (루프 안에서 raise 처리)
+  raise ClaudeRunnerError(f'재시도 초과: {last_error}') from last_error
 
 
 def _build_patch_prompt(suggestion: dict) -> str:
@@ -171,17 +230,15 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
     prompt = _build_patch_prompt(suggestion)
     timed_out = False
     try:
-      result = await run_claude_isolated(
+      result = await _run_with_backoff(
+        suggestion_id=suggestion_id,
         prompt=prompt,
         timeout=600.0,  # 5분 → 10분으로 연장 (CI 워크플로 등 복잡 작업 여유)
         max_turns=20,
       )
-    except ClaudeRunnerError as e:
-      if 'timeout' in str(e).lower() or '타임아웃' in str(e):
-        timed_out = True
-        result = f'⏱️ Claude CLI 타임아웃 (600초) — 중간 결과물 확인 필요'
-      else:
-        raise
+    except ClaudeTimeoutError:
+      timed_out = True
+      result = f'⏱️ Claude CLI 타임아웃 (600초) — 중간 결과물 확인 필요'
 
     # 3. 변경 사항 확인
     _, diff_stat = _git(['diff', '--stat', original_branch])
