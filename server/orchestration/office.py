@@ -3172,8 +3172,8 @@ class Office:
       hist = state.get('history') or []
       last_run = hist[0].get('ts') if hist else last_ts
 
-    # 최소 간격 보호 — force여도 5분 안쪽이면 거절
-    min_interval = 300 if force else 900  # 수동 5분 / 자동 15분
+    # 최소 간격 보호 — force여도 10분 안쪽이면 거절
+    min_interval = 600 if force else 7200  # 수동 10분 / 자동 2시간
     if last_run:
       try:
         last_dt = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
@@ -3192,19 +3192,10 @@ class Office:
       and l.get('agent_id') != 'system'
       and (not last_ts or l.get('timestamp', '') > last_ts)
     ]
+    # 트리거: 30건 이상(force 제외). 아니면 건너뜀 (시간은 위에서 2시간으로 이미 보장됨)
     if not force:
-      if len(fresh) < 40:
-        need_time_trigger = False
-        if last_ts:
-          try:
-            last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
-            elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
-            if elapsed >= 3600 and len(fresh) >= 15:  # 1시간+15건
-              need_time_trigger = True
-          except Exception:
-            pass
-        if not need_time_trigger:
-          return
+      if len(fresh) < 30:
+        return
     if not fresh:
       return
 
@@ -3337,7 +3328,8 @@ class Office:
         'forced': force,
       })
       state['history'] = state['history'][:30]
-    state['last_reviewed_ts'] = fresh[0]['timestamp']
+    # load_logs는 오름차순(old→new) 반환이므로 fresh[-1]이 최신
+    state['last_reviewed_ts'] = fresh[-1]['timestamp']
     state['last_run_ts'] = now_ts  # 최소 간격 계산용
     self._save_digest_state(state)
 
