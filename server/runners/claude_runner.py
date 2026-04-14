@@ -13,6 +13,15 @@ class ClaudeRunnerError(Exception):
   pass
 
 
+class PermanentClaudeRunnerError(ClaudeRunnerError):
+  """재시도해도 해결되지 않는 영구적 오류.
+
+  CLI 인수 오류(exit=2)처럼 프롬프트·설정이 잘못된 경우 발생하며,
+  _run_with_backoff가 이 예외는 재시도 없이 즉시 전파한다.
+  """
+  pass
+
+
 class ClaudeTimeoutError(ClaudeRunnerError):
   """Claude CLI 프로세스가 지정 타임아웃을 초과했을 때 발생."""
   pass
@@ -85,6 +94,11 @@ async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = 
 
   # 끊김 감지 — exit!=0 또는 error 이벤트 + 응답 너무 짧으면 폴백 유도
   stripped = text.strip()
+  if proc.returncode == 2:
+    # exit 2 = CLI 인수·사용법 오류 → 재시도해도 동일 결과, 즉시 영구 실패
+    raise PermanentClaudeRunnerError(
+      f'Claude CLI 인수 오류 (exit=2) — 프롬프트·설정 확인 필요'
+    )
   if (proc.returncode != 0 or had_error_event) and len(stripped) < 80:
     LOG.open('a').write(
       f'[CLAUDE] truncated: exit={proc.returncode} err={had_error_event} len={len(stripped)}\n'

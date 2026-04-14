@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from log_bus.event_bus import LogEvent, event_bus
-from runners.claude_runner import run_claude_isolated, ClaudeRunnerError, ClaudeTimeoutError
+from runners.claude_runner import run_claude_isolated, ClaudeRunnerError, ClaudeTimeoutError, PermanentClaudeRunnerError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,13 @@ _RETRY_MAX_DELAY = 30.0  # 대기 상한 (초) — 600초 타임아웃의 5% 이
 # ↑ 최악의 경우 총 실행 시간: 600s × (1 + _RETRY_MAX) + 대기(2+4+8)초 ≈ 2414초(약 40분).
 #   이는 의도된 동작 — 일시적 API 과부하를 감수하고 최종 성공을 목표로 한다.
 #   빠른 실패가 필요하면 _RETRY_MAX를 1~2로 줄이거나 apply_suggestion 호출 측의 timeout을 조정하라.
+
+# 호출자용 힌트 — apply_suggestion 한 건의 최대 소요 시간(초) 상한선
+# 계산: Claude 단일 timeout × 총 시도 횟수 + 대기 합계(2+4+…+2^_RETRY_MAX)
+_APPLY_TOTAL_TIMEOUT_HINT: float = 600.0 * (1 + _RETRY_MAX) + sum(
+  min(_RETRY_BASE ** (i + 1), _RETRY_MAX_DELAY) for i in range(_RETRY_MAX)
+)
+# 필요 시 asyncio.wait_for(apply_suggestion(...), timeout=_APPLY_TOTAL_TIMEOUT_HINT + buffer)
 BRANCH_PREFIX = 'improvement'
 
 # 코드 패치는 워킹트리를 공유하므로 직렬화 필요
@@ -118,6 +125,8 @@ async def _run_with_backoff(
       )
     except ClaudeTimeoutError:
       raise  # 타임아웃은 재시도 없이 즉시 전파
+    except PermanentClaudeRunnerError:
+      raise  # 영구적 오류(CLI 인수 오류 등)는 재시도해도 무의미 — 즉시 전파
     except ClaudeRunnerError as e:
       last_error = e
       if attempt >= _RETRY_MAX:

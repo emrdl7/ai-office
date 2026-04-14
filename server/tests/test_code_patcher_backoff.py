@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from improvement.code_patcher import _run_with_backoff, _RETRY_MAX, _RETRY_MAX_DELAY
-from runners.claude_runner import ClaudeRunnerError, ClaudeTimeoutError
+from runners.claude_runner import ClaudeRunnerError, ClaudeTimeoutError, PermanentClaudeRunnerError
 
 
 async def test_success_on_first_attempt():
@@ -89,6 +89,18 @@ async def test_event_emitted_on_retry():
     assert len(published) == 1
     assert 's6' in published[0].message
     assert '재시도' in published[0].message
+
+
+async def test_permanent_error_not_retried():
+    """PermanentClaudeRunnerError는 재시도 없이 즉시 전파된다."""
+    with patch('improvement.code_patcher.run_claude_isolated', new_callable=AsyncMock,
+               side_effect=PermanentClaudeRunnerError('CLI 인수 오류')) as mock_run, \
+         patch('improvement.code_patcher.asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        with pytest.raises(PermanentClaudeRunnerError):
+            await _run_with_backoff('s8', 'prompt', 60.0, 3)
+
+    mock_run.assert_awaited_once()  # 첫 시도 후 즉시 중단
+    mock_sleep.assert_not_awaited()  # 대기 없음
 
 
 async def test_delay_capped_at_max_delay():
