@@ -3,6 +3,20 @@
    WCAG 2.1 AA 기준(일반 텍스트 4.5:1, 큰 텍스트 3:1)을 충족하는
    색상·여백 토큰을 CSS 커스텀 프로퍼티로 정의합니다.
    검증: dashboard/scripts/check-contrast.mjs
+
+   ── @against 어노테이션 ────────────────────────────────────────
+   색상 토큰 주석에 @against 어노테이션을 달면 check-contrast.mjs가
+   라이트·다크 양방향 WCAG 대비 검사를 자동으로 실행합니다.
+
+   형식:  --color-<fg-token>: #hex;  /* ... | @against <bg1>[,<bg2>] * /
+   예시:  --color-text-primary: #111827;  /* | @against bg-primary,bg-surface * /
+
+   규칙:
+   · <bg>는 --color- 접두사를 제외한 배경 토큰명 (예: bg-primary)
+   · 여러 배경을 쉼표로 구분 (공백 무방)
+   · 새 전경 토큰 추가 시 반드시 @against 1개 이상 기재
+   · 새 배경 토큰 추가 시 기존 전경의 @against 목록에 등록
+   · 어노테이션 없는 --color-* 토큰은 빌드 실패 원인이 됨
    ============================================================= */
 
 :root {

@@ -13,6 +13,11 @@ class ClaudeRunnerError(Exception):
   pass
 
 
+class ClaudeTimeoutError(ClaudeRunnerError):
+  """Claude CLI 프로세스가 지정 타임아웃을 초과했을 때 발생."""
+  pass
+
+
 async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = '', max_turns: int = 3) -> str:
   '''Claude CLI를 subprocess로 실행하고 텍스트 응답을 반환한다.'''
   project_root = str(Path(__file__).parent.parent.parent)
@@ -38,7 +43,7 @@ async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = 
   except asyncio.TimeoutError:
     proc.kill()
     await proc.wait()
-    raise ClaudeRunnerError(f'Claude CLI 타임아웃 ({timeout}초)')
+    raise ClaudeTimeoutError(f'Claude CLI 타임아웃 ({timeout}초)')
 
   stdout_text = stdout.decode(errors='replace')
   LOG.open('a').write(f'[CLAUDE] exit={proc.returncode} len={len(stdout_text)}\n')
