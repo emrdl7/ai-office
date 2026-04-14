@@ -1250,6 +1250,102 @@ async def get_improvement_report(request: Request):
   return office.improvement_engine.get_report()
 
 
+@app.post('/api/teamlead/review')
+async def trigger_teamlead_review(request: Request):
+  '''팀장 배치 리뷰를 수동 트리거 (누적 대화 일괄 처리용).'''
+  office: Office = request.app.state.office
+  # last_reviewed_ts를 초기화 — 루프가 다음 5분 체크에서 즉시 실행하도록 강제
+  from pathlib import Path as _P
+  import json as _j
+  p = _P('/Users/johyeonchang/ai-office/server/data/team_digests.json')
+  try:
+    state = _j.loads(p.read_text()) if p.exists() else {}
+  except Exception:
+    state = {}
+  # 임계치 우회 — 즉시 실행
+  asyncio.create_task(_run_teamlead_review_now(office))
+  return {'queued': True, 'message': '팀장 리뷰 대기열에 투입 — 수 초 내 실행'}
+
+
+async def _run_teamlead_review_now(office):
+  '''start_teamlead_review_loop의 본체 로직을 1회 강제 실행.'''
+  import json as _j
+  from datetime import datetime, timezone
+  from db.log_store import load_logs as _load
+  from db.suggestion_store import create_suggestion
+  from runners.gemini_runner import run_gemini
+
+  try:
+    state = office._load_digest_state()
+    last_ts = state.get('last_reviewed_ts', '')
+    recent = _load(limit=200)
+    fresh = [
+      l for l in recent
+      if l.get('event_type') in ('autonomous', 'response')
+      and l.get('agent_id') != 'system'
+      and (not last_ts or l.get('timestamp', '') > last_ts)
+    ]
+    if not fresh:
+      return
+    convo = '\n'.join(f'[{l["agent_id"]}] {l["message"][:300]}' for l in reversed(fresh[:120]))
+    prompt = (
+      f'당신은 팀장 잡스입니다. 아래는 지난 배치 이후 팀의 자발적 대화입니다.\n'
+      f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 선언형 발언은 신뢰하지 마세요.\n\n'
+      f'[대화]\n{convo}\n\n'
+      f'JSON만 출력:\n{{\n'
+      f'  "suggestions":[{{"title":"40자","body":"구체 문제+제안 2-3문장",'
+      f'"target_agent":"planner|designer|developer|qa|teamlead|",'
+      f'"category":"프로세스 개선|도구 부족|정보 부족|아이디어",'
+      f'"reasoning":"1문장"}}],\n'
+      f'  "summary":"2-4문장",\n'
+      f'  "dropped":[{{"text":"앞 40자","reason":"이유"}}]\n}}\n'
+      f'규칙: 최대 3건. 수치 환각 금지. 추상 방법론 단독 언급은 건의 아님.'
+    )
+    raw = await run_gemini(prompt=prompt)
+    import re as _re
+    m = _re.search(r'\{[\s\S]*\}', raw)
+    data = _j.loads(m.group()) if m else None
+    if not isinstance(data, dict):
+      return
+    registered = 0
+    for s in (data.get('suggestions') or [])[:3]:
+      title = (s.get('title') or '').strip()[:80]
+      body = (s.get('body') or '').strip()
+      if not title or not body:
+        continue
+      content = (
+        f'{body}\n\n[팀장 리뷰 근거]\n{(s.get("reasoning") or "").strip()}\n\n'
+        f'(수동 트리거 {datetime.now(timezone.utc).isoformat()})'
+      )
+      try:
+        create_suggestion(
+          agent_id='teamlead', title=title, content=content,
+          category=(s.get('category') or '아이디어').strip(),
+          target_agent=(s.get('target_agent') or '').strip(),
+        )
+        registered += 1
+      except Exception:
+        pass
+    summary = (data.get('summary') or '').strip()
+    now_ts = datetime.now(timezone.utc).isoformat()
+    if summary:
+      office.latest_digest_summary = summary
+      state['last_summary'] = summary
+      state.setdefault('history', []).insert(0, {
+        'ts': now_ts, 'summary': summary, 'new_suggestions': registered,
+        'dropped': data.get('dropped', [])[:10], 'manual': True,
+      })
+      state['history'] = state['history'][:30]
+    state['last_reviewed_ts'] = fresh[0]['timestamp']
+    office._save_digest_state(state)
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message=f'📋 팀장 리뷰 (수동) — 분석 {len(fresh)}건 중 건의 격상 {registered}건\n요약: {summary[:240]}',
+    ))
+  except Exception as e:
+    logger.warning('수동 팀장 리뷰 실패: %s', e, exc_info=True)
+
+
 @app.get('/api/improvement/metrics')
 async def get_improvement_metrics(request: Request):
   '''프로젝트별 성과 메트릭을 반환한다.'''
