@@ -54,13 +54,29 @@ class PromptEvolver:
     except (json.JSONDecodeError, TypeError):
       return []
 
-  def save_rules(self, agent_name: str, rules: list[PromptRule]) -> None:
-    '''에이전트의 보완 규칙을 저장한다.'''
+  def load_meta_rules(self, agent_name: str) -> list[dict]:
+    '''오래된 규칙들이 압축된 메타 규칙 목록 로드.'''
     path = self._patch_path(agent_name)
+    if not path.exists():
+      return []
+    try:
+      with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+      return list(data.get('meta_rules', []))
+    except (json.JSONDecodeError, TypeError):
+      return []
+
+  def save_rules(self, agent_name: str, rules: list[PromptRule], meta_rules: list[dict] | None = None) -> None:
+    '''에이전트의 보완 규칙을 저장한다. meta_rules 지정 안 하면 기존 값 유지.'''
+    path = self._patch_path(agent_name)
+    if meta_rules is None:
+      meta_rules = self.load_meta_rules(agent_name)
     data = {
       'rules': [asdict(r) for r in rules],
+      'meta_rules': meta_rules,
       'meta': {
         'total_rules': len(rules),
+        'total_meta_rules': len(meta_rules),
         'last_updated': datetime.now(timezone.utc).isoformat(),
       },
     }
@@ -68,6 +84,79 @@ class PromptEvolver:
     with open(tmp, 'w', encoding='utf-8') as f:
       json.dump(data, f, ensure_ascii=False, indent=2)
     os.rename(tmp, path)
+
+  async def age_and_compress(self, agent_name: str) -> dict:
+    '''규칙 수명 관리:
+      - active이고 14일+ hit_count=0 → dormant (active=False)
+      - dormant 60일+ 3건 이상 → LLM으로 요약해 meta_rule 1개로 압축, 원본 삭제
+    '''
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    rules = self.load_rules(agent_name)
+    meta_rules = self.load_meta_rules(agent_name)
+    stats = {'dormant_new': 0, 'compressed_from': 0, 'meta_added': 0}
+
+    # 1단계: 14일+ 비활성화
+    for r in rules:
+      if not r.active:
+        continue
+      try:
+        created = datetime.fromisoformat(r.created_at.replace('Z', '+00:00'))
+      except Exception:
+        continue
+      if (now - created) > timedelta(days=14) and r.hit_count == 0:
+        r.active = False
+        stats['dormant_new'] += 1
+
+    # 2단계: 60일+ dormant 3건 이상이면 압축
+    dormant_old = []
+    for r in rules:
+      if r.active:
+        continue
+      try:
+        created = datetime.fromisoformat(r.created_at.replace('Z', '+00:00'))
+      except Exception:
+        continue
+      if (now - created) > timedelta(days=60):
+        dormant_old.append(r)
+
+    if len(dormant_old) >= 3:
+      try:
+        from runners.claude_runner import run_claude_isolated
+        rule_texts = '\n'.join(f'- ({r.category}) {r.rule[:200]}' for r in dormant_old[:15])
+        ids = [r.id for r in dormant_old[:15]]
+        prompt = (
+          f'아래는 {agent_name} 에이전트에 대해 60일 이상 지난 비활성 규칙 {len(dormant_old[:15])}건입니다.\n\n'
+          f'{rule_texts}\n\n'
+          f'이 규칙들의 공통 핵심 원칙을 1~2문장으로 요약하세요. 구체 예시·수치는 생략하고 반복되는 원칙만 추출.\n'
+          f'JSON만 출력: {{"summary": "요약 본문 1~2문장", "categories": ["cat1","cat2"]}}'
+        )
+        raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=30.0)
+        import re as _re
+        m = _re.search(r'\{[\s\S]*\}', raw)
+        if m:
+          parsed = json.loads(m.group())
+          summary = (parsed.get('summary') or '').strip()
+          if summary:
+            meta_rules.append({
+              'id': f'meta-{now.strftime("%Y%m%d%H%M%S")}',
+              'created_at': now.isoformat(),
+              'summary': summary,
+              'categories': parsed.get('categories') or [],
+              'compressed_from': ids,
+              'period_start': min(r.created_at for r in dormant_old[:15]),
+              'period_end': max(r.created_at for r in dormant_old[:15]),
+              'count': len(ids),
+            })
+            # 원본 규칙 삭제
+            rules = [r for r in rules if r.id not in set(ids)]
+            stats['compressed_from'] = len(ids)
+            stats['meta_added'] = 1
+      except Exception:
+        pass  # 압축 실패해도 기존 상태 유지
+
+    self.save_rules(agent_name, rules, meta_rules)
+    return stats
 
   async def evolve(self, report: ImprovementReport) -> dict[str, list[str]]:
     '''개선 보고서를 바탕으로 에이전트별 새 규칙을 생성한다.
@@ -153,16 +242,25 @@ class PromptEvolver:
     return keep + deactivate + inactive
 
   def get_active_rules_text(self, agent_name: str) -> str:
-    '''에이전트의 활성 규칙을 프롬프트 주입용 텍스트로 반환한다.'''
+    '''에이전트의 활성 규칙 + 메타(누적 교훈)를 프롬프트 주입용으로 반환.'''
     rules = self.load_rules(agent_name)
+    meta_rules = self.load_meta_rules(agent_name)
     active = [r for r in rules if r.active]
-    if not active:
+    if not active and not meta_rules:
       return ''
 
-    lines = ['## 학습된 품질 규칙 (반드시 준수할 것)']
-    for r in active:
-      priority_mark = '⚠️ ' if r.priority == 'high' else ''
-      lines.append(f'- {priority_mark}{r.rule}')
+    lines = []
+    if active:
+      lines.append('## 학습된 품질 규칙 (반드시 준수할 것)')
+      for r in active:
+        priority_mark = '⚠️ ' if r.priority == 'high' else ''
+        lines.append(f'- {priority_mark}{r.rule}')
+    if meta_rules:
+      if lines:
+        lines.append('')
+      lines.append('## 누적 교훈 (과거 규칙들의 요지 — 원칙으로 지속 적용)')
+      for mr in meta_rules[:5]:  # 최대 5개만 주입
+        lines.append(f'- {mr.get("summary", "")[:300]} (기간 {mr.get("period_start","")[:10]}~{mr.get("period_end","")[:10]}, {mr.get("count",0)}건 압축)')
 
     return '\n'.join(lines)
 

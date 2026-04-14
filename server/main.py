@@ -1145,8 +1145,17 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
       priority='high',
       active=True,
     ))
-    if len(existing) > 10:
-      existing = existing[-10:]
+    # 활성 규칙 10개 초과 시 hit_count 높은(=효과 낮은) 순으로 비활성화 (보존)
+    from improvement.prompt_evolver import MAX_RULES_PER_AGENT as _MAX
+    active = [r for r in existing if r.active]
+    inactive = [r for r in existing if not r.active]
+    if len(active) > _MAX:
+      sorted_rules = sorted(active, key=lambda r: (r.hit_count, r.created_at))
+      for r in sorted_rules[_MAX:]:
+        r.active = False
+      existing = sorted_rules + inactive
+    else:
+      existing = active + inactive
     evolver.save_rules(apply_to, existing)
   except Exception:
     logger.debug('PromptEvolver save_rules 실패', exc_info=True)

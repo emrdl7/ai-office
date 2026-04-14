@@ -3354,6 +3354,32 @@ class Office:
 
     circuit_note = ' ⚠️ 자동반영 일시중단(최근7일 롤백 2건+)' if circuit_tripped else ''
     dryrun_note = ' 🧪 DRYRUN' if dry_run else ''
+    # 주기 압축 — 하루 1회 모든 에이전트의 오래된 규칙을 aging/compress
+    from datetime import timedelta
+    last_compact = state.get('last_compaction_ts', '')
+    try:
+      if not last_compact or (datetime.now(timezone.utc) - datetime.fromisoformat(last_compact.replace('Z', '+00:00'))) > timedelta(hours=23):
+        from improvement.prompt_evolver import PromptEvolver as _PE
+        from memory.team_memory import TeamMemory as _TM
+        _pe = _PE()
+        compact_results = []
+        for agent in ['planner', 'designer', 'developer', 'qa', 'teamlead']:
+          try:
+            r = await _pe.age_and_compress(agent)
+            if r.get('dormant_new') or r.get('meta_added'):
+              compact_results.append(f'{agent}: dormant+{r["dormant_new"]} meta+{r["meta_added"]} (압축 {r["compressed_from"]}건)')
+          except Exception:
+            logger.debug('age_and_compress 실패: %s', agent, exc_info=True)
+        # TeamMemory 오래된 lesson 아카이브 (간단 버전 — 30건 cap은 이미 있으므로 부가 불필요)
+        state['last_compaction_ts'] = datetime.now(timezone.utc).isoformat()
+        if compact_results:
+          await self.event_bus.publish(LogEvent(
+            agent_id='teamlead', event_type='system_notice',
+            message='🧹 에이전트 규칙 주기 정리:\n' + '\n'.join(f'- {r}' for r in compact_results),
+          ))
+    except Exception:
+      logger.debug('주기 압축 실패', exc_info=True)
+
     msg = f'📋 팀장 리뷰 완료{circuit_note}{dryrun_note} — 분석 {len(fresh)}건, 건의 {registered}건 (자동 반영 {auto_applied}건)'
     if summary:
       msg += f'\n요약: {summary[:200]}'

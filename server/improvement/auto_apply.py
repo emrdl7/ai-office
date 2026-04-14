@@ -76,6 +76,15 @@ async def apply_prompt_or_rule(suggestion: dict, user_comment: str = '') -> bool
         priority='high',
         active=True,
       ))
+      # 상한 초과 시 오래된·효과 낮은 규칙은 비활성화 (삭제 X, 보존)
+      from improvement.prompt_evolver import MAX_RULES_PER_AGENT as _MAX
+      if len([r for r in existing if r.active]) > _MAX:
+        active = [r for r in existing if r.active]
+        inactive = [r for r in existing if not r.active]
+        sorted_rules = sorted(active, key=lambda r: (r.hit_count, r.created_at))
+        for r in sorted_rules[_MAX:]:
+          r.active = False
+        existing = sorted_rules[:_MAX] + sorted_rules[_MAX:] + inactive
       evolver.save_rules(apply_to, existing)
       return True
     except Exception:
