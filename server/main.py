@@ -1193,6 +1193,75 @@ async def get_suggestion_branch_diff(suggestion_id: str):
   }
 
 
+_BRANCH_EXPLAIN_CACHE: dict[str, dict] = {}
+
+@app.get('/api/suggestions/{suggestion_id}/branch/explain')
+async def explain_suggestion_branch(suggestion_id: str):
+  '''변경사항의 의도·효과·위험을 AI로 분석해 반환 (커밋 해시 기준 캐시).'''
+  from db.suggestion_store import get_suggestion
+  branch = f'improvement/{suggestion_id}'
+  code, _ = _run_git(['rev-parse', '--verify', branch])
+  if code != 0:
+    raise HTTPException(status_code=404, detail='브랜치가 존재하지 않습니다')
+  _, tip = _run_git(['rev-parse', branch])
+  tip = tip.strip()
+  cached = _BRANCH_EXPLAIN_CACHE.get(tip)
+  if cached:
+    return cached
+
+  _, stat = _run_git(['diff', '--stat', f'main...{branch}'])
+  _, patch = _run_git(['diff', f'main...{branch}'])
+  _, log = _run_git(['log', f'main..{branch}', '--pretty=%s%n%b', '-n', '3'])
+  suggestion = get_suggestion(suggestion_id) or {}
+
+  from runners.gemini_runner import run_gemini
+  import json as _j, re as _re
+
+  prompt = (
+    f'당신은 시니어 엔지니어 리뷰어입니다. 아래 변경사항을 분석해 JSON만 출력하세요.\n\n'
+    f'[원 건의]\n'
+    f'제목: {suggestion.get("title", "(미상)")}\n'
+    f'내용: {suggestion.get("content", "")[:800]}\n\n'
+    f'[커밋 메시지]\n{log[:600]}\n\n'
+    f'[변경 통계]\n{stat}\n\n'
+    f'[패치]\n{patch[:30000]}\n\n'
+    f'출력 스키마:\n'
+    f'{{\n'
+    f'  "intent": "이 변경의 의도 (건의를 어떻게 해석해서 무엇을 고쳤는지) 2-3문장",\n'
+    f'  "effects": ["기대 효과 1", "기대 효과 2"],\n'
+    f'  "risks": ["위험/주의점 1", "위험/주의점 2"],\n'
+    f'  "verdict": "merge_safe|review_needed|risky",\n'
+    f'  "verdict_reason": "판단 근거 한 문장"\n'
+    f'}}\n'
+    f'규칙:\n'
+    f'- 의도/효과/위험은 구체적으로. 일반론 금지.\n'
+    f'- 실제 수정된 함수·파일·동작 변화를 근거로 작성.\n'
+    f'- 위험이 없어 보여도 최소 1개는 찾아서 기술 (테스트 누락/엣지 케이스/되돌리기 어려움 등).\n'
+    f'- verdict는 엄격하게: 어지간하면 review_needed.'
+  )
+  try:
+    raw = await run_gemini(prompt=prompt)
+    m = _re.search(r'\{[\s\S]*\}', raw)
+    data = _j.loads(m.group()) if m else None
+  except Exception as e:
+    logger.warning('브랜치 설명 생성 실패: %s', e)
+    data = None
+
+  if not isinstance(data, dict):
+    return {'error': 'AI 분석 실패 — diff를 직접 확인하세요'}
+
+  result = {
+    'intent': (data.get('intent') or '').strip(),
+    'effects': [str(x).strip() for x in (data.get('effects') or []) if x],
+    'risks': [str(x).strip() for x in (data.get('risks') or []) if x],
+    'verdict': data.get('verdict', 'review_needed'),
+    'verdict_reason': (data.get('verdict_reason') or '').strip(),
+    'commit': tip,
+  }
+  _BRANCH_EXPLAIN_CACHE[tip] = result
+  return result
+
+
 @app.post('/api/suggestions/{suggestion_id}/branch/merge')
 async def merge_suggestion_branch(suggestion_id: str):
   '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done.'''

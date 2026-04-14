@@ -66,6 +66,11 @@ export function SuggestionModal() {
   }, [suggestions])
 
   const [branchDiff, setBranchDiff] = useState<{ id: string; stat: string; diff: string; files: string[] } | null>(null)
+  const [explain, setExplain] = useState<{
+    intent?: string; effects?: string[]; risks?: string[];
+    verdict?: string; verdict_reason?: string; error?: string;
+  } | null>(null)
+  const [explainLoading, setExplainLoading] = useState(false)
 
   async function loadBranchDiff(id: string) {
     try {
@@ -73,6 +78,13 @@ export function SuggestionModal() {
       if (!r.ok) { alert('브랜치 정보를 가져올 수 없습니다'); return }
       const data = await r.json()
       setBranchDiff({ id, stat: data.stat, diff: data.diff, files: data.files || [] })
+      // AI 리뷰는 비동기 로드
+      setExplain(null); setExplainLoading(true)
+      fetch(`/api/suggestions/${id}/branch/explain`)
+        .then((r) => r.json())
+        .then(setExplain)
+        .catch(() => setExplain({ error: '분석 실패' }))
+        .finally(() => setExplainLoading(false))
     } catch { alert('네트워크 오류') }
   }
 
@@ -356,6 +368,62 @@ export function SuggestionModal() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* AI 리뷰 — 의도/효과/위험 */}
+              <div className="rounded-lg border border-indigo-200 dark:border-indigo-800
+                bg-indigo-50/40 dark:bg-indigo-950/20 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                    AI 리뷰 — 의도 · 효과 · 위험
+                  </h4>
+                  {explain?.verdict && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium
+                      ${explain.verdict === 'merge_safe' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' :
+                        explain.verdict === 'risky' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                        'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}
+                      title={explain.verdict_reason || ''}>
+                      {explain.verdict === 'merge_safe' ? '안전' :
+                       explain.verdict === 'risky' ? '위험' : '검토 필요'}
+                    </span>
+                  )}
+                </div>
+                {explainLoading && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">AI 분석 중... (10~30초)</p>
+                )}
+                {!explainLoading && explain?.error && (
+                  <p className="text-xs text-red-500">{explain.error}</p>
+                )}
+                {!explainLoading && explain && !explain.error && (
+                  <div className="space-y-2 text-xs">
+                    {explain.intent && (
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-300 mb-0.5">의도</div>
+                        <div className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{explain.intent}</div>
+                      </div>
+                    )}
+                    {explain.effects && explain.effects.length > 0 && (
+                      <div>
+                        <div className="font-semibold text-emerald-700 dark:text-emerald-400 mb-0.5">기대 효과</div>
+                        <ul className="list-disc pl-4 text-gray-600 dark:text-gray-400 space-y-0.5">
+                          {explain.effects.map((e, i) => <li key={i}>{e}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {explain.risks && explain.risks.length > 0 && (
+                      <div>
+                        <div className="font-semibold text-amber-700 dark:text-amber-400 mb-0.5">위험 · 주의</div>
+                        <ul className="list-disc pl-4 text-gray-600 dark:text-gray-400 space-y-0.5">
+                          {explain.risks.map((e, i) => <li key={i}>{e}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {explain.verdict_reason && (
+                      <div className="text-[10px] text-gray-500 dark:text-gray-500 pt-1 border-t border-gray-200 dark:border-gray-800">
+                        판정 근거: {explain.verdict_reason}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <pre className="text-xs bg-gray-50 dark:bg-gray-800 p-3 rounded-lg
                 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{branchDiff.stat}</pre>
               <pre className="text-xs bg-gray-900 dark:bg-black text-gray-100 p-3 rounded-lg
