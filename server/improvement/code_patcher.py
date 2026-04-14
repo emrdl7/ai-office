@@ -10,6 +10,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# 지수 백오프 재시도 설정
+_RETRY_MAX = 3        # 최대 재시도 횟수 (초기 시도 제외)
+_RETRY_BASE = 2.0     # 기본 대기 초 (2^n 배수로 증가)
+_RETRY_MAX_DELAY = 60.0  # 대기 상한 (초)
 BRANCH_PREFIX = 'improvement'
 
 # 코드 패치는 워킹트리를 공유하므로 직렬화 필요
@@ -86,6 +91,41 @@ async def _emit(agent_id: str, message: str, event_type: str = 'message'):
     event_type=event_type,
     message=message,
   ))
+
+
+async def _run_with_backoff(
+  suggestion_id: str,
+  prompt: str,
+  timeout: float,
+  max_turns: int,
+) -> str:
+  '''지수 백오프로 run_claude_isolated를 재시도한다.
+
+  타임아웃 오류는 재시도하지 않고 즉시 re-raise한다.
+  그 외 ClaudeRunnerError는 최대 _RETRY_MAX회 재시도한다.
+  '''
+  for attempt in range(1 + _RETRY_MAX):
+    try:
+      return await run_claude_isolated(
+        prompt=prompt,
+        timeout=timeout,
+        max_turns=max_turns,
+      )
+    except ClaudeRunnerError as e:
+      is_timeout = 'timeout' in str(e).lower() or '타임아웃' in str(e)
+      if is_timeout or attempt >= _RETRY_MAX:
+        raise
+      delay = min(_RETRY_BASE ** (attempt + 1), _RETRY_MAX_DELAY)
+      logger.warning(
+        '건의 #%s Claude 오류 (시도 %d/%d), %.0f초 후 재시도: %s',
+        suggestion_id, attempt + 1, _RETRY_MAX, delay, e,
+      )
+      await _emit(
+        'teamlead',
+        f'⚠️ 건의 #{suggestion_id} Claude 오류 — {delay:.0f}초 후 재시도 ({attempt + 1}/{_RETRY_MAX}): {e}',
+      )
+      await asyncio.sleep(delay)
+  raise ClaudeRunnerError('재시도 초과')  # 도달 불가 (루프 내 raise로 처리됨)
 
 
 def _build_patch_prompt(suggestion: dict) -> str:
@@ -171,7 +211,8 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
     prompt = _build_patch_prompt(suggestion)
     timed_out = False
     try:
-      result = await run_claude_isolated(
+      result = await _run_with_backoff(
+        suggestion_id=suggestion_id,
         prompt=prompt,
         timeout=600.0,  # 5분 → 10분으로 연장 (CI 워크플로 등 복잡 작업 여유)
         max_turns=20,
