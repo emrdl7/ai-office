@@ -1035,14 +1035,17 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
   # 승인 — 저장된 suggestion_type 보고 자동 분기
   if new_status == 'accepted' and suggestion:
     stype = suggestion.get('suggestion_type') or 'prompt'
+    auto_merge_req = bool(body.get('auto_merge', True))  # 기본 on
     if stype == 'code':
       async def _run_patch():
         from improvement.code_patcher import apply_suggestion
         from db.suggestion_store import update_suggestion as _upd
         ok = await apply_suggestion(suggestion)
         if ok:
-          # 브랜치 준비됨 → 사용자 검토/병합 대기
           _upd(suggestion_id, status='review_pending')
+          if auto_merge_req:
+            # 자동 병합 파이프라인 진입 (risky/rollback 시 중단)
+            asyncio.create_task(_auto_merge_pipeline(suggestion_id))
         else:
           _upd(suggestion_id, status='pending')
       asyncio.create_task(_run_patch())
@@ -1078,6 +1081,288 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
       logger.debug('반려 메모리 기록 실패', exc_info=True)
 
   return {'success': True}
+
+
+async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3):
+  '''승인 후 Claude 패치가 끝난 상태에서 호출.
+
+  AI 리뷰 → merge/needs_fix/discard 판정에 따라 자동 분기:
+  - merge: 자동 병합 (risky/스코프/회로차단기/일일한도 통과 시만)
+  - needs_fix: 최대 N회 자동 보완, 중간에 merge 되면 병합
+  - discard: 자동 폐기
+  - risky/한도 초과/회로차단: review_pending 유지 (수동)
+  '''
+  import asyncio as _a
+  from datetime import datetime, timezone, timedelta
+  from db.suggestion_store import (
+    get_suggestion, update_suggestion, log_event, count_rollbacks_since, _conn as _sconn,
+  )
+  from improvement.code_patcher import _PATCH_LOCK, _git, _current_branch, _check_scope
+
+  branch = f'improvement/{suggestion_id}'
+
+  # 회로 차단기 — 최근 24h 코드 롤백(어떤 건의든) 있으면 자동 병합 전면 중단
+  recent_rollbacks = count_rollbacks_since(hours=24)
+  if recent_rollbacks > 0:
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message=f'⚠️ 최근 24h 롤백 {recent_rollbacks}건 — 자동 병합 중단, 수동 검토로 전환 (#{suggestion_id})',
+    ))
+    return
+
+  # 일일 한도 — 24h 자동 병합 5건 초과 시 중단
+  cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+  c = _sconn()
+  row = c.execute(
+    'SELECT COUNT(*) FROM suggestion_events WHERE kind=? AND ts>=? AND payload LIKE ?',
+    ('branch_merged', cutoff, '%"auto":true%'),
+  ).fetchone()
+  c.close()
+  today_auto = row[0] if row else 0
+  if today_auto >= 5:
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message=f'🛑 일일 자동 병합 한도(5/24h) 도달 — 이후는 수동 검토 (#{suggestion_id})',
+    ))
+    return
+
+  async def _try_merge() -> bool:
+    '''AI 리뷰 후 조건 만족 시 병합. 성공 True.'''
+    try:
+      explain = await explain_suggestion_branch(suggestion_id)
+    except Exception as e:
+      logger.warning('auto-merge explain 실패: %s', e)
+      return False
+    if not isinstance(explain, dict) or explain.get('error'):
+      return False
+
+    verdict = explain.get('verdict', 'review_needed')
+    rec = explain.get('recommendation', 'needs_fix')
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message=f'🤖 자동 파이프라인 판정 #{suggestion_id}: verdict={verdict}, recommend={rec}',
+    ))
+
+    if rec == 'discard':
+      # 자동 폐기
+      _git(['branch', '-D', branch])
+      update_suggestion(suggestion_id, status='rejected', response='자동 파이프라인 폐기 권장')
+      log_event(suggestion_id, 'branch_discarded', {'auto': True, 'verdict': verdict})
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'🗑️ 자동 폐기 #{suggestion_id} — {explain.get("recommendation_reason", "")[:150]}',
+      ))
+      return True
+
+    if rec != 'merge':
+      return False
+    if verdict == 'risky':
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'⚠️ 자동 병합 중단 #{suggestion_id} — AI가 risky 판정. 수동 검토 필요.',
+      ))
+      return False
+
+    # 스코프 재확인
+    _, files_out = _run_git(['diff', '--name-only', f'main...{branch}'])
+    _, stat_out = _run_git(['diff', '--stat', f'main...{branch}'])
+    scope_ok, scope_reason = _check_scope(
+      get_suggestion(suggestion_id) or {},
+      [f for f in files_out.splitlines() if f], stat_out,
+    )
+    if not scope_ok:
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'🚫 자동 병합 중단 #{suggestion_id} — 스코프 위반: {scope_reason}',
+      ))
+      return False
+
+    # 실제 병합 (PATCH_LOCK 내부)
+    async with _PATCH_LOCK:
+      _, cur = _run_git(['rev-parse', '--abbrev-ref', 'HEAD'])
+      if cur.strip() != 'main':
+        _run_git(['checkout', 'main'])
+      _, tip = _run_git(['rev-parse', branch])
+      tip = tip.strip()
+      code, out = _run_git(['merge', '--no-ff', '-m', f'merge: improvement/{suggestion_id} (auto)', branch])
+      if code != 0:
+        _run_git(['merge', '--abort'])
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'❌ 자동 병합 실패 #{suggestion_id}: {out[:200]}',
+        ))
+        return False
+      _run_git(['branch', '-d', branch])
+      update_suggestion(suggestion_id, status='done')
+      log_event(suggestion_id, 'branch_merged', {'tip': tip, 'auto': True, 'verdict': verdict})
+
+      # risks를 follow-up으로 등록 (기존 merge 엔드포인트와 동일)
+      risks = explain.get('risks') or []
+      from db.suggestion_store import create_suggestion
+      fu = 0
+      for risk in risks[:5]:
+        r = (risk or '').strip()
+        if len(r) < 15:
+          continue
+        try:
+          create_suggestion(
+            agent_id='teamlead',
+            title=f'[follow-up #{suggestion_id}] {r[:60]}'[:80],
+            content=f'{r}\n\n[자동 파이프라인 — 원 건의 #{suggestion_id} 병합 후 잔존 위험]',
+            category='프로세스 개선', target_agent='',
+          )
+          fu += 1
+        except Exception:
+          pass
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='response',
+        message=(
+          f'🔀 자동 병합 완료 #{suggestion_id} → main에 반영됨.'
+          + (f'\n🔗 follow-up {fu}건 등록' if fu else '')
+          + '\n⚠️ 서버 재시작이 필요합니다 (사이드바 재시작 버튼).'
+        ),
+      ))
+      return True
+
+  # 1차 시도
+  if await _try_merge():
+    return
+
+  # needs_fix면 자동 보완 루프 진입
+  update_suggestion(suggestion_id, status='supplementing')
+  import time as _time
+  loop_start = _time.monotonic()
+  LOOP_BUDGET = 25 * 60  # 25분 예산
+  prev_risks_sig = ''
+
+  try:
+    for it in range(1, max_iters + 1):
+      if _time.monotonic() - loop_start > LOOP_BUDGET:
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'⏱️ [자동] #{suggestion_id} 전체 보완 예산(25분) 초과 — 중단',
+        ))
+        break
+
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'🛠️ [자동] 보완 {it}/{max_iters} 시작 #{suggestion_id}',
+      ))
+      ok, risks_sig = await _run_one_supplement_iter(suggestion_id, branch, it, max_iters)
+      if not ok:
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'⏹️ [자동] 보완 {it}회 실패 또는 변화 없음 — 루프 종료',
+        ))
+        break
+      # 수렴 실패 감지
+      if prev_risks_sig and risks_sig == prev_risks_sig:
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'🔁 [자동] #{suggestion_id} 위험사항 변화 없음 — 수렴 실패, 중단',
+        ))
+        break
+      prev_risks_sig = risks_sig
+      # 병합 재시도
+      if await _try_merge():
+        return
+  finally:
+    s = get_suggestion(suggestion_id)
+    if s and s.get('status') == 'supplementing':
+      update_suggestion(suggestion_id, status='review_pending')
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=(
+          f'ℹ️ 자동 파이프라인 #{suggestion_id} 종료 — review_pending으로 전환. '
+          f'"변경사항 보기"에서 수동 결정 바랍니다.'
+        ),
+      ))
+
+
+async def _run_one_supplement_iter(suggestion_id: str, branch: str, it: int, max_iters: int) -> tuple[bool, str]:
+  '''supplement 1회 실행. (성공, risks_signature) 반환.
+
+  성공 = Claude가 커밋 생성 + 새 explain 완료.
+  '''
+  from db.suggestion_store import get_suggestion, log_event
+  from improvement.code_patcher import _PATCH_LOCK, _git, _current_branch, _check_scope
+  from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
+  from pathlib import Path as _P
+
+  async with _PATCH_LOCK:
+    suggestion = get_suggestion(suggestion_id) or {}
+    _, cur_tip = _run_git(['rev-parse', branch])
+    cur_tip = cur_tip.strip()
+    explain = _BRANCH_EXPLAIN_CACHE.get(cur_tip) or {}
+    risks = explain.get('risks') or []
+    prev_intent = explain.get('intent', '')
+
+    original_branch = _current_branch()
+    rc, out = _git(['checkout', branch])
+    if rc != 0:
+      return (False, '')
+
+    prompt = (
+      f'# AI Office 자가개선 — 자동 보완 반복 {it}/{max_iters}\n\n'
+      f'프로젝트 루트: {_P(__file__).parent.parent}\n\n'
+      f'## 원 건의 #{suggestion_id}\n'
+      f'제목: {suggestion.get("title", "")}\n내용: {suggestion.get("content", "")[:1500]}\n\n'
+      f'## 이전 구현 요약\n{prev_intent or "(없음)"}\n\n'
+      f'## 보완해야 할 위험·부족분\n'
+      + ('\n'.join(f'- {r}' for r in risks) if risks else '(없음)')
+      + f'\n\n## 작업 지침\n'
+      f'- 기존 구현에 **추가·보완**만. 덮어쓰지 마라.\n'
+      f'- 위 위험·부족분만 해결. 범위 벗어난 건 건드리지 마라.\n'
+      f'- 스코프 제약(금지 파일·15파일 500줄 한도) 엄격 준수.\n'
+      f'- 변경 파일·이유 요약.'
+    )
+    try:
+      result = await run_claude_isolated(prompt=prompt, timeout=600.0, max_turns=20)
+    except ClaudeRunnerError as e:
+      _git(['checkout', original_branch])
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'❌ [자동 {it}/{max_iters}] Claude 오류: {e}',
+      ))
+      return (False, '')
+
+    _, changed = _git(['diff', '--name-only', 'HEAD'])
+    _, untracked = _git(['ls-files', '--others', '--exclude-standard'])
+    if not (changed.strip() or untracked.strip()):
+      _git(['checkout', original_branch])
+      return (False, '')
+
+    # 스코프 체크 — 위반 시 이 iter만 폐기 (브랜치 유지)
+    file_list = [f for f in changed.strip().splitlines() if f]
+    _, stat_out = _git(['diff', '--stat', 'HEAD'])
+    scope_ok, scope_reason = _check_scope(suggestion, file_list, stat_out)
+    if not scope_ok:
+      _git(['checkout', '.'])  # 변경 폐기
+      _git(['checkout', original_branch])
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'🚫 [자동 {it}/{max_iters}] 스코프 위반으로 iter 폐기: {scope_reason}',
+      ))
+      return (False, '')
+
+    _git(['add', '-A'])
+    _git(['commit', '-m', f'supplement(#{suggestion_id}): auto iter {it}/{max_iters}'])
+    _, new_tip = _run_git(['rev-parse', branch])
+    new_tip = new_tip.strip()
+    _BRANCH_EXPLAIN_CACHE.pop(cur_tip, None)
+    log_event(suggestion_id, 'branch_supplemented', {
+      'iter': it, 'old_tip': cur_tip, 'new_tip': new_tip, 'auto': True,
+    })
+    _git(['checkout', original_branch])
+
+  # 락 해제 후 explain (다른 iter 차단 불필요)
+  try:
+    new_explain = await explain_suggestion_branch(suggestion_id)
+  except Exception:
+    return (True, '')
+  new_risks = (new_explain or {}).get('risks') or []
+  sig = '|'.join(sorted((r or '')[:60] for r in new_risks))
+  return (True, sig)
 
 
 def _extract_rule_body(content: str) -> str:

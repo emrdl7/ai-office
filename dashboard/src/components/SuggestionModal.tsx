@@ -164,15 +164,17 @@ export function SuggestionModal() {
     fetchSuggestions()
   }
 
-  async function handleStatusChange(id: string, status: string, response: string = '') {
+  async function handleStatusChange(id: string, status: string, response: string = '', autoMerge: boolean = true) {
     await fetch(`/api/suggestions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, response }),
+      body: JSON.stringify({ status, response, auto_merge: autoMerge }),
     })
     setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status, response } : s)))
     setComment('')
   }
+
+  const [autoMerge, setAutoMerge] = useState(true)
 
   async function handleDelete(id: string) {
     await fetch(`/api/suggestions/${id}`, { method: 'DELETE' })
@@ -406,6 +408,20 @@ export function SuggestionModal() {
                               focus:outline-none focus:border-blue-400 dark:focus:border-blue-600"
                           />
                         )}
+                        {s.status === 'pending' && s.suggestion_type === 'code' && (
+                          <label className="flex items-center gap-2 mb-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={autoMerge}
+                              onChange={(e) => setAutoMerge(e.target.checked)}
+                              className="rounded"
+                            />
+                            <span>
+                              🤖 자동 병합 (AI가 'merge' 판정 시 자동, 'risky'는 제외) — 끄면 수동 검토
+                            </span>
+                          </label>
+                        )}
                         <div className="flex gap-2">
                           {s.status === 'pending' && (
                             <>
@@ -416,11 +432,11 @@ export function SuggestionModal() {
                                   if (isCode && !confirm(
                                     '이 건의는 코드 수정이 필요한 것으로 분류됐습니다.\n\n' +
                                     '1) Claude가 improvement 브랜치에서 코드 수정\n' +
-                                    '2) 수정 완료되면 "검토 대기" 상태로 전환\n' +
-                                    '3) 사용자가 변경사항 확인 → 병합/폐기 결정\n\n' +
+                                    `2) ${autoMerge ? 'AI 리뷰 후 safe 판정 시 자동 병합' : '검토 대기 상태로 수동 결정'}\n` +
+                                    `3) ${autoMerge ? 'needs_fix면 최대 3회 자동 보완 시도' : '사용자가 변경사항 확인 후 병합/폐기'}\n\n` +
                                     '계속할까요?'
                                   )) return
-                                  handleStatusChange(s.id, 'accepted', comment)
+                                  handleStatusChange(s.id, 'accepted', comment, autoMerge)
                                 }}
                                 className="text-xs px-3 py-1 rounded-lg bg-green-500 text-white
                                   hover:bg-green-600 cursor-pointer transition-colors"
