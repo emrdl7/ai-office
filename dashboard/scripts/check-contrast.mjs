@@ -102,7 +102,8 @@ const CHECKS = [
   ['[Dark]  링크 텍스트  | --text-link on --bg-surface',       'dark',  '--color-text-link',      '--color-bg-surface',      false],
   ['[Dark]  멘션 텍스트  | --text-mention on --bubble-agent',  'dark',  '--color-text-mention',   '--color-bg-bubble-agent', false],
   ['[Dark]  버튼 텍스트  | --action-text on --action-bg',      'dark',  '--color-action-text',    '--color-action-bg',       false],
-  // [Dark] 역텍스트 · action-hover: dark 팔레트에서 라이트 모드 값을 상속하므로 라이트 항목으로 커버됨
+  ['[Dark]  역텍스트     | --text-inverse on --bg-sidebar',   'dark',  '--color-text-inverse',   '--color-bg-sidebar',      false],
+  // [Dark] action-hover: dark 팔레트에서 라이트 모드 값을 상속하므로 라이트 항목으로 커버됨
 ]
 
 // ─── 미검사 토큰 탐지 ──────────────────────────────────────────
