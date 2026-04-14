@@ -15,6 +15,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 _RETRY_MAX = 3        # 최대 재시도 횟수 (초기 시도 제외)
 _RETRY_BASE = 2.0     # 기본 대기 초 (2^n 배수로 증가)
 _RETRY_MAX_DELAY = 30.0  # 대기 상한 (초) — 600초 타임아웃의 5% 이내로 제한
+# ↑ 최악의 경우 총 실행 시간: 600s × (1 + _RETRY_MAX) + 대기(2+4+8)초 ≈ 2414초(약 40분).
+#   이는 의도된 동작 — 일시적 API 과부하를 감수하고 최종 성공을 목표로 한다.
+#   빠른 실패가 필요하면 _RETRY_MAX를 1~2로 줄이거나 apply_suggestion 호출 측의 timeout을 조정하라.
 BRANCH_PREFIX = 'improvement'
 
 # 코드 패치는 워킹트리를 공유하므로 직렬화 필요
