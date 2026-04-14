@@ -370,7 +370,15 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         <button
           onClick={async () => {
             if (!confirm('백엔드 서버를 재시작합니다. 5초 내 자동 재연결됩니다. 계속할까요?')) return
-            try { await fetch('/api/server/restart', { method: 'POST' }) } catch { /* 프로세스 종료로 인한 네트워크 에러 무시 */ }
+            try {
+              const r = await fetch('/api/server/restart', { method: 'POST' })
+              if (r.status === 409) {
+                const err = await r.json().catch(() => ({}))
+                if (confirm(`${err.detail || '코드 패치 진행 중'}\n\n그래도 강제 재시작할까요? (작업 중단됨)`)) {
+                  await fetch('/api/server/restart?force=true', { method: 'POST' })
+                }
+              }
+            } catch { /* 프로세스 종료로 인한 네트워크 에러 무시 */ }
           }}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
             text-sm text-gray-600 dark:text-gray-400

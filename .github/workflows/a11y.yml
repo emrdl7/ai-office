@@ -3,11 +3,11 @@ name: Accessibility — WCAG Contrast Check
 on:
   push:
     paths:
-      - 'dashboard/src/tokens.css'
+      - 'dashboard/src/**/*.css'
       - 'dashboard/scripts/check-contrast.mjs'
   pull_request:
     paths:
-      - 'dashboard/src/tokens.css'
+      - 'dashboard/src/**/*.css'
       - 'dashboard/scripts/check-contrast.mjs'
 
 jobs:

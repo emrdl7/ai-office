@@ -63,6 +63,8 @@ async def lifespan(app: FastAPI):
 
   # 중단된 태스크 알림 (자동 재실행 없이 사용자에게 선택권)
   asyncio.create_task(office.restore_pending_tasks())
+  # 재기동 복구 — 코드 패치 중단으로 남은 orphan git 상태 정리
+  asyncio.create_task(_recover_orphan_patches())
 
   # 에이전트 자발적 활동 백그라운드 루프 시작
   office._autonomous_task = asyncio.create_task(office.start_autonomous_loop())
@@ -1348,20 +1350,91 @@ async def get_improvement_report(request: Request):
   return office.improvement_engine.get_report()
 
 
+async def _recover_orphan_patches():
+  '''서버 기동 시 호출. 코드 패치 중단으로 남은 git/DB 불일치 정리.'''
+  import subprocess as _sp
+  import asyncio as _a
+  from pathlib import Path as _P
+  from db.suggestion_store import list_suggestions, update_suggestion
+
+  await _a.sleep(2)  # 다른 init 끝난 뒤
+
+  root = _P(__file__).parent.parent
+
+  def g(args):
+    r = _sp.run(['git'] + args, cwd=str(root), capture_output=True, text=True)
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+  recovered = []
+
+  # 1. 현재 HEAD가 improvement/* 위에 있으면 main으로 강제 복귀
+  _, cur = g(['rev-parse', '--abbrev-ref', 'HEAD'])
+  cur = cur.strip()
+  if cur.startswith('improvement/'):
+    logger.warning('기동 시 HEAD가 %s 위에 있음 — main 복귀', cur)
+    # 워킹트리 변경 있으면 stash (분실 방지)
+    _, status = g(['status', '--porcelain'])
+    if status.strip():
+      g(['stash', 'push', '-m', f'auto-recover-from-{cur}'])
+      recovered.append(f'워킹트리 변경 stash: {cur}')
+    g(['checkout', 'main'])
+    recovered.append(f'HEAD {cur} → main')
+
+  # 2. accepted 상태로 멈춘 code 건의 → pending 롤백 + 남은 improvement 브랜치 삭제
+  try:
+    stuck = [
+      s for s in list_suggestions(status='accepted')
+      if (s.get('suggestion_type') or 'prompt') == 'code'
+    ]
+    for s in stuck:
+      sid = s['id']
+      branch = f'improvement/{sid}'
+      code, _ = g(['rev-parse', '--verify', branch])
+      if code == 0:
+        # 브랜치가 main과 차이 없으면 삭제, 아니면 유지 (사용자 판단)
+        _, ahead = g(['rev-list', '--count', f'main..{branch}'])
+        if ahead.strip() == '0':
+          g(['branch', '-D', branch])
+          recovered.append(f'빈 브랜치 삭제: {branch}')
+      update_suggestion(sid, status='pending', response='기동 시 자동 롤백 (패치 중단)')
+      recovered.append(f'건의 #{sid} 상태 accepted → pending')
+  except Exception:
+    logger.debug('stuck 건의 복구 실패', exc_info=True)
+
+  if recovered:
+    msg = '♻️ 기동 시 자동 복구:\n' + '\n'.join(f'- {r}' for r in recovered)
+    logger.info(msg)
+    try:
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice', message=msg,
+      ))
+    except Exception:
+      pass
+
+
 @app.post('/api/server/restart')
-async def restart_server():
-  '''백엔드 프로세스를 종료 — serve.sh 감독 루프가 3초 내 재기동.'''
+async def restart_server(request: Request):
+  '''백엔드 프로세스를 종료 — serve.sh 감독 루프가 3초 내 재기동.
+
+  코드 패치 진행 중이면 거절 (force=true 쿼리로 강제).
+  '''
   import os as _os
   import asyncio as _a
+  from improvement.code_patcher import _PATCH_LOCK
+  force = request.query_params.get('force') == 'true'
+  if _PATCH_LOCK.locked() and not force:
+    raise HTTPException(
+      status_code=409,
+      detail='코드 패치가 진행 중입니다. 완료 후 재시작하거나 ?force=true로 강제하세요',
+    )
   async def _bye():
-    # 응답이 먼저 나가도록 짧게 대기 후 프로세스 종료
     await _a.sleep(1.0)
     await event_bus.publish(LogEvent(
       agent_id='teamlead', event_type='system_notice',
       message='♻️ 서버 재시작 중... (약 5초 후 재연결)',
     ))
     await _a.sleep(0.5)
-    _os._exit(0)  # serve.sh 루프가 자동 재기동
+    _os._exit(0)
   _a.create_task(_bye())
   return {'restarting': True, 'eta_sec': 5}
 

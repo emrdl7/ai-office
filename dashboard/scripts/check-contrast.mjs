@@ -53,7 +53,7 @@ const CHECKS = [
   ['[Dark]  기본 텍스트  | --text-primary on --bg-primary',    '#f3f4f6', '#030712', false],
   ['[Dark]  보조 텍스트  | --text-secondary on --bg-primary',  '#9ca3af', '#030712', false],
   ['[Dark]  링크 텍스트  | --text-link on --bg-surface',       '#60a5fa', '#111827', false],
-  ['[Dark]  멘션 텍스트  | --text-mention on --bubble-agent',  '#60a5fa', '#1f2937', false],
+  ['[Dark]  멘션 텍스트  | --text-mention on --bubble-agent',  '#93c5fd', '#1f2937', false],
   ['[Dark]  버튼 텍스트  | --action-text on --action-bg',      '#ffffff', '#2563eb', false],
 ]
 
