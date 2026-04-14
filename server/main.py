@@ -1250,6 +1250,24 @@ async def get_improvement_report(request: Request):
   return office.improvement_engine.get_report()
 
 
+@app.post('/api/server/restart')
+async def restart_server():
+  '''백엔드 프로세스를 종료 — serve.sh 감독 루프가 3초 내 재기동.'''
+  import os as _os
+  import asyncio as _a
+  async def _bye():
+    # 응답이 먼저 나가도록 짧게 대기 후 프로세스 종료
+    await _a.sleep(1.0)
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message='♻️ 서버 재시작 중... (약 5초 후 재연결)',
+    ))
+    await _a.sleep(0.5)
+    _os._exit(0)  # serve.sh 루프가 자동 재기동
+  _a.create_task(_bye())
+  return {'restarting': True, 'eta_sec': 5}
+
+
 @app.post('/api/teamlead/review')
 async def trigger_teamlead_review(request: Request):
   '''팀장 배치 리뷰를 수동 트리거. 이미 실행 중이면 거절.'''

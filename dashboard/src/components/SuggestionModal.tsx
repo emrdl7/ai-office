@@ -86,6 +86,9 @@ export function SuggestionModal() {
     }
     setBranchDiff(null)
     fetchSuggestions()
+    if (confirm('병합 완료. 지금 서버를 재시작할까요?\n(백엔드만 재기동 — 5초 내 자동 복귀)')) {
+      await fetch('/api/server/restart', { method: 'POST' })
+    }
   }
 
   async function discardBranch(id: string) {

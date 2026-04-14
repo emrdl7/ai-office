@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '../config/team'
-import { IconClipboard, IconChart } from './icons'
+import { IconClipboard, IconChart, IconRefresh } from './icons'
 import { ReactionStatsPanel } from './ReactionStats'
 
 export { AGENT_PROFILE }
@@ -366,6 +366,20 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         >
           <IconChart className="w-4 h-4" />
           <span>리액션 통계</span>
+        </button>
+        <button
+          onClick={async () => {
+            if (!confirm('백엔드 서버를 재시작합니다. 5초 내 자동 재연결됩니다. 계속할까요?')) return
+            try { await fetch('/api/server/restart', { method: 'POST' }) } catch { /* 프로세스 종료로 인한 네트워크 에러 무시 */ }
+          }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
+            text-sm text-gray-600 dark:text-gray-400
+            hover:bg-gray-100 dark:hover:bg-gray-800
+            cursor-pointer transition-colors"
+          title="백엔드만 재시작 (코드 병합 후 반영용)"
+        >
+          <IconRefresh className="w-4 h-4" />
+          <span>서버 재시작</span>
         </button>
       </div>
       {showReactions && <ReactionStatsPanel onClose={() => setShowReactions(false)} />}
