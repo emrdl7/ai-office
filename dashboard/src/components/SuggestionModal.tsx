@@ -127,6 +127,26 @@ export function SuggestionModal() {
     fetchSuggestions()
   }
 
+  async function supplementBranch(id: string) {
+    const instruction = prompt(
+      '추가 지시사항 (선택) — AI 리뷰의 위험사항 외에 더 보완할 내용이 있으면 입력:',
+      '',
+    )
+    if (instruction === null) return  // 사용자가 cancel
+    const r = await fetch(`/api/suggestions/${id}/branch/supplement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instruction }),
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: '실패' }))
+      alert('보완 요청 실패: ' + (err.detail || ''))
+      return
+    }
+    alert('보완 작업이 대기열에 들어갔습니다. 완료되면 채팅에 공지됩니다.\n완료 후 "변경사항 보기"를 다시 열어주세요.')
+    setBranchDiff(null)
+  }
+
   async function rollbackAuto(id: string) {
     if (!confirm(`자동 반영된 건의 #${id}를 되돌립니다.\n에이전트 규칙·팀 메모리에서 해당 항목이 제거됩니다. 계속할까요?`)) return
     const r = await fetch(`/api/suggestions/${id}/rollback`, { method: 'POST' })
@@ -448,6 +468,15 @@ export function SuggestionModal() {
                                 <IconGitMerge className="w-3.5 h-3.5" /> 병합
                               </button>
                               <button
+                                onClick={(e) => { e.stopPropagation(); supplementBranch(s.id) }}
+                                className="text-xs px-3 py-1 rounded-lg bg-amber-500 text-white
+                                  hover:bg-amber-600 cursor-pointer transition-colors
+                                  inline-flex items-center gap-1.5"
+                                title="AI 리뷰 위험사항 보완 — Claude 재실행"
+                              >
+                                🛠️ 보완
+                              </button>
+                              <button
                                 onClick={(e) => { e.stopPropagation(); discardBranch(s.id) }}
                                 className="text-xs px-3 py-1 rounded-lg bg-red-500 text-white
                                   hover:bg-red-600 cursor-pointer transition-colors
@@ -506,6 +535,14 @@ export function SuggestionModal() {
                   <IconGitMerge className="w-3.5 h-3.5" /> 병합
                 </button>
                 <button
+                  onClick={() => supplementBranch(branchDiff.id)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 cursor-pointer
+                    inline-flex items-center gap-1.5"
+                  title="AI 리뷰 위험사항 보완 — Claude 재실행"
+                >
+                  🛠️ 보완
+                </button>
+                <button
                   onClick={() => discardBranch(branchDiff.id)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 cursor-pointer
                     inline-flex items-center gap-1.5"
@@ -553,7 +590,7 @@ export function SuggestionModal() {
                         ? { label: '병합 권장', icon: '🔀', cls: 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300' }
                         : rec === 'discard'
                           ? { label: '폐기 권장', icon: '🗑️', cls: 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300' }
-                          : { label: '수정 필요 (폐기 후 재시도 또는 수동 보강)', icon: '🛠️', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
+                          : { label: '보완 필요 (🛠️ 보완 버튼으로 Claude 재실행 가능)', icon: '🛠️', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
                       return (
                         <div className={`rounded-md border px-2.5 py-1.5 ${cfg.cls}`}>
                           <div className="flex items-center gap-1.5 font-bold text-[11px]">

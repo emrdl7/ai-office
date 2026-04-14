@@ -1483,6 +1483,111 @@ async def rollback_auto_applied(suggestion_id: str):
   return {'rolled_back': True, 'removed': removed}
 
 
+@app.post('/api/suggestions/{suggestion_id}/branch/supplement')
+async def supplement_suggestion_branch(suggestion_id: str, request: Request):
+  '''improvement/{id} 브랜치에 Claude를 재실행해 보완 커밋을 추가.
+
+  AI 리뷰 risks + 사용자 추가 지시를 합쳐 Claude에게 이어받기 요청.
+  _PATCH_LOCK으로 직렬화. 성공 시 explain 캐시 무효화 (새 tip).
+  '''
+  from db.suggestion_store import get_suggestion, log_event
+  from improvement.code_patcher import _PATCH_LOCK, _git, _current_branch
+  from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
+  body = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
+  extra_instruction = (body.get('instruction') or '').strip()
+
+  branch = f'improvement/{suggestion_id}'
+  code, _ = _run_git(['rev-parse', '--verify', branch])
+  if code != 0:
+    raise HTTPException(status_code=404, detail='브랜치가 존재하지 않습니다')
+
+  suggestion = get_suggestion(suggestion_id) or {}
+  # 캐시된 explain의 risks가 있으면 근거로 주입
+  _, tip = _run_git(['rev-parse', branch])
+  tip = tip.strip()
+  explain = _BRANCH_EXPLAIN_CACHE.get(tip) or {}
+  risks = explain.get('risks') or []
+
+  if _PATCH_LOCK.locked():
+    raise HTTPException(status_code=409, detail='다른 코드 패치 진행 중 — 완료 후 재시도')
+
+  async def _run():
+    from pathlib import Path as _P
+    root = _P(__file__).parent.parent.parent
+    async with _PATCH_LOCK:
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=f'🛠️ 건의 #{suggestion_id} 보완 작업 시작 — 기존 브랜치에 Claude 재실행',
+      ))
+      original_branch = _current_branch()
+      rc, out = _git(['checkout', branch])
+      if rc != 0:
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'❌ 보완 실패 — 브랜치 체크아웃 오류: {out[:200]}',
+        ))
+        return
+      prompt = (
+        f'# AI Office 자가개선 — 보완 작업\n\n'
+        f'프로젝트 루트: {root}\n\n'
+        f'## 원 건의 #{suggestion_id}\n'
+        f'제목: {suggestion.get("title", "")}\n'
+        f'내용: {suggestion.get("content", "")[:1500]}\n\n'
+        f'## 이전 구현 요약\n'
+        f'{explain.get("intent", "(AI 리뷰 없음)")}\n\n'
+        f'## 보완해야 할 위험·부족분 (AI 리뷰)\n'
+        + ('\n'.join(f'- {r}' for r in risks) if risks else '(없음)')
+        + (f'\n\n## 사용자 추가 지시\n{extra_instruction}' if extra_instruction else '')
+        + (
+          f'\n\n## 작업 지침\n'
+          f'- 이미 현재 브랜치에 일부 구현이 있다. 덮어쓰지 말고 **추가·보완**하라.\n'
+          f'- 위 위험·부족분을 우선 해결. 범위 벗어난 건 건드리지 마라.\n'
+          f'- 기존 스타일 유지.\n'
+          f'- 변경 파일·이유를 마지막에 요약.'
+        )
+      )
+      try:
+        result = await run_claude_isolated(prompt=prompt, timeout=600.0, max_turns=20)
+      except ClaudeRunnerError as e:
+        _git(['checkout', original_branch])
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'❌ 보완 실패 (Claude): {e}',
+        ))
+        return
+      # 변경분 커밋
+      _, changed = _git(['diff', '--name-only', 'HEAD'])
+      _, untracked = _git(['ls-files', '--others', '--exclude-standard'])
+      has_changes = bool(changed.strip() or untracked.strip())
+      if not has_changes:
+        _git(['checkout', original_branch])
+        await event_bus.publish(LogEvent(
+          agent_id='teamlead', event_type='system_notice',
+          message=f'ℹ️ 보완 작업 완료 — 추가 변경 없음\n\n{result[:600]}',
+        ))
+        return
+      _git(['add', '-A'])
+      _git(['commit', '-m', f'supplement(#{suggestion_id}): AI 리뷰 위험 보완'])
+      _git(['checkout', original_branch])
+      # explain 캐시 무효화 (새 tip으로)
+      _, new_tip = _run_git(['rev-parse', branch])
+      _BRANCH_EXPLAIN_CACHE.pop(tip, None)
+      log_event(suggestion_id, 'branch_supplemented', {'old_tip': tip, 'new_tip': new_tip.strip()})
+      _, files = _git(['diff', '--name-only', 'main', branch])
+      file_list = '\n'.join(f'  • {f}' for f in files.strip().splitlines()[:10])
+      await event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='system_notice',
+        message=(
+          f'✅ 건의 #{suggestion_id} 보완 완료 — 다시 AI 리뷰를 확인하세요.\n'
+          f'수정 파일:\n{file_list}\n\n'
+          f'Claude 요약:\n{result[:500]}'
+        ),
+      ))
+
+  asyncio.create_task(_run())
+  return {'queued': True, 'message': '보완 작업 대기열 투입 — 완료 시 채팅 공지'}
+
+
 @app.post('/api/suggestions/{suggestion_id}/branch/discard')
 async def discard_suggestion_branch(suggestion_id: str):
   '''improvement/{id} 브랜치를 폐기하고 건의를 rejected로.'''
