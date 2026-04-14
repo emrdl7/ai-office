@@ -1255,13 +1255,20 @@ async def explain_suggestion_branch(suggestion_id: str):
     f'  "effects": ["기대 효과 1", "기대 효과 2"],\n'
     f'  "risks": ["위험/주의점 1", "위험/주의점 2"],\n'
     f'  "verdict": "merge_safe|review_needed|risky",\n'
-    f'  "verdict_reason": "판단 근거 한 문장"\n'
+    f'  "verdict_reason": "판단 근거 한 문장",\n'
+    f'  "recommendation": "merge|discard|needs_fix",\n'
+    f'  "recommendation_reason": "왜 그 행동을 권장하는지 2-3문장 (구체 이유)"\n'
     f'}}\n'
     f'규칙:\n'
     f'- 의도/효과/위험은 구체적으로. 일반론 금지.\n'
     f'- 실제 수정된 함수·파일·동작 변화를 근거로 작성.\n'
     f'- 위험이 없어 보여도 최소 1개는 찾아서 기술 (테스트 누락/엣지 케이스/되돌리기 어려움 등).\n'
-    f'- verdict는 엄격하게: 어지간하면 review_needed.'
+    f'- verdict는 엄격하게: 어지간하면 review_needed.\n'
+    f'- recommendation:\n'
+    f'  · merge: 의도대로 잘 구현됐고 위험이 경미해 바로 병합해도 OK\n'
+    f'  · needs_fix: 방향은 맞지만 수정·보완 필요 (폐기하고 재시도 또는 수동 보강)\n'
+    f'  · discard: 건의 의도와 다르거나 잘못 구현돼 버리는 게 맞음\n'
+    f'- recommendation_reason은 사용자가 결정할 때 참고할 수 있도록 실질적으로 작성.'
   )
   data = None
   last_err = ''
@@ -1295,6 +1302,8 @@ async def explain_suggestion_branch(suggestion_id: str):
     'risks': [str(x).strip() for x in (data.get('risks') or []) if x],
     'verdict': data.get('verdict', 'review_needed'),
     'verdict_reason': (data.get('verdict_reason') or '').strip(),
+    'recommendation': data.get('recommendation', 'needs_fix'),
+    'recommendation_reason': (data.get('recommendation_reason') or '').strip(),
     'commit': tip,
   }
   _BRANCH_EXPLAIN_CACHE[tip] = result

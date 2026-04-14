@@ -83,7 +83,9 @@ export function SuggestionModal() {
   const [branchDiff, setBranchDiff] = useState<{ id: string; stat: string; diff: string; files: string[] } | null>(null)
   const [explain, setExplain] = useState<{
     intent?: string; effects?: string[]; risks?: string[];
-    verdict?: string; verdict_reason?: string; error?: string;
+    verdict?: string; verdict_reason?: string;
+    recommendation?: string; recommendation_reason?: string;
+    error?: string;
   } | null>(null)
   const [explainLoading, setExplainLoading] = useState(false)
 
@@ -545,6 +547,27 @@ export function SuggestionModal() {
                 )}
                 {!explainLoading && explain && !explain.error && (
                   <div className="space-y-2 text-xs">
+                    {explain.recommendation && (() => {
+                      const rec = explain.recommendation
+                      const cfg = rec === 'merge'
+                        ? { label: '병합 권장', icon: '🔀', cls: 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300' }
+                        : rec === 'discard'
+                          ? { label: '폐기 권장', icon: '🗑️', cls: 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300' }
+                          : { label: '수정 필요 (폐기 후 재시도 또는 수동 보강)', icon: '🛠️', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
+                      return (
+                        <div className={`rounded-md border px-2.5 py-1.5 ${cfg.cls}`}>
+                          <div className="flex items-center gap-1.5 font-bold text-[11px]">
+                            <span>{cfg.icon}</span>
+                            <span>판단: {cfg.label}</span>
+                          </div>
+                          {explain.recommendation_reason && (
+                            <p className="mt-1 text-[11px] opacity-90 leading-relaxed whitespace-pre-wrap">
+                              {explain.recommendation_reason}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                     {explain.intent && (
                       <div>
                         <div className="font-semibold text-gray-700 dark:text-gray-300 mb-0.5">의도</div>
