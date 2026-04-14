@@ -49,10 +49,44 @@ function contrastRatio(hex1, hex2) {
 // ─── tokens.css 파싱 ──────────────────────────────────────────
 
 /**
- * tokens.css에서 색상 토큰(--color-*)을 추출합니다.
- * Returns: { light: Map<name, hex>, dark: Map<name, hex> }
+ * :root 블록에서 @against 어노테이션을 파싱해 대비 쌍 목록을 반환합니다.
+ * 주석 형식: --color-text-foo: #hex;  /* ... @against bg-bar,bg-baz * /
+ * → [{ fg: '--color-text-foo', bg: '--color-bg-bar' }, ...]
+ *
+ * 외부에서도 import 가능하도록 최상위 함수로 분리 (테스트에서 직접 사용).
  */
-function parseColorTokens(cssPath) {
+export function extractPairs(block) {
+  const AGAINST_RE = /(--color-[\w-]+)\s*:[^\n]*@against\s+([\w,\s-]+)/g
+  const pairs = []
+  let m
+  while ((m = AGAINST_RE.exec(block)) !== null) {
+    const fgToken = m[1]
+    // trim()으로 트레일링 공백 및 */ 이전 여백 제거 후 유효한 토큰명만 남김
+    const bgTokens = m[2]
+      .split(',')
+      .map(s => `--color-${s.trim()}`)
+      .filter(s => /^--color-[\w-]+$/.test(s))
+    for (const bgToken of bgTokens) {
+      pairs.push({ fg: fgToken, bg: bgToken })
+    }
+  }
+  return pairs
+}
+
+/**
+ * tokens.css에서 색상 토큰(--color-*)을 추출하고,
+ * :root 블록의 `@against` 주석에서 대비 쌍을 자동으로 파싱합니다.
+ *
+ * @against 형식 (토큰 주석에 기재):
+ *   --color-text-foo: #hex;  /* ... @against bg-bar,bg-baz * /
+ *
+ * Returns: {
+ *   light: Map<name, hex>,
+ *   dark:  Map<name, hex>,
+ *   pairs: Array<{ fg: string, bg: string }>  ← :root @against 어노테이션에서 추출
+ * }
+ */
+export function parseColorTokens(cssPath) {
   const css = readFileSync(cssPath, 'utf8')
   const HEX_RE = /(--color-[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})/g
 
@@ -73,67 +107,47 @@ function parseColorTokens(cssPath) {
 
   return {
     light: extractTokens(rootBlock),
-    dark: extractTokens(darkBlock),
+    dark:  extractTokens(darkBlock),
+    pairs: extractPairs(rootBlock),
   }
 }
 
-// ─── 검사 목록: [레이블, 모드, 전경 토큰, 배경 토큰, 큰텍스트여부] ─────
+// ─── @against 어노테이션에서 CHECKS 자동 생성 ────────────────────
 //
-// hex 값이 아닌 토큰 이름을 참조합니다.
-// tokens.css의 값이 바뀌면 이 CHECKS가 자동으로 최신 값을 반영합니다.
-// 새 색상 토큰을 tokens.css에 추가하면 반드시 여기에도 쌍을 추가해야 합니다.
-// (추가하지 않으면 빌드가 실패합니다.)
+// tokens.css의 :root 블록에 선언된 @against 주석을 읽어
+// 라이트·다크 두 모드에 대한 CHECKS 항목을 자동으로 만듭니다.
 //
-const CHECKS = [
-  // ─── 라이트 모드 ───────────────────────────────────────
-  ['[Light] 기본 텍스트  | --text-primary on --bg-primary',    'light', '--color-text-primary',   '--color-bg-primary',      false],
-  ['[Light] 기본 텍스트  | --text-primary on --bg-surface',    'light', '--color-text-primary',   '--color-bg-surface',      false],
-  ['[Light] 보조 텍스트  | --text-secondary on --bg-primary',  'light', '--color-text-secondary', '--color-bg-primary',      false],
-  ['[Light] 링크 텍스트  | --text-link on --bg-primary',       'light', '--color-text-link',      '--color-bg-primary',      false],
-  ['[Light] 버튼 텍스트  | --action-text on --action-bg',      'light', '--color-action-text',    '--color-action-bg',       false],
-  ['[Light] 버튼 호버    | --action-text on --action-hover',   'light', '--color-action-text',    '--color-action-hover',    false],
-  ['[Light] 역텍스트     | --text-inverse on --bg-sidebar',    'light', '--color-text-inverse',   '--color-bg-sidebar',      false],
-  ['[Light] 멘션 텍스트  | --text-mention on --bubble-agent',  'light', '--color-text-mention',   '--color-bg-bubble-agent', false],
-
-  // ─── 다크 모드 ────────────────────────────────────────
-  ['[Dark]  기본 텍스트  | --text-primary on --bg-primary',    'dark',  '--color-text-primary',   '--color-bg-primary',      false],
-  ['[Dark]  기본 텍스트  | --text-primary on --bg-surface',    'dark',  '--color-text-primary',   '--color-bg-surface',      false],
-  ['[Dark]  보조 텍스트  | --text-secondary on --bg-primary',  'dark',  '--color-text-secondary', '--color-bg-primary',      false],
-  ['[Dark]  링크 텍스트  | --text-link on --bg-surface',       'dark',  '--color-text-link',      '--color-bg-surface',      false],
-  ['[Dark]  멘션 텍스트  | --text-mention on --bubble-agent',  'dark',  '--color-text-mention',   '--color-bg-bubble-agent', false],
-  ['[Dark]  버튼 텍스트  | --action-text on --action-bg',      'dark',  '--color-action-text',    '--color-action-bg',       false],
-  ['[Dark]  역텍스트     | --text-inverse on --bg-sidebar',   'dark',  '--color-text-inverse',   '--color-bg-sidebar',      false],
-  // [Dark] action-hover: dark 팔레트에서 라이트 모드 값을 상속하므로 라이트 항목으로 커버됨
-]
+// 새 색상 쌍을 추가할 때는 tokens.css 주석에 @against 어노테이션만 추가하면
+// 이 스크립트가 자동으로 반영합니다. CHECKS를 직접 수정할 필요가 없습니다.
+//
+export function buildChecks(pairs) {
+  const checks = []
+  for (const { fg, bg } of pairs) {
+    const fgShort = fg.replace('--color-', '')
+    const bgShort = bg.replace('--color-', '')
+    checks.push([`[Light] ${fgShort} on ${bgShort}`, 'light', fg, bg, false])
+    checks.push([`[Dark]  ${fgShort} on ${bgShort}`, 'dark',  fg, bg, false])
+  }
+  return checks
+}
 
 // ─── 미검사 토큰 탐지 ──────────────────────────────────────────
 
 /**
- * CHECKS에서 사용된 토큰 이름 집합을 구합니다.
- * { light: Set<tokenName>, dark: Set<tokenName> }
+ * tokens.css에 정의됐지만 pairs(@against 어노테이션)에 포함되지 않은 색상 토큰을 반환합니다.
+ * 전경(fg) 또는 배경(bg)으로 한 번이라도 등장하면 커버된 것으로 간주합니다.
  */
-function getCheckedTokenNames() {
-  const light = new Set()
-  const dark  = new Set()
-  for (const [, mode, fg, bg] of CHECKS) {
-    const set = mode === 'dark' ? dark : light
-    set.add(fg)
-    set.add(bg)
+export function findUncheckedTokens(tokens) {
+  const covered = new Set()
+  for (const { fg, bg } of tokens.pairs) {
+    covered.add(fg)
+    covered.add(bg)
   }
-  return { light, dark }
-}
 
-/**
- * tokens.css에 정의됐지만 CHECKS에 포함되지 않은 색상 토큰을 반환합니다.
- */
-function findUncheckedTokens(tokens, checkedNames) {
   const unchecked = []
-  for (const [mode, map, names] of [
-    ['라이트', tokens.light, checkedNames.light],
-    ['다크',   tokens.dark,  checkedNames.dark],
-  ]) {
+  for (const [mode, map] of [['라이트', tokens.light], ['다크', tokens.dark]]) {
     for (const [name, hex] of map) {
-      if (!names.has(name)) {
+      if (!covered.has(name)) {
         unchecked.push({ mode, name, hex })
       }
     }
@@ -142,6 +156,12 @@ function findUncheckedTokens(tokens, checkedNames) {
 }
 
 // ─── 검사 실행 ─────────────────────────────────────────────────
+// 직접 실행(node check-contrast.mjs)일 때만 아래 코드가 동작합니다.
+// import로 불러올 때는 함수 export만 노출됩니다.
+
+const isMain = process.argv[1] === fileURLToPath(import.meta.url)
+
+if (isMain) {
 
 const RESET  = '\x1b[0m'
 const GREEN  = '\x1b[32m'
@@ -150,7 +170,7 @@ const YELLOW = '\x1b[33m'
 const BOLD   = '\x1b[1m'
 const DIM    = '\x1b[2m'
 
-// tokens.css를 먼저 로드합니다
+// tokens.css를 먼저 로드하고 @against 어노테이션에서 CHECKS를 자동 생성합니다
 const tokensPath = resolve(__dirname, '../src/tokens.css')
 let tokens
 try {
@@ -159,6 +179,15 @@ try {
   console.error(`${RED}${BOLD}오류: tokens.css를 읽을 수 없습니다: ${e.message}${RESET}`)
   process.exit(1)
 }
+
+if (tokens.pairs.length === 0) {
+  console.error(`${RED}${BOLD}오류: tokens.css에서 @against 어노테이션을 찾을 수 없습니다.${RESET}`)
+  console.error(`${DIM}   예: --color-text-foo: #hex;  /* ... @against bg-bar,bg-baz */\n${RESET}`)
+  process.exit(1)
+}
+
+// @against 어노테이션에서 CHECKS 자동 생성 (라이트·다크 양방향)
+const CHECKS = buildChecks(tokens.pairs)
 
 console.log(`\n${BOLD}WCAG 2.1 AA 명도 대비 검사${RESET}\n`)
 
@@ -203,23 +232,25 @@ console.log(`${'─'.repeat(60)}`)
 
 // ─── tokens.css 미검사 토큰 — 커버리지 강제 ────────────────────
 //
-// CHECKS에 포함되지 않은 색상 토큰이 있으면 빌드를 실패시킵니다.
-// 새 토큰을 추가할 때 CHECKS에도 반드시 대비 쌍을 추가해야 합니다.
+// @against 어노테이션(전경) 또는 배경 참조로 한 번도 등장하지 않은
+// 색상 토큰이 있으면 빌드를 실패시킵니다.
+// 새 토큰을 추가할 때는 주석에 @against 어노테이션을 달거나
+// 기존 전경 토큰의 @against 목록에 추가하세요.
 
-const checkedNames = getCheckedTokenNames()
-const unchecked = findUncheckedTokens(tokens, checkedNames)
+const unchecked = findUncheckedTokens(tokens)
 
 if (unchecked.length > 0) {
-  console.log(`\n${RED}${BOLD}❌ CHECKS에 포함되지 않은 색상 토큰 (${unchecked.length}개) — 빌드 실패${RESET}`)
+  console.log(`\n${RED}${BOLD}❌ @against 어노테이션이 없는 색상 토큰 (${unchecked.length}개) — 빌드 실패${RESET}`)
   console.log(`${DIM}   tokens.css에 정의됐지만 대비 검사 쌍이 없습니다.${RESET}`)
-  console.log(`${DIM}   check-contrast.mjs의 CHECKS 배열에 해당 토큰을 추가하세요.\n${RESET}`)
+  console.log(`${DIM}   전경 토큰: 주석에 @against <배경1>,<배경2> 어노테이션을 추가하세요.${RESET}`)
+  console.log(`${DIM}   배경 토큰: 전경 토큰의 @against 목록에 이 토큰을 추가하세요.\n${RESET}`)
   for (const { mode, name, hex } of unchecked) {
     console.log(`   ${RED}${mode} ${name}${RESET}  ${DIM}${hex}${RESET}`)
   }
   console.log('')
   console.log(`${YELLOW}💡 수정 방법:${RESET}`)
-  console.log(`   CHECKS 배열에 해당 토큰의 전경/배경 쌍을 추가하세요.`)
-  console.log(`   예: ['[Light] 새 텍스트 | --new-token on --bg', 'light', '--color-new-token', '--color-bg-primary', false]\n`)
+  console.log(`   전경 토큰 예: --color-text-foo: #hex;  /* ... @against bg-bar,bg-baz */`)
+  console.log(`   배경 토큰 예: 기존 --color-text-* 의 @against 목록에 이 토큰을 추가\n`)
   failed += unchecked.length
 }
 
@@ -238,3 +269,5 @@ if (failed > 0) {
   console.log(`${GREEN}${BOLD}통과: 모든 ${passed}개 항목이 WCAG 2.1 AA 기준 충족 ✓${RESET}\n`)
   process.exit(0)
 }
+
+} // end if (isMain)
