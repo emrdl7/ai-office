@@ -1344,6 +1344,18 @@ async def merge_suggestion_branch(suggestion_id: str, request: Request):
       detail='RISKY_UNCONFIRMED: AI 리뷰가 위험으로 판정했습니다. ?confirm_risky=true로 강제하세요.',
     )
 
+  # 스코프 게이트 — 병합 직전에도 최종 확인
+  from improvement.code_patcher import _check_scope
+  suggestion_full = get_suggestion(suggestion_id) or {}
+  _, files_out = _run_git(['diff', '--name-only', f'main...{branch}'])
+  _, stat_out = _run_git(['diff', '--stat', f'main...{branch}'])
+  scope_ok, scope_reason = _check_scope(suggestion_full, [f for f in files_out.splitlines() if f], stat_out)
+  if not scope_ok and not confirm_risky:
+    raise HTTPException(
+      status_code=409,
+      detail=f'SCOPE_VIOLATION: {scope_reason}. 확인 후 ?confirm_risky=true로 강제하거나 폐기하세요.',
+    )
+
   # 테스트/린트 게이트
   if not skip_tests:
     import asyncio as _a
@@ -1744,10 +1756,16 @@ async def _recover_orphan_patches():
     # 워킹트리 변경 있으면 stash (분실 방지)
     _, status = g(['status', '--porcelain'])
     if status.strip():
-      g(['stash', 'push', '-m', f'auto-recover-from-{cur}'])
+      g(['stash', 'push', '-u', '-m', f'auto-recover-from-{cur}'])
       recovered.append(f'워킹트리 변경 stash: {cur}')
-    g(['checkout', 'main'])
-    recovered.append(f'HEAD {cur} → main')
+    # 브랜치에 커밋이 있어도 무조건 main으로 복귀 (서버는 main에서만 동작)
+    rc_co, out_co = g(['checkout', 'main'])
+    if rc_co == 0:
+      recovered.append(f'HEAD {cur} → main (브랜치 {cur}는 유지 — 사용자 검토용)')
+    else:
+      # main 체크아웃 실패 시 강제 (워킹트리 더러워도)
+      g(['checkout', '-f', 'main'])
+      recovered.append(f'HEAD {cur} → main (강제 체크아웃)')
 
   # 2. accepted 상태로 멈춘 code 건의 → pending 롤백 + 남은 improvement 브랜치 삭제
   try:

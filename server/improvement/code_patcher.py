@@ -16,6 +16,48 @@ BRANCH_PREFIX = 'improvement'
 # (branch checkout/commit/switch가 동시에 겹치면 엉킴)
 _PATCH_LOCK = asyncio.Lock()
 
+# 스코프 제한 — 건의 내용에 해당 파일이 명시적으로 언급되지 않으면 수정 불가
+FORBIDDEN_PATHS = (
+  'server/main.py',
+  'server/orchestration/office.py',
+  'dashboard/src/components/SuggestionModal.tsx',
+  'dashboard/src/components/ChatRoom.tsx',
+  'dashboard/src/components/Sidebar.tsx',
+  'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'uv.lock',
+  'dashboard/vite.config.ts', 'tsconfig.json',
+  '.gitignore', '.gitattributes',
+)
+MAX_CHANGED_FILES = 15
+MAX_CHANGED_LINES = 500
+
+
+def _check_scope(suggestion: dict, changed_files: list[str], diff_stat: str) -> tuple[bool, str]:
+  '''변경이 스코프 제약을 위반하는지 검사. (ok, 위반 사유).'''
+  content_lower = (suggestion.get('content', '') + ' ' + suggestion.get('title', '')).lower()
+  # 파일 수 체크
+  if len(changed_files) > MAX_CHANGED_FILES:
+    return (False, f'변경 파일 {len(changed_files)}개 > 한도 {MAX_CHANGED_FILES}개')
+  # 줄 수 체크 (diff --stat의 마지막 줄에 합계)
+  import re as _re
+  m = _re.search(r'(\d+)\s+insertion.*?(\d+)\s+deletion', diff_stat)
+  if m:
+    total = int(m.group(1)) + int(m.group(2))
+    if total > MAX_CHANGED_LINES:
+      return (False, f'변경 {total}줄 > 한도 {MAX_CHANGED_LINES}줄')
+  # 금지 파일 체크 — 건의 본문에 언급되지 않았는데 수정된 경우
+  violations = []
+  for f in changed_files:
+    for fp in FORBIDDEN_PATHS:
+      if fp in f:
+        # 건의에 해당 경로가 언급됐는지 간단 검사 (파일명 또는 핵심 토큰)
+        fname = fp.split('/')[-1].lower()
+        if fp.lower() not in content_lower and fname not in content_lower:
+          violations.append(f'{f} (금지 경로 - 건의에 언급 없음)')
+        break
+  if violations:
+    return (False, '금지 파일 무단 수정: ' + ', '.join(violations[:5]))
+  return (True, '')
+
 
 def _git(args: list[str]) -> tuple[int, str]:
   '''git 명령을 동기로 실행하고 (returncode, stdout+stderr) 반환.'''
@@ -67,6 +109,17 @@ def _build_patch_prompt(suggestion: dict) -> str:
 ## 카테고리: {suggestion['category']}
 ## 건의 내용:
 {suggestion['content']}
+
+## ⚠️ 범위 제약 (반드시 준수) — 어기면 패치 전체 폐기
+- **변경 범위는 건의 내용에 명시된 파일·모듈에만 한정**하라. 건의가 "디자인 토큰"이면 토큰 관련 파일(tokens/, tokens.css, 빌드 스크립트)만 허용. 서버 코드·설정·라이브러리는 건드리지 마라.
+- **최대 15개 파일, 총 500줄 이하** 변경을 목표로. 초과가 불가피하면 중단하고 "범위 초과: [이유]"로 응답.
+- **다음 파일은 특별한 언급이 없는 한 절대 수정 금지**:
+  - `server/main.py`, `server/orchestration/office.py` (핵심 오케스트레이션)
+  - `dashboard/src/components/SuggestionModal.tsx`, `ChatRoom.tsx`, `Sidebar.tsx` (UI 핵심)
+  - `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` (의존성)
+  - `vite.config.ts`, `tsconfig.json`, `.gitignore`, `.gitattributes` (프로젝트 설정)
+- 위 금지 파일을 손대야만 한다면 **먼저 중단하고 "범위 확인 필요: 건의가 {{파일명}} 수정을 포함하는지 불분명"** 으로 응답하라.
+- 건의에서 요구하지 않은 **라이브러리 추가·버전 업·설정 변경 금지**.
 
 ## 작업 지침
 {category_hint}
@@ -146,6 +199,18 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
         f'⏱️ 건의 #{suggestion_id}: 타임아웃이지만 부분 결과물 존재 — '
         f'{len(changed_files.strip().splitlines())}파일 변경됨. 검토 대기로 전환합니다.'
       ), 'message')
+
+    # 스코프 체크 — 금지 파일·사이즈 초과 시 폐기
+    file_list = [f for f in changed_files.strip().splitlines() if f]
+    scope_ok, scope_reason = _check_scope(suggestion, file_list, diff_stat)
+    if not scope_ok:
+      await _emit('teamlead', (
+        f'🚫 건의 #{suggestion_id} 스코프 위반으로 패치 폐기: {scope_reason}\n'
+        f'변경 파일: {", ".join(file_list[:8])}\n'
+        f'건의 범위를 좁혀 다시 올리거나 범위를 명시해 재승인하세요.'
+      ), 'error')
+      _rollback(branch, original_branch)
+      return False
 
     # 4. 성공 — 변경사항을 브랜치에 커밋하고 원 브랜치로 복귀
     #    (서버가 계속 원 브랜치에서 돌도록 — 사용자가 별도 merge 판단)
