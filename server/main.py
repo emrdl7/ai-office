@@ -1264,35 +1264,64 @@ async def explain_suggestion_branch(suggestion_id: str):
 
 @app.post('/api/suggestions/{suggestion_id}/branch/merge')
 async def merge_suggestion_branch(suggestion_id: str):
-  '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done.'''
-  from db.suggestion_store import update_suggestion, get_suggestion
+  '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done + 위험 follow-up 자동 등록.'''
+  from db.suggestion_store import update_suggestion, get_suggestion, create_suggestion
   branch = f'improvement/{suggestion_id}'
-  code, out = _run_git(['rev-parse', '--verify', branch])
+  code, _ = _run_git(['rev-parse', '--verify', branch])
   if code != 0:
     raise HTTPException(status_code=404, detail='브랜치가 존재하지 않습니다')
-  # 현재 브랜치가 main인지 확인
   _, cur = _run_git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if cur.strip() != 'main':
     raise HTTPException(status_code=409, detail=f'현재 브랜치가 main이 아닙니다: {cur}')
+
+  # 병합 전에 브랜치 tip을 확보 — explain 캐시 키
+  _, tip = _run_git(['rev-parse', branch])
+  tip = tip.strip()
+
   code, out = _run_git(['merge', '--no-ff', '-m', f'merge: improvement/{suggestion_id}', branch])
   if code != 0:
-    # 충돌 등 — 병합 중단
     _run_git(['merge', '--abort'])
     raise HTTPException(status_code=500, detail=f'병합 실패 — 수동 확인 필요: {out[:300]}')
-  # 병합 성공 → 브랜치 삭제 + 상태 done
   _run_git(['branch', '-d', branch])
   update_suggestion(suggestion_id, status='done')
   suggestion = get_suggestion(suggestion_id)
-  from config.team import display_name
+
+  # 병합 후 follow-up 자동 등록 — AI 리뷰의 risks를 새 건의로 승격
+  follow_ups = 0
+  explain = _BRANCH_EXPLAIN_CACHE.get(tip)
+  if explain and isinstance(explain.get('risks'), list):
+    for risk in explain['risks'][:5]:
+      risk = (risk or '').strip()
+      if not risk or len(risk) < 15:
+        continue
+      try:
+        title = f'[follow-up #{suggestion_id}] {risk[:60]}'
+        content = (
+          f'{risk}\n\n'
+          f'[후속 조치 필요 — 자동 등록]\n'
+          f'원 건의: #{suggestion_id} "{(suggestion or {}).get("title", "")[:60]}"\n'
+          f'AI 리뷰 판정: {explain.get("verdict", "review_needed")}\n'
+          f'근거: {explain.get("verdict_reason", "")}\n'
+        )
+        create_suggestion(
+          agent_id='teamlead', title=title[:80], content=content,
+          category='프로세스 개선', target_agent='',
+        )
+        follow_ups += 1
+      except Exception:
+        logger.debug('follow-up 등록 실패', exc_info=True)
+
+  followup_line = f'\n🔗 후속 조치 {follow_ups}건 자동 등록됨 (건의게시판 확인)' if follow_ups else ''
+  from config.team import display_name  # noqa: F401
   await event_bus.publish(LogEvent(
     agent_id='teamlead',
     event_type='response',
     message=(
-      f'🔀 건의 #{suggestion_id} 브랜치 병합 완료 → main에 반영됐습니다.\n'
+      f'🔀 건의 #{suggestion_id} 브랜치 병합 완료 → main에 반영됐습니다.{followup_line}\n'
       f'⚠️ 서버 재시작이 필요합니다 (Python 모듈 재로딩).'
     ),
   ))
-  return {'merged': True, 'suggestion_id': suggestion_id}
+  return {'merged': True, 'suggestion_id': suggestion_id, 'follow_ups': follow_ups}
 
 
 @app.post('/api/suggestions/{suggestion_id}/branch/discard')
