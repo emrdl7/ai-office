@@ -1,46 +1,25 @@
 #!/usr/bin/env node
 /**
- * check-contrast.mjs 핵심 파싱 로직 단위 테스트
+ * check-contrast.mjs 테스트
  * 실행: node scripts/check-contrast.test.mjs
  *
- * 순수 함수(extractPairs, buildChecks)를 사이드이펙트 없이 검증하기 위해
- * 로직을 인라인으로 재구현합니다. 메인 스크립트를 import하면 실행 시점에
- * 파일 I/O·process.exit 이 발생하므로 테스트에서는 분리합니다.
+ * [단위 테스트] extractPairs, buildChecks — 인라인 CSS 문자열로 순수 함수 검증
+ * [통합 테스트] 실제 tokens.css 파일을 읽어 전체 파이프라인(parse→build→check→unchecked 감지) 검증
+ *
+ * check-contrast.mjs에서 직접 import하므로 로직 이중화 없음.
  */
 
 import assert from 'node:assert/strict'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+import {
+  extractPairs,
+  buildChecks,
+  parseColorTokens,
+  findUncheckedTokens,
+} from './check-contrast.mjs'
 
-// ─── 테스트 대상 로직 (check-contrast.mjs와 동일하게 유지) ─────────────────
-
-/** @param {string} block  :root 또는 .dark CSS 블록 */
-function extractPairs(block) {
-  const AGAINST_RE = /(--color-[\w-]+)\s*:[^\n]*@against\s+([\w,\s-]+)/g
-  const pairs = []
-  let m
-  while ((m = AGAINST_RE.exec(block)) !== null) {
-    const fgToken = m[1]
-    const bgTokens = m[2]
-      .split(',')
-      .map(s => `--color-${s.trim()}`)
-      .filter(s => /^--color-[\w-]+$/.test(s))  // ← 수정된 필터
-    for (const bgToken of bgTokens) {
-      pairs.push({ fg: fgToken, bg: bgToken })
-    }
-  }
-  return pairs
-}
-
-/** @param {Array<{fg:string, bg:string}>} pairs */
-function buildChecks(pairs) {
-  const checks = []
-  for (const { fg, bg } of pairs) {
-    const fgShort = fg.replace('--color-', '')
-    const bgShort = bg.replace('--color-', '')
-    checks.push([`[Light] ${fgShort} on ${bgShort}`, 'light', fg, bg, false])
-    checks.push([`[Dark]  ${fgShort} on ${bgShort}`, 'dark',  fg, bg, false])
-  }
-  return checks
-}
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // ─── 테스트 헬퍼 ─────────────────────────────────────────────────────────────
 
@@ -59,7 +38,21 @@ function test(name, fn) {
   }
 }
 
-// ─── extractPairs 테스트 ──────────────────────────────────────────────────────
+async function testAsync(name, fn) {
+  try {
+    await fn()
+    console.log(`✅  ${name}`)
+    passed++
+  } catch (e) {
+    console.error(`❌  ${name}`)
+    console.error(`    ${e.message}`)
+    failed++
+  }
+}
+
+// ─── extractPairs 단위 테스트 ─────────────────────────────────────────────────
+
+console.log('\nextractPairs')
 
 test('단일 @against 파싱', () => {
   const block = `--color-text-primary: #111827;  /* gray-900 | @against bg-primary */`
@@ -99,7 +92,6 @@ test('주석 종결자 */ 가 토큰 이름에 포함되지 않음', () => {
 })
 
 test('빈/공백 콤마 항목은 필터링됨', () => {
-  // 콤마만 있거나 공백만 있는 항목 → --color- 만 생성 → 필터에서 제거
   const block = `--color-text-foo: #aabbcc;  /* @against , ,bg-bar */`
   const pairs = extractPairs(block)
   assert.equal(pairs.length, 1, '유효한 항목만 남아야 함')
@@ -124,7 +116,17 @@ test('하이픈 포함 배경 토큰 파싱 (bubble-agent 등)', () => {
   assert.equal(pairs[0].bg, '--color-bg-bubble-agent')
 })
 
-// ─── buildChecks 테스트 ───────────────────────────────────────────────────────
+test('bg- 접두사 없는 @against 토큰 파싱 (action-bg 형식)', () => {
+  const block = `--color-action-text: #ffffff;  /* white | @against action-bg,action-hover */`
+  const pairs = extractPairs(block)
+  assert.equal(pairs.length, 2)
+  assert.equal(pairs[0].bg, '--color-action-bg')
+  assert.equal(pairs[1].bg, '--color-action-hover')
+})
+
+// ─── buildChecks 단위 테스트 ──────────────────────────────────────────────────
+
+console.log('\nbuildChecks')
 
 test('buildChecks: 라이트·다크 양방향 생성', () => {
   const pairs = [{ fg: '--color-text-primary', bg: '--color-bg-primary' }]
@@ -166,6 +168,64 @@ test('buildChecks: n쌍 → 2n 항목', () => {
     { fg: '--color-text-secondary', bg: '--color-bg-primary' },
   ]
   assert.equal(buildChecks(pairs).length, 6)
+})
+
+// ─── 통합 테스트: 실제 tokens.css 파일 ───────────────────────────────────────
+// parse → build → findUnchecked 전체 흐름을 실제 파일로 검증합니다.
+
+console.log('\n통합 테스트 (실제 tokens.css)')
+
+const tokensPath = resolve(__dirname, '../src/tokens.css')
+
+test('tokens.css 파싱 성공 — pairs 1개 이상', () => {
+  const tokens = parseColorTokens(tokensPath)
+  assert.ok(tokens.pairs.length > 0, `@against 파싱 결과가 비어 있음`)
+})
+
+test('tokens.css 라이트 토큰 추출 — --color-text-primary 존재', () => {
+  const tokens = parseColorTokens(tokensPath)
+  assert.ok(
+    tokens.light.has('--color-text-primary'),
+    '라이트 맵에 --color-text-primary 없음'
+  )
+})
+
+test('tokens.css 다크 토큰 추출 — --color-bg-primary 존재', () => {
+  const tokens = parseColorTokens(tokensPath)
+  assert.ok(
+    tokens.dark.has('--color-bg-primary'),
+    '다크 맵에 --color-bg-primary 없음'
+  )
+})
+
+test('tokens.css — 미검사 토큰 없음 (모든 --color-* 가 @against로 커버됨)', () => {
+  const tokens = parseColorTokens(tokensPath)
+  const unchecked = findUncheckedTokens(tokens)
+  if (unchecked.length > 0) {
+    const names = unchecked.map(u => `${u.mode} ${u.name}`).join(', ')
+    assert.fail(`@against 미등록 토큰 ${unchecked.length}개: ${names}`)
+  }
+})
+
+test('tokens.css — buildChecks 결과가 pairs * 2 개', () => {
+  const tokens = parseColorTokens(tokensPath)
+  const checks = buildChecks(tokens.pairs)
+  assert.equal(checks.length, tokens.pairs.length * 2)
+})
+
+test('tokens.css — @against 배경 토큰이 covered 집합에 포함됨 (action-hover 등)', () => {
+  const tokens = parseColorTokens(tokensPath)
+  // pairs의 bg 목록을 수집
+  const bgsCovered = new Set(tokens.pairs.map(p => p.bg))
+  // 라이트 맵에 있는 배경 계열 토큰이 covered 집합에 포함되는지 확인
+  for (const [name] of tokens.light) {
+    // 배경(bg-* 또는 action-bg/action-hover)으로만 쓰이는 토큰은
+    // fg 쌍이 없어도 bgsCovered에 있으면 OK
+    const covered = bgsCovered.has(name) || tokens.pairs.some(p => p.fg === name)
+    if (!covered) {
+      assert.fail(`라이트 토큰 ${name}이 pairs에 전혀 등장하지 않음`)
+    }
+  }
 })
 
 // ─── 결과 출력 ────────────────────────────────────────────────────────────────

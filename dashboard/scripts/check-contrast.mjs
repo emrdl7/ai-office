@@ -49,6 +49,31 @@ function contrastRatio(hex1, hex2) {
 // ─── tokens.css 파싱 ──────────────────────────────────────────
 
 /**
+ * :root 블록에서 @against 어노테이션을 파싱해 대비 쌍 목록을 반환합니다.
+ * 주석 형식: --color-text-foo: #hex;  /* ... @against bg-bar,bg-baz * /
+ * → [{ fg: '--color-text-foo', bg: '--color-bg-bar' }, ...]
+ *
+ * 외부에서도 import 가능하도록 최상위 함수로 분리 (테스트에서 직접 사용).
+ */
+export function extractPairs(block) {
+  const AGAINST_RE = /(--color-[\w-]+)\s*:[^\n]*@against\s+([\w,\s-]+)/g
+  const pairs = []
+  let m
+  while ((m = AGAINST_RE.exec(block)) !== null) {
+    const fgToken = m[1]
+    // trim()으로 트레일링 공백 및 */ 이전 여백 제거 후 유효한 토큰명만 남김
+    const bgTokens = m[2]
+      .split(',')
+      .map(s => `--color-${s.trim()}`)
+      .filter(s => /^--color-[\w-]+$/.test(s))
+    for (const bgToken of bgTokens) {
+      pairs.push({ fg: fgToken, bg: bgToken })
+    }
+  }
+  return pairs
+}
+
+/**
  * tokens.css에서 색상 토큰(--color-*)을 추출하고,
  * :root 블록의 `@against` 주석에서 대비 쌍을 자동으로 파싱합니다.
  *
@@ -61,7 +86,7 @@ function contrastRatio(hex1, hex2) {
  *   pairs: Array<{ fg: string, bg: string }>  ← :root @against 어노테이션에서 추출
  * }
  */
-function parseColorTokens(cssPath) {
+export function parseColorTokens(cssPath) {
   const css = readFileSync(cssPath, 'utf8')
   const HEX_RE = /(--color-[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})/g
 
@@ -80,25 +105,6 @@ function parseColorTokens(cssPath) {
     return map
   }
 
-  /**
-   * :root 블록에서 @against 어노테이션을 파싱해 대비 쌍 목록을 반환합니다.
-   * 주석 형식: --color-text-foo: #hex;  /* ... @against bg-bar,bg-baz * /
-   * → [{ fg: '--color-text-foo', bg: '--color-bg-bar' }, ...]
-   */
-  function extractPairs(block) {
-    const AGAINST_RE = /(--color-[\w-]+)\s*:[^\n]*@against\s+([\w,\s-]+)/g
-    const pairs = []
-    let m
-    while ((m = AGAINST_RE.exec(block)) !== null) {
-      const fgToken = m[1]
-      const bgTokens = m[2].split(',').map(s => `--color-${s.trim()}`).filter(s => /^--color-[\w-]+$/.test(s))
-      for (const bgToken of bgTokens) {
-        pairs.push({ fg: fgToken, bg: bgToken })
-      }
-    }
-    return pairs
-  }
-
   return {
     light: extractTokens(rootBlock),
     dark:  extractTokens(darkBlock),
@@ -114,7 +120,7 @@ function parseColorTokens(cssPath) {
 // 새 색상 쌍을 추가할 때는 tokens.css 주석에 @against 어노테이션만 추가하면
 // 이 스크립트가 자동으로 반영합니다. CHECKS를 직접 수정할 필요가 없습니다.
 //
-function buildChecks(pairs) {
+export function buildChecks(pairs) {
   const checks = []
   for (const { fg, bg } of pairs) {
     const fgShort = fg.replace('--color-', '')
@@ -131,7 +137,7 @@ function buildChecks(pairs) {
  * tokens.css에 정의됐지만 pairs(@against 어노테이션)에 포함되지 않은 색상 토큰을 반환합니다.
  * 전경(fg) 또는 배경(bg)으로 한 번이라도 등장하면 커버된 것으로 간주합니다.
  */
-function findUncheckedTokens(tokens) {
+export function findUncheckedTokens(tokens) {
   const covered = new Set()
   for (const { fg, bg } of tokens.pairs) {
     covered.add(fg)
@@ -150,6 +156,12 @@ function findUncheckedTokens(tokens) {
 }
 
 // ─── 검사 실행 ─────────────────────────────────────────────────
+// 직접 실행(node check-contrast.mjs)일 때만 아래 코드가 동작합니다.
+// import로 불러올 때는 함수 export만 노출됩니다.
+
+const isMain = process.argv[1] === fileURLToPath(import.meta.url)
+
+if (isMain) {
 
 const RESET  = '\x1b[0m'
 const GREEN  = '\x1b[32m'
@@ -257,3 +269,5 @@ if (failed > 0) {
   console.log(`${GREEN}${BOLD}통과: 모든 ${passed}개 항목이 WCAG 2.1 AA 기준 충족 ✓${RESET}\n`)
   process.exit(0)
 }
+
+} // end if (isMain)
