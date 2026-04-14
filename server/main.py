@@ -1263,15 +1263,16 @@ async def explain_suggestion_branch(suggestion_id: str):
     f'- verdict는 엄격하게: 어지간하면 review_needed.'
   )
   try:
-    raw = await run_gemini(prompt=prompt)
+    # explain은 90초 내 응답 — Gemini CLI가 멈추는 경우 빠르게 끊어 UI 대기 해소
+    raw = await run_gemini(prompt=prompt, timeout=90.0)
     m = _re.search(r'\{[\s\S]*\}', raw)
     data = _j.loads(m.group()) if m else None
   except Exception as e:
     logger.warning('브랜치 설명 생성 실패: %s', e)
-    data = None
+    return {'error': f'AI 분석 실패 ({type(e).__name__}) — diff를 직접 확인하세요'}
 
   if not isinstance(data, dict):
-    return {'error': 'AI 분석 실패 — diff를 직접 확인하세요'}
+    return {'error': 'AI 분석 JSON 파싱 실패 — diff를 직접 확인하세요'}
 
   result = {
     'intent': (data.get('intent') or '').strip(),
