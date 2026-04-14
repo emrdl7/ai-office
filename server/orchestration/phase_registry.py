@@ -32,6 +32,16 @@ PHASE_TEMPLATES: dict[ProjectType, list[dict[str, str]]] = {
 
   ProjectType.WEB_DEVELOPMENT: [
     {
+      'name': '기획-인수조건',
+      'description': (
+        '각 핵심 기능의 인수 조건을 Gherkin 문법(Given-When-Then)으로 작성하세요. '
+        '기능당 정상 케이스와 예외 케이스를 각 1개 이상 포함하고, '
+        '사용자 관점에서 측정 가능한 기준으로 서술하세요. '
+        '이 문서는 QA 검수 및 개발 구현의 공식 기준이 됩니다.'
+      ),
+      'assigned_to': 'planner', 'group': '기획', 'output_format': 'md',
+    },
+    {
       'name': '기획-IA설계',
       'description': '사용자 유형별 정보구조(IA) 트리를 설계하세요. GNB, 서브메뉴, 사용자 동선을 포함.',
       'assigned_to': 'planner', 'group': '기획', 'output_format': 'md',
@@ -193,6 +203,14 @@ PHASE_TEMPLATES: dict[ProjectType, list[dict[str, str]]] = {
     {
       'name': '기획-요구분석',
       'description': '요구사항을 분석하고 작업 범위, 목표, 산출물 구조를 설계하세요.',
+      'assigned_to': 'planner', 'group': '기획', 'output_format': 'md',
+    },
+    {
+      'name': '기획-인수조건',
+      'description': (
+        '각 핵심 요구사항의 인수 조건을 Gherkin 문법(Given-When-Then)으로 작성하세요. '
+        '정상 케이스와 예외 케이스를 각 1개 이상 포함하고, 측정 가능한 기준으로 서술하세요.'
+      ),
       'assigned_to': 'planner', 'group': '기획', 'output_format': 'md',
     },
     {

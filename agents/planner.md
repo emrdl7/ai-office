@@ -54,7 +54,7 @@
     {
       "task_id": "고유ID",
       "description": "구체적이고 상세한 작업 내용 (최소 3문장)",
-      "requirements": "완료 기준",
+      "requirements": "Gherkin(Given-When-Then) 형식의 인수 조건 — 정상/예외 시나리오 각 1개 이상",
       "assigned_to": "developer|designer|qa|planner",
       "depends_on": []
     }
