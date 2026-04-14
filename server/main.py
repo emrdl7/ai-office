@@ -1305,6 +1305,9 @@ async def explain_suggestion_branch(suggestion_id: str):
   if not isinstance(data, dict):
     return {'error': f'AI 분석 실패 — {last_err or "응답 없음"}'}
 
+  from db.suggestion_store import list_events as _list_ev
+  supplement_count = sum(1 for ev in _list_ev(suggestion_id=suggestion_id, limit=50) if ev.get('kind') == 'branch_supplemented')
+
   result = {
     'intent': (data.get('intent') or '').strip(),
     'effects': [str(x).strip() for x in (data.get('effects') or []) if x],
@@ -1313,6 +1316,7 @@ async def explain_suggestion_branch(suggestion_id: str):
     'verdict_reason': (data.get('verdict_reason') or '').strip(),
     'recommendation': data.get('recommendation', 'needs_fix'),
     'recommendation_reason': (data.get('recommendation_reason') or '').strip(),
+    'supplement_count': supplement_count,
     'commit': tip,
   }
   _BRANCH_EXPLAIN_CACHE[tip] = result
@@ -1701,6 +1705,9 @@ async def _compute_branch_explain(suggestion_id: str, branch: str) -> dict:
     return {}
   _, tip = _run_git(['rev-parse', branch])
   tip = tip.strip()
+  from db.suggestion_store import list_events as _list_ev
+  supplement_count = sum(1 for ev in _list_ev(suggestion_id=suggestion_id, limit=50) if ev.get('kind') == 'branch_supplemented')
+
   result = {
     'intent': (data.get('intent') or '').strip(),
     'effects': [str(x).strip() for x in (data.get('effects') or []) if x],
@@ -1709,6 +1716,7 @@ async def _compute_branch_explain(suggestion_id: str, branch: str) -> dict:
     'verdict_reason': (data.get('verdict_reason') or '').strip(),
     'recommendation': data.get('recommendation', 'needs_fix'),
     'recommendation_reason': (data.get('recommendation_reason') or '').strip(),
+    'supplement_count': supplement_count,
     'commit': tip,
   }
   _BRANCH_EXPLAIN_CACHE[tip] = result

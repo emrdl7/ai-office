@@ -86,6 +86,7 @@ export function SuggestionModal() {
     intent?: string; effects?: string[]; risks?: string[];
     verdict?: string; verdict_reason?: string;
     recommendation?: string; recommendation_reason?: string;
+    supplement_count?: number;
     error?: string;
   } | null>(null)
   const [explainLoading, setExplainLoading] = useState(false)
@@ -215,6 +216,7 @@ export function SuggestionModal() {
                 ['pending', '대기'],
                 ['review_pending', '검토 대기'],
                 ['accepted', '처리 중'],
+                ['supplementing', '🛠️ 보완 중'],
                 ['auto_applied', '🤖 자동 반영'],
                 ['done', '완료'],
                 ['rejected', '반려'],
@@ -595,16 +597,25 @@ export function SuggestionModal() {
                   <div className="space-y-2 text-xs">
                     {explain.recommendation && (() => {
                       const rec = explain.recommendation
+                      const supCount = explain.supplement_count || 0
+                      const needsFixLabel = supCount > 0
+                        ? `${supCount}회 보완 후에도 추가 개선 여지 — 수동 검토 또는 폐기 권장 (추가 보완은 수렴 어려울 수 있음)`
+                        : '보완 필요 (🛠️ 보완 버튼으로 Claude 재실행 가능)'
                       const cfg = rec === 'merge'
                         ? { label: '병합 권장', icon: '🔀', cls: 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300' }
                         : rec === 'discard'
                           ? { label: '폐기 권장', icon: '🗑️', cls: 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300' }
-                          : { label: '보완 필요 (🛠️ 보완 버튼으로 Claude 재실행 가능)', icon: '🛠️', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
+                          : { label: needsFixLabel, icon: '🛠️', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
                       return (
                         <div className={`rounded-md border px-2.5 py-1.5 ${cfg.cls}`}>
                           <div className="flex items-center gap-1.5 font-bold text-[11px]">
                             <span>{cfg.icon}</span>
                             <span>판단: {cfg.label}</span>
+                            {supCount > 0 && (
+                              <span className="ml-auto text-[10px] font-normal opacity-75">
+                                보완 이력 {supCount}회
+                              </span>
+                            )}
                           </div>
                           {explain.recommendation_reason && (
                             <p className="mt-1 text-[11px] opacity-90 leading-relaxed whitespace-pre-wrap">
