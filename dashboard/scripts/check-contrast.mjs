@@ -91,7 +91,7 @@ function parseColorTokens(cssPath) {
     let m
     while ((m = AGAINST_RE.exec(block)) !== null) {
       const fgToken = m[1]
-      const bgTokens = m[2].split(',').map(s => `--color-${s.trim()}`).filter(s => s.length > 9)
+      const bgTokens = m[2].split(',').map(s => `--color-${s.trim()}`).filter(s => /^--color-[\w-]+$/.test(s))
       for (const bgToken of bgTokens) {
         pairs.push({ fg: fgToken, bg: bgToken })
       }
