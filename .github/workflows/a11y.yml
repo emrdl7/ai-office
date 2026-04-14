@@ -1,0 +1,29 @@
+name: Accessibility — WCAG Contrast Check
+
+on:
+  push:
+    paths:
+      - 'dashboard/src/tokens.css'
+      - 'dashboard/scripts/check-contrast.mjs'
+  pull_request:
+    paths:
+      - 'dashboard/src/tokens.css'
+      - 'dashboard/scripts/check-contrast.mjs'
+
+jobs:
+  contrast:
+    name: WCAG 2.1 AA 명도 대비 검사
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run contrast check
+        working-directory: dashboard
+        run: node scripts/check-contrast.mjs
