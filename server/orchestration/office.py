@@ -3137,143 +3137,133 @@ class Office:
     from datetime import datetime, timezone
 
     self._review_running = True
+    if not hasattr(self, '_review_lock'):
+      self._review_lock = asyncio.Lock()
     self.latest_digest_summary: str = self._load_digest_state().get('last_summary', '')
 
     await asyncio.sleep(60)  # 서버 기동 직후 부담 줄이려 60초 대기
 
     while self._review_running:
       try:
-        state = self._load_digest_state()
-        last_ts = state.get('last_reviewed_ts', '')
-
-        # 지난 리뷰 이후 메시지 수집
-        from db.log_store import load_logs as _load
-        recent = _load(limit=200)
-        fresh = [
-          l for l in recent
-          if l.get('event_type') in ('autonomous', 'response')
-          and l.get('agent_id') != 'system'
-          and (not last_ts or l.get('timestamp', '') > last_ts)
-        ]
-
-        # 트리거 조건 — 30건 이상이면 즉시, 아니면 30분 후 재검사
-        if len(fresh) < 30:
-          # 시간 기반 보조 — 마지막 리뷰로부터 30분 이상 경과 + 10건 이상이면 진행
-          need_time_trigger = False
-          if last_ts:
-            try:
-              last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
-              elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
-              if elapsed >= 1800 and len(fresh) >= 10:
-                need_time_trigger = True
-            except Exception:
-              pass
-          if not need_time_trigger:
-            await asyncio.sleep(120)
-            continue
-
-        # 분석 프롬프트
-        convo = '\n'.join(
-          f'[{l["agent_id"]}] {l["message"][:300]}' for l in reversed(fresh[:80])
-        )
-        prompt = (
-          f'당신은 팀장 잡스입니다. 아래는 지난 배치 이후 팀의 자발적 대화입니다.\n'
-          f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 선언형 발언("~진행합니다")은 신뢰하지 마세요.\n\n'
-          f'[대화]\n{convo}\n\n'
-          f'다음 작업을 수행해 **JSON만** 출력하세요:\n'
-          f'1) 건의로 격상할 만한 실제 실행 가능한 제안 추출 (구체 파일/커밋/함수/규칙 언급 필수)\n'
-          f'2) 나머지는 2~4문장으로 압축 요약 (다음 대화 시드용)\n'
-          f'3) 껍데기/반복/선언 발언은 버림 목록에 간단히 사유 포함\n\n'
-          f'출력 스키마:\n'
-          f'{{\n'
-          f'  "suggestions": [\n'
-          f'    {{"title": "40자 이내", "body": "구체 문제+제안 2-3문장",\n'
-          f'      "target_agent": "planner|designer|developer|qa|teamlead|",\n'
-          f'      "category": "프로세스 개선|도구 부족|정보 부족|아이디어",\n'
-          f'      "reasoning": "왜 이게 건의 가치가 있는지 1문장"}}\n'
-          f'  ],\n'
-          f'  "summary": "2-4문장 압축 요약",\n'
-          f'  "dropped": [{{"text": "버린 발언 앞 40자", "reason": "왜 버렸는지"}}]\n'
-          f'}}\n\n'
-          f'규칙:\n'
-          f'- suggestions는 최대 3개. 확신 없으면 빈 배열.\n'
-          f'- 수치 주장은 근거 파일/벤치마크 없이는 포함 금지.\n'
-          f'- 추상 방법론 단독 언급(Gherkin/WCAG/KPI 등)만 있으면 건의 아님.\n'
-          f'- target_agent는 규칙이 적용될 대상. 팀 전체면 빈 문자열.'
-        )
-        raw = await run_gemini(prompt=prompt)
-
-        # JSON 파싱
-        data = None
-        try:
-          import re as _re
-          m = _re.search(r'\{[\s\S]*\}', raw)
-          if m:
-            data = _j.loads(m.group())
-        except Exception:
-          logger.debug('팀장 리뷰 JSON 파싱 실패', exc_info=True)
-
-        if not isinstance(data, dict):
-          await asyncio.sleep(300)
+        # 수동 트리거와 배타 — 한 번에 한 리뷰만
+        if self._review_lock.locked():
+          await asyncio.sleep(120)
           continue
-
-        # 건의 등록
-        from db.suggestion_store import create_suggestion
-        registered = 0
-        for s in (data.get('suggestions') or [])[:3]:
-          try:
-            title = (s.get('title') or '').strip()[:80]
-            body = (s.get('body') or '').strip()
-            target = (s.get('target_agent') or '').strip()
-            cat = (s.get('category') or '아이디어').strip()
-            reasoning = (s.get('reasoning') or '').strip()
-            if not title or not body:
-              continue
-            content = (
-              f'{body}\n\n'
-              f'[팀장 리뷰 근거]\n{reasoning}\n\n'
-              f'(팀장 배치 리뷰 {datetime.now(timezone.utc).isoformat()} — 대화 분석으로 격상됨)'
-            )
-            create_suggestion(
-              agent_id='teamlead',
-              title=title,
-              content=content,
-              category=cat,
-              target_agent=target,
-            )
-            registered += 1
-          except Exception:
-            logger.debug('팀장 리뷰 건의 등록 실패', exc_info=True)
-
-        # 요약 저장
-        summary = (data.get('summary') or '').strip()
-        now_ts = datetime.now(timezone.utc).isoformat()
-        if summary:
-          self.latest_digest_summary = summary
-          state['last_summary'] = summary
-          state.setdefault('history', []).insert(0, {
-            'ts': now_ts,
-            'summary': summary,
-            'new_suggestions': registered,
-            'dropped': data.get('dropped', [])[:10],
-          })
-          state['history'] = state['history'][:30]  # 최근 30건만 유지
-        state['last_reviewed_ts'] = fresh[0]['timestamp'] if fresh else now_ts
-        self._save_digest_state(state)
-
-        # 채팅 공지
-        msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건 중 건의 격상 {registered}건'
-        if summary:
-          msg += f'\n요약: {summary[:200]}'
-        await self.event_bus.publish(LogEvent(
-          agent_id='teamlead', event_type='system_notice', message=msg,
-        ))
-        logger.info('팀장 리뷰 완료: 분석=%d, 건의=%d', len(fresh), registered)
-
+        async with self._review_lock:
+          await self._run_single_review()
       except Exception:
         logger.debug('팀장 리뷰 루프 에러', exc_info=True)
 
-      await asyncio.sleep(300)  # 5분 간격 재검사 (실제 리뷰는 트리거 조건 충족 시)
+      await asyncio.sleep(300)
+
+  async def _run_single_review(self, force: bool = False) -> None:
+    '''배치 리뷰 1회 실행. 락은 호출자가 소유.
+
+    force=True면 트리거 조건(30건/30분) 무시하고 무조건 실행 (수동 트리거용).
+    '''
+    import json as _j
+    from datetime import datetime, timezone
+
+    state = self._load_digest_state()
+    last_ts = state.get('last_reviewed_ts', '')
+    from db.log_store import load_logs as _load
+    recent = _load(limit=200)
+    fresh = [
+      l for l in recent
+      if l.get('event_type') in ('autonomous', 'response')
+      and l.get('agent_id') != 'system'
+      and (not last_ts or l.get('timestamp', '') > last_ts)
+    ]
+    if not force:
+      if len(fresh) < 30:
+        need_time_trigger = False
+        if last_ts:
+          try:
+            last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
+            elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+            if elapsed >= 1800 and len(fresh) >= 10:
+              need_time_trigger = True
+          except Exception:
+            pass
+        if not need_time_trigger:
+          return
+    if not fresh:
+      return
+
+    convo = '\n'.join(
+      f'[{l["agent_id"]}] {l["message"][:300]}' for l in reversed(fresh[:120])
+    )
+    prompt = (
+      f'당신은 팀장 잡스입니다. 아래는 지난 배치 이후 팀의 자발적 대화입니다.\n'
+      f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 선언형 발언은 신뢰하지 마세요.\n\n'
+      f'[대화]\n{convo}\n\n'
+      f'JSON만 출력:\n'
+      f'{{\n'
+      f'  "suggestions":[{{"title":"40자","body":"구체 문제+제안 2-3문장",'
+      f'"target_agent":"planner|designer|developer|qa|teamlead|",'
+      f'"category":"프로세스 개선|도구 부족|정보 부족|아이디어",'
+      f'"reasoning":"1문장"}}],\n'
+      f'  "summary":"2-4문장",\n'
+      f'  "dropped":[{{"text":"앞 40자","reason":"이유"}}]\n'
+      f'}}\n'
+      f'규칙: suggestions 최대 3건·중복 금지. 수치 환각 금지. '
+      f'추상 방법론 단독 언급(Gherkin/WCAG/KPI)만 있으면 건의 아님.'
+    )
+    raw = await run_gemini(prompt=prompt)
+    import re as _re
+    m = _re.search(r'\{[\s\S]*\}', raw)
+    data = _j.loads(m.group()) if m else None
+    if not isinstance(data, dict):
+      return
+
+    from db.suggestion_store import create_suggestion, list_suggestions
+    existing_titles = {s.get('title', '') for s in list_suggestions(status='pending')}
+    registered = 0
+    for s in (data.get('suggestions') or [])[:3]:
+      title = (s.get('title') or '').strip()[:80]
+      body = (s.get('body') or '').strip()
+      if not title or not body:
+        continue
+      # 제목 중복 간단 체크
+      if any(title[:20] in t or t[:20] in title for t in existing_titles):
+        continue
+      content = (
+        f'{body}\n\n[팀장 리뷰 근거]\n{(s.get("reasoning") or "").strip()}\n\n'
+        f'(팀장 배치 리뷰 {datetime.now(timezone.utc).isoformat()})'
+      )
+      try:
+        create_suggestion(
+          agent_id='teamlead', title=title, content=content,
+          category=(s.get('category') or '아이디어').strip(),
+          target_agent=(s.get('target_agent') or '').strip(),
+        )
+        existing_titles.add(title)
+        registered += 1
+      except Exception:
+        logger.debug('팀장 리뷰 건의 등록 실패', exc_info=True)
+
+    summary = (data.get('summary') or '').strip()
+    now_ts = datetime.now(timezone.utc).isoformat()
+    if summary:
+      self.latest_digest_summary = summary
+      state['last_summary'] = summary
+      state.setdefault('history', []).insert(0, {
+        'ts': now_ts, 'summary': summary,
+        'new_suggestions': registered,
+        'dropped': data.get('dropped', [])[:10],
+        'forced': force,
+      })
+      state['history'] = state['history'][:30]
+    state['last_reviewed_ts'] = fresh[0]['timestamp']
+    self._save_digest_state(state)
+
+    msg = f'📋 팀장 리뷰 완료 — 분석 {len(fresh)}건 중 건의 격상 {registered}건'
+    if summary:
+      msg += f'\n요약: {summary[:200]}'
+    await self.event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice', message=msg,
+    ))
+    logger.info('팀장 리뷰 완료: 분석=%d, 건의=%d, forced=%s', len(fresh), registered, force)
 
   def stop_teamlead_review_loop(self) -> None:
     self._review_running = False
