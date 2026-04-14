@@ -21,6 +21,8 @@ def _conn() -> sqlite3.Connection:
       timestamp TEXT NOT NULL
     )
   ''')
+  # 최근 조회·정렬에 쓰는 timestamp DESC 인덱스 (로그 10만건 넘어도 빠름)
+  conn.execute('CREATE INDEX IF NOT EXISTS idx_chat_logs_ts ON chat_logs(timestamp DESC)')
   conn.commit()
   return conn
 
@@ -42,6 +44,20 @@ def save_log(log_dict: dict) -> None:
   )
   c.commit()
   c.close()
+
+
+def log_storage_stats() -> dict:
+  '''로그 저장 현황 — 총 건수/30일+ 건수/DB 파일 크기(바이트).'''
+  from datetime import datetime, timezone, timedelta
+  from pathlib import Path as _P
+  c = _conn()
+  total = c.execute('SELECT COUNT(*) FROM chat_logs').fetchone()[0]
+  cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+  old = c.execute('SELECT COUNT(*) FROM chat_logs WHERE timestamp < ?', (cutoff,)).fetchone()[0]
+  c.close()
+  db_file = _P(__file__).parent.parent / 'data' / 'logs.db'
+  size = db_file.stat().st_size if db_file.exists() else 0
+  return {'total': total, 'old_30d': old, 'db_size_bytes': size}
 
 
 def clear_logs() -> int:
