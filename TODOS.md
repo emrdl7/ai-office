@@ -3,8 +3,9 @@
 > **현재 상태 (2026-04-15)**: office.py **669 LOC** (시작 4,144 대비 −84%).
 > 도메인별 분할 완료 — teamlead_review / autonomous_loop / agent_interactions /
 > project_runner / suggestion_filer. 상호작용·학습·관찰 루프 3종 가동 중.
-> P2 대부분 완료 (약한 엣지 3종, 메타 학습 3종). Draft 건의 백엔드 완성
-> (schema + loop), source_log_id 스키마 준비. 남은 P2: 대시보드 UI + 로그ID 배선.
+> P2 완료 (약한 엣지 3종, 메타 학습 3종, Draft 건의 백엔드+UI+엔드포인트,
+> source_log_id 스키마+배선). P3 단위 테스트 4종 14케이스 추가. 남은 큰 항목:
+> P3 E2E, P4 _execute_project 분할/로그 아카이빙.
 
 ---
 
@@ -55,35 +56,40 @@
 ### Draft 건의 상태 (자기 다짐 과잉 등록 완충)
 - [x] `suggestion_store.create_suggestion(status='draft')` + `promote_draft`/
       `auto_promote_drafts` (2026-04-15).
-- [x] `_file_commitment_suggestion` 기본 draft, 동일 주제 반복 시 즉시 pending.
+- [x] `_file_commitment_suggestion` 기본 draft, 동일 주제 반복 시 **기존 draft를
+      pending 승격** (중복 등록 아님, 2026-04-15).
 - [x] `main._draft_promotion_loop` — 1시간 주기로 24h 경과 draft 자동 승격.
-- [ ] UI: 대시보드에서 draft 건의 목록 별도 탭.
-- [ ] 수동 승격(`promote_draft`) 관리자 엔드포인트 노출.
+- [x] UI: 대시보드 '📝 초안' 탭 + 승격/철회 버튼 (2026-04-15).
+- [x] `POST /api/suggestions/{id}/promote` 관리자 엔드포인트 (2026-04-15).
 
 ### 출처 추적
 - [x] `suggestions.source_log_id` 컬럼 + `create_suggestion` 매개변수 (2026-04-15).
-- [ ] `_auto_file_suggestion` / `_file_reaction_suggestion` / autonomous
-      발화 경로에서 source_log_id 실제 전파 (현재 스키마만 준비, 값은 ''
-      상태). 로그 ID 소스에 따라 2~3곳 배선 필요.
+- [x] autonomous_loop의 speaker/reactor/closing 3개 경로에서 LogEvent.id를
+      캡처해 `_file_commitment_suggestion` / `_auto_file_suggestion`에 전파.
+- [ ] `_file_reaction_suggestion` / 멘션 응답 경로 추가 배선 (선택).
 - [ ] 대시보드에서 건의 → 원본 발화 이동 링크.
 
 ---
 
 ## P3 — 테스트 커버리지
 
-22개 테스트 파일 존재하나 **E2E/통합 시나리오 부재**. 분할된 도메인 모듈의
+26개 테스트 파일 (P2 신규 4종 추가). 분할된 도메인 모듈의
 행동 고착화가 급선무.
 
-- [ ] `test_teamlead_review_integration.py` — force=True로 `run_single` 호출,
-      JSON 파싱 실패 시 fallback, circuit breaker 트리거.
-- [ ] `test_autonomous_loop_state.py` — digest state 저장/로드 라운드트립,
-      stuck detection 트리거.
+- [x] `test_commitment_filing.py` — draft 생성, 재다짐 승격, promote_draft,
+      auto_promote_drafts stale 분리 (2026-04-15, 4 케이스).
+- [x] `test_team_dynamic_recording.py` — peer_review / commitment 2종 훅이
+      TeamDynamic에 기록 (2026-04-15, 2 케이스).
+- [x] `test_teamlead_review_integration.py` — `_summarize_team_dynamics`
+      상위 쌍 / peer_concern 경고 / 빈 집계 / 임계 미달 run_single
+      (2026-04-15, 4 케이스).
+- [x] `test_autonomous_loop_state.py` — digest state 라운드트립 / 기본값 /
+      손상 JSON 복구 / 키워드 추출 (2026-04-15, 4 케이스).
 - [ ] `test_project_runner_e2e.py` — 프로젝트 입력 → 회의 → phase 실행 →
-      peer_review(CONCERN) → 보완 → 최종 리뷰 전 구간 1개 시나리오.
-- [ ] `test_commitment_filing.py` — "반영하겠습니다" 발화 → draft 생성 →
-      승격 → auto_apply → PromptEvolver 규칙 주입 검증.
-- [ ] `test_team_dynamic_recording.py` — peer_review / consult /
-      commitment 3종 훅이 모두 TeamDynamic에 기록되는지.
+      peer_review(CONCERN) → 보완 → 최종 리뷰 전 구간 1개 시나리오. 대량
+      mock 필요 — 우선순위 보류.
+- [ ] PromptEvolver 규칙 주입 검증 (commitment auto_apply 후 규칙 파일 변화)
+      — auto_triage_new_suggestion이 main.py에 있어 교차 mock 필요.
 
 ---
 
