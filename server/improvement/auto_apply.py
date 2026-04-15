@@ -41,7 +41,6 @@ async def apply_prompt_or_rule(suggestion: dict, user_comment: str = '') -> bool
     agent_id = suggestion['agent_id']
     target_agent = (suggestion.get('target_agent') or '').strip()
     apply_to = target_agent or agent_id
-    title = suggestion['title']
     content = suggestion['content']
     category = suggestion.get('category', 'general')
     stype = suggestion.get('suggestion_type', 'prompt')
@@ -102,7 +101,6 @@ def rollback_prompt_or_rule(suggestion_id: str, agent_ids: list[str] | None = No
 
   # PromptEvolver 규칙 제거 — 대상 에이전트를 모를 수 있으니 모든 에이전트 스캔
   try:
-    evolver = PromptEvolver()
     import json
     from pathlib import Path
     patches_dir = Path(__file__).parent.parent / 'data' / 'improvement' / 'prompt_patches'

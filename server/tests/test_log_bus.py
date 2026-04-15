@@ -58,7 +58,6 @@ async def test_multiple_subscribers_all_receive(bus):
 async def test_full_queue_does_not_block_bus(bus):
     '''꽉 찬 구독자 큐가 버스를 블록하지 않음 (QueueFull 처리)'''
     # maxsize=1로 작은 큐 생성 후 꽉 채움
-    import asyncio
     q_full = asyncio.Queue(maxsize=1)
     q_full.put_nowait(_make_event())  # 큐 꽉 참
     bus._subscribers.append(q_full)
@@ -92,7 +91,7 @@ async def test_subscriber_count(bus):
     '''subscriber_count가 정확한 수를 반환'''
     assert bus.subscriber_count == 0
     q1 = bus.subscribe()
-    q2 = bus.subscribe()
+    bus.subscribe()
     assert bus.subscriber_count == 2
     bus.unsubscribe(q1)
     assert bus.subscriber_count == 1

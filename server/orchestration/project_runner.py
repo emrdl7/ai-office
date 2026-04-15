@@ -896,7 +896,6 @@ async def _execute_project(
 
   all_results: dict[str, str] = {}
   phase_artifacts: list[str] = []
-  prev_phase_result = ''
   _prev_group = ''
   _prev_agent = ''
 
@@ -910,7 +909,6 @@ async def _execute_project(
       office, phase, PHASES, all_results, phase_artifacts, user_input,
     )
     if skipped is not None:
-      prev_phase_result = skipped
       continue
 
     office._state = OfficeState.WORKING
@@ -958,7 +956,6 @@ async def _execute_project(
     )
 
     all_results[phase_name] = content
-    prev_phase_result = content
 
     # 에이전트 간 @멘션 자동 라우팅 — 산출물에서 다른 에이전트에게 질문 감지
     try:
@@ -1064,8 +1061,6 @@ async def _execute_project(
         office, agent, phase, filename, all_results, user_input,
       )
       _phase_revision_count += _rev_delta
-      if _rev_delta:
-        prev_phase_result = all_results[phase_name]
 
       # phase 메트릭 기록
       _phase_finished_at = datetime.now(timezone.utc).isoformat()
@@ -1221,12 +1216,18 @@ async def _execute_project(
 
   # 팀 회고 — 프로젝트 완료 후 각 에이전트가 배운 점 공유
   try:
+    try:
+      _total_dur = (
+        datetime.now(timezone.utc) - datetime.fromisoformat(_project_started_at)
+      ).total_seconds()
+    except Exception:
+      _total_dur = 0.0
     await office._team_retrospective(
       project_title=office._active_project_title or '프로젝트',
       project_type=project_type,
       all_results=all_results,
       user_input=user_input,
-      duration=_total_dur if '_total_dur' in dir() else 0.0,
+      duration=_total_dur,
     )
   except Exception:
     logger.debug("팀 회고 실행 실패", exc_info=True)

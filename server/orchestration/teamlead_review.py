@@ -228,7 +228,6 @@ async def run_single(office, force: bool = False) -> None:
         'target_agent': target, 'category': category,
         'suggestion_type': refined_type, 'auto_safe': bool(s.get('auto_safe')),
       })
-      existing_titles.add(title)
       registered += 1
 
       # 자동 반영 판정

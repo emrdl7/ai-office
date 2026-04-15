@@ -1,4 +1,4 @@
-name: Server — Pytest + data/ 오염 가드
+name: Server — Ruff + Pytest + data/ 오염 가드
 
 on:
   push:
@@ -25,6 +25,10 @@ jobs:
       - name: Install deps
         working-directory: server
         run: uv sync
+
+      - name: Run ruff (lint — 실 버그만)
+        working-directory: server
+        run: uv run ruff check .
 
       - name: Run pytest
         working-directory: server

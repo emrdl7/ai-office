@@ -55,7 +55,7 @@ async def test_qa_receives_original_requirements(office_setup):
         return_value='{"status": "success", "summary": "검수 통과", "failure_reason": null}'
     )
 
-    result = await office._run_qa_check(office.agents['qa'], node, '테스트 산출물 내용')
+    await office._run_qa_check(office.agents['qa'], node, '테스트 산출물 내용')
 
     # handle()에 requirements가 포함된 프롬프트 전달됐는지 확인
     call_args = office.agents['qa'].handle.call_args

@@ -545,7 +545,7 @@ async def _run_one_supplement_iter(suggestion_id: str, branch: str, it: int, max
       f'- 변경 파일·이유 요약.'
     )
     try:
-      result = await run_claude_isolated(prompt=prompt, timeout=600.0, max_turns=20)
+      await run_claude_isolated(prompt=prompt, timeout=600.0, max_turns=20)
     except ClaudeRunnerError as e:
       _git(['checkout', original_branch])
       await event_bus.publish(LogEvent(

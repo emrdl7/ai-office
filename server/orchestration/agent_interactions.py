@@ -110,7 +110,6 @@ async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', team
   chat_subtype: 'greeting'(인사) | 'question'(질문) | 'casual'(잡담)
   teamlead_response: 팀장의 응답 (스레드에 포함)
   '''
-  import random
   from orchestration.meeting import MENTION_MAP
 
   # greeting: 랜덤 1명만 짧은 한마디
@@ -159,7 +158,6 @@ async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', team
         logger.debug("질문 응답 생성 실패: %s", name, exc_info=True)
     return
   import asyncio
-  import random
   import re
 
   # ── @멘션 파싱 — 지목된 에이전트 파악 ──
@@ -258,7 +256,6 @@ async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', team
 
 async def _team_reaction(office, worker: str, phase_name: str, content_summary: str = '') -> None:
   '''소단계 완료 후 다른 팀원이 성격 기반 맥락 리액션을 한다 (오피스 분위기).'''
-  import asyncio
   import random
   summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
 
@@ -926,7 +923,6 @@ async def _work_commentary(office, worker: str, phase_name: str, result_preview:
 
   발동 확률: 40%. 매번 나오면 지루하므로 확률적으로 동작한다.
   '''
-  import random
   if random.random() > 0.4:
     return
 

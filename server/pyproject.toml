@@ -24,8 +24,34 @@ dependencies = [
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+# ruff — 실제 버그만 잡는 최소 구성.
+# 기존 대규모 코드베이스이므로 스타일(E501 등) 제외, F 규칙 중심.
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [".venv", "__pycache__", "data", "workspace", "memory"]
+
+[tool.ruff.lint]
+select = [
+  "F",      # pyflakes — undefined-name, unused-import, unused-var 등 실 버그
+  "E7",     # 일부 명백한 에러 (비교, 할당 관련)
+  "E9",     # 구문/런타임 에러
+  "W605",   # invalid escape
+  "B006",   # mutable default arg
+  "B008",   # function call in arg default
+]
+ignore = [
+  "F401",   # unused-import — 많은 __init__ 패턴 때문에 일괄 제외
+  "F541",   # f-string 플레이스홀더 없음 — 스타일
+  "E701",   # multiple-statements-on-one-line-colon — 스타일
+  "E702",   # multiple-statements-on-one-line-semicolon — 스타일
+  "E741",   # ambiguous-variable-name (l, I, O) — 스타일
+  "B008",   # function call in default arg — FastAPI Form/File/Depends 정당 패턴
+]

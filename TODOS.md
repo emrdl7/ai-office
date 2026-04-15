@@ -102,7 +102,16 @@
 
 ## 🛡️ P4 — 안전망 강화 (선순위 낮음)
 
-- [ ] CI에 `ruff check` + `mypy` 추가 — 현재 pytest + data/ 가드만.
+- [x] CI에 `ruff check` 추가 — F(pyflakes) + E7/E9/W605/B006 실 버그 중심 규칙.
+      스타일(E501/E701/E702/E741/B008) 제외. 기존 코드에서 발견된 실제 버그 4종 수정:
+      `project_runner._total_dur` 정의 누락(회고 duration=0 전달됨),
+      `suggestion_filer._extract_keywords` import 누락,
+      `teamlead_review.existing_titles` 미정의,
+      `agent_interactions._team_chat` 로컬 `import random`이 모듈 상단 import를
+      shadowing해 F823 유발. 죽은 변수 6종 정리. ruff 0 violations.
+- [ ] CI에 `mypy` 추가 — 점진적 타이핑 도입 전제. 현재 시그니처에 타입 힌트
+      부족(특히 orchestration)해서 `--ignore-missing-imports` + 가벼운 설정부터
+      시작 필요. ruff 정착 후 별도 작업.
 - [ ] pytest fixture에 event_bus 격리 — 현재 직접 publish 가능 (DB는 격리됐으나 bus는).
 - [ ] 프론트엔드 React 컴포넌트 테스트 — 현재 서버 쪽만 테스트.
 

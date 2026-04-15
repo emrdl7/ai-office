@@ -42,6 +42,7 @@ async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, mess
 
   # dedup
   try:
+    from orchestration.office import _extract_keywords
     all_suggestions = list_suggestions(status='')
     msg_keywords = _extract_keywords(message)
     for s in all_suggestions[:30]:

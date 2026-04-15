@@ -23,7 +23,7 @@ def _looks_truncated(text: str) -> bool:
   if any(last_line.endswith(ind) for ind in _CUT_INDICATORS):
     return True
   # 마지막 줄이 문장 중간에 끊겼으면 (마침표/느낌표/물음표로 안 끝남)
-  if last_line and not last_line[-1] in '.!?。\n```':
+  if last_line and last_line[-1] not in '.!?。\n```':
     # 단, 짧은 응답(회의 발언 등)은 제외
     if len(text) > 1500:
       return True

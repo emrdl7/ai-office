@@ -356,8 +356,6 @@ class Agent:
     Returns:
       대상 에이전트의 답변
     '''
-    my_name = display_with_role(self.name)
-
     await self._emit(f'@{display_with_role(target_name)} {question[:80]}', 'colleague_question')
     return question  # 실제 라우팅은 Office에서 처리
 
