@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
 import Markdown from 'react-markdown'
 import { useStore } from '../store'
+import { MatIcon } from './icons'
 // selectedTaskId는 store에서 가져옴
 
 interface ArtifactEntry {
@@ -111,7 +112,7 @@ export function ArtifactViewer() {
   if (artifacts.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
-        <p className="text-2xl mb-2 opacity-30">📄</p>
+        <MatIcon name="description" className="text-[36px] mb-2 opacity-30" />
         <p>아직 산출물이 없습니다</p>
         <p className="text-xs mt-1 opacity-60">작업이 완료되면 결과물이 표시됩니다</p>
       </div>
@@ -136,7 +137,7 @@ export function ArtifactViewer() {
                 cursor-pointer transition-colors"
               aria-label="다운로드"
             >
-              ⬇ MD
+              <span className="inline-flex items-center gap-1"><MatIcon name="download" className="text-[14px]" /> MD</span>
             </button>
           )}
           {selectedPath && ['pdf', 'docx', 'zip'].map((fmt) => (
@@ -168,7 +169,7 @@ export function ArtifactViewer() {
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
             >
-              📄 {f.name} <span className="opacity-50">{formatSize(f.size)}</span>
+              <span className="inline-flex items-center gap-1"><MatIcon name="description" className="text-[12px]" /> {f.name}</span> <span className="opacity-50">{formatSize(f.size)}</span>
             </button>
           ))}
         </div>

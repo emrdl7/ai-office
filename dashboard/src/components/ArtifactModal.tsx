@@ -48,15 +48,15 @@ const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   tsx: { icon: 'TX', color: 'bg-blue-600' },
   py: { icon: 'PY', color: 'bg-green-600' },
   json: { icon: '{}', color: 'bg-gray-500' },
-  png: { icon: '🖼', color: 'bg-pink-500' },
-  jpg: { icon: '🖼', color: 'bg-pink-500' },
+  png: { icon: 'IMG', color: 'bg-pink-500' },
+  jpg: { icon: 'IMG', color: 'bg-pink-500' },
   svg: { icon: 'SV', color: 'bg-pink-400' },
   pdf: { icon: 'PDF', color: 'bg-red-600' },
 }
 
 function fileIconBadge(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  const info = FILE_ICONS[ext] ?? { icon: '📄', color: 'bg-gray-400' }
+  const info = FILE_ICONS[ext] ?? { icon: 'DOC', color: 'bg-gray-400' }
   return (
     <div className={`w-9 h-9 rounded-lg ${info.color} flex items-center justify-center
       text-white text-[10px] font-bold flex-shrink-0`}>
@@ -200,7 +200,7 @@ export function ArtifactModal() {
         <div className="flex-1 overflow-y-auto min-h-0">
           {selectedPath ? (
             // 파일 미리보기
-            <div className="p-6 md:p-8">
+            <div className="p-4 sm:p-6 md:p-8">
               {contentLoading ? (
                 <p className="text-sm text-gray-400 text-center py-8">로딩 중...</p>
               ) : isImage ? (
@@ -236,7 +236,7 @@ export function ArtifactModal() {
             </div>
           ) : (
             // 날짜별 산출물 목록
-            <div className="p-6 md:p-8">
+            <div className="p-4 sm:p-6 md:p-8">
               {sortedDates.length === 0 ? (
                 <div className="text-center text-gray-400 py-16">
                   <MatIcon name="description" className="text-[48px] mx-auto mb-3 opacity-30" />

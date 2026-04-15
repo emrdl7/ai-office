@@ -128,7 +128,7 @@ export function LogStream() {
 
     for (let i = 0; i < logs.length; i++) {
       const log = logs[i]
-      const profile = AGENT_PROFILE[log.agent_id] ?? { name: log.agent_id, emoji: '🤖', color: 'bg-gray-500', role: '' }
+      const profile = AGENT_PROFILE[log.agent_id] ?? { name: log.agent_id, character: log.agent_id, color: 'from-gray-500 to-gray-600', role: '', personality: '' }
       const style = EVENT_STYLE[log.event_type] ?? {}
       const { content } = parseMessage(log.message)
       const time = formatTime(log.timestamp)

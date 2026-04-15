@@ -118,7 +118,7 @@ export function TaskInput() {
                   className="text-blue-400 hover:text-red-400 cursor-pointer ml-0.5"
                   aria-label={`${f.name} 제거`}
                 >
-                  ×
+                  <MatIcon name="close" className="text-[12px]" />
                 </button>
               </span>
             ))}
@@ -132,7 +132,7 @@ export function TaskInput() {
             <span className="truncate flex-1">
               {tasks.find(t => t.task_id === baseTaskId)?.instruction?.slice(0, 30) || baseTaskId.slice(0, 8)}...
             </span>
-            <button onClick={() => setBaseTaskId('')} className="text-purple-400 hover:text-red-400 cursor-pointer">×</button>
+            <button onClick={() => setBaseTaskId('')} className="text-purple-400 hover:text-red-400 cursor-pointer"><MatIcon name="close" className="text-[12px]" /></button>
           </div>
         )}
 

@@ -212,7 +212,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                         onClick={() => jumpToLog(s.source_log_id!, onClose)}
                         className="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                       >
-                        📍 원본 발화로 이동
+                        <span className="inline-flex items-center gap-1"><MatIcon name="my_location" className="text-[12px]" /> 원본 발화로 이동</span>
                       </button>
                     )}
                   </li>

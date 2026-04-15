@@ -774,12 +774,7 @@ function UserMessageText({ text }: { text: string }) {
             cursor-pointer transition-all duration-150"
         >
           <span>{expanded ? '접기' : `${text.length - PREVIEW}자 더 보기`}</span>
-          <svg
-            className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-          </svg>
+          <MatIcon name="expand_more" className={`text-[14px] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
         </div>
       )}
@@ -845,8 +840,8 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
         )}
         {isColleagueQ && (
           <div className="flex items-center gap-1 mb-1.5 text-teal-500 dark:text-teal-400">
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-800/40">
-              🗣️ 동료 질문
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-800/40">
+              <MatIcon name="record_voice_over" className="text-[12px]" /> 동료 질문
             </span>
           </div>
         )}
@@ -870,12 +865,7 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
             <span>
               {expanded ? '접기' : `${content.length - COLLAPSED_PREVIEW}자 더 보기`}
             </span>
-            <svg
-              className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-            </svg>
+            <MatIcon name="expand_more" className={`text-[14px] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
           </button>
           </div>
         )}
@@ -888,10 +878,7 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
           p-1 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
           shadow-sm cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
       >
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+        <MatIcon name="add_reaction" className="text-[14px]" />
       </button>
 
       {/* 리액션 팔레트 */}
