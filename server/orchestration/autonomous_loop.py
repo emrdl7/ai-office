@@ -249,15 +249,17 @@ async def run_loop(office) -> None:
           topic, own_recent=own_recent, mode=mode, code_context=code_ctx,
         )
         if message:
-          await office.event_bus.publish(LogEvent(
+          speaker_event = LogEvent(
             agent_id=speaker_name,
             event_type='autonomous',
             message=message,
-          ))
+          )
+          speaker_log_id = speaker_event.id
+          await office.event_bus.publish(speaker_event)
 
           # 건의게시판 자동 등록 — 개선 제안/도구 요구 감지
           try:
-            await office._auto_file_suggestion(speaker_name, message)
+            await office._auto_file_suggestion(speaker_name, message, source_log_id=speaker_log_id)
           except Exception:
             logger.debug('자동 건의 등록 실패', exc_info=True)
 
@@ -266,6 +268,7 @@ async def run_loop(office) -> None:
             await office._file_commitment_suggestion(
               committer_id=speaker_name,
               message=message,
+              source_log_id=speaker_log_id,
             )
           except Exception:
             logger.debug('자발 다짐 등록 실패', exc_info=True)
@@ -283,11 +286,12 @@ async def run_loop(office) -> None:
                 prior_message=message,
               )
               if first_reply:
-                await office.event_bus.publish(LogEvent(
+                reactor_event = LogEvent(
                   agent_id=first_reactor,
                   event_type='autonomous',
                   message=first_reply,
-                ))
+                )
+                await office.event_bus.publish(reactor_event)
                 # 리액터의 다짐 감지 (원 발화에 대한 반응 중 "~하겠습니다")
                 try:
                   await office._file_commitment_suggestion(
@@ -295,6 +299,7 @@ async def run_loop(office) -> None:
                     message=first_reply,
                     source_speaker=speaker_name,
                     source_message=message,
+                    source_log_id=reactor_event.id,
                   )
                 except Exception:
                   logger.debug('리액터 다짐 등록 실패', exc_info=True)
@@ -307,11 +312,12 @@ async def run_loop(office) -> None:
                     challenge=first_reply,
                   )
                   if closing:
-                    await office.event_bus.publish(LogEvent(
+                    closing_event = LogEvent(
                       agent_id=speaker_name,
                       event_type='autonomous',
                       message=closing,
-                    ))
+                    )
+                    await office.event_bus.publish(closing_event)
                     # 원 발언자의 수용 결론에서 다짐 감지
                     try:
                       await office._file_commitment_suggestion(
@@ -319,6 +325,7 @@ async def run_loop(office) -> None:
                         message=closing,
                         source_speaker=first_reactor,
                         source_message=first_reply,
+                        source_log_id=closing_event.id,
                       )
                     except Exception:
                       logger.debug('클로징 다짐 등록 실패', exc_info=True)

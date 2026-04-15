@@ -95,7 +95,7 @@ async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, mess
 
 
 
-async def _auto_file_suggestion(office, agent_id: str, message: str) -> None:
+async def _auto_file_suggestion(office, agent_id: str, message: str, source_log_id: str = '') -> None:
   '''자발적 대화 중 개선 제안/도구 요구가 감지되면 건의게시판에 자동 등록.
 
   키워드 기반 heuristic (LLM 호출 없음 → 비용 0).
@@ -198,10 +198,12 @@ async def _auto_file_suggestion(office, agent_id: str, message: str) -> None:
       content=content,
       category=matched_category,
       target_agent=target,
+      source_log_id=source_log_id,
     )
     log_event(created['id'], 'auto_filed', {
       'speaker': agent_id, 'target_agent': target,
       'category': matched_category, 'trigger_keyword': matched_keyword,
+      'source_log_id': source_log_id,
     })
     target_hint = f' → {display_name(target)}에게 적용' if target else ''
     await office._emit(

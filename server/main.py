@@ -1087,6 +1087,22 @@ async def create_suggestion_api(request: Request):
   return result
 
 
+@app.post('/api/suggestions/{suggestion_id}/promote')
+async def promote_suggestion_api(suggestion_id: str):
+  '''draft 건의를 pending으로 수동 승격하고 auto_triage를 돌린다.'''
+  from db.suggestion_store import promote_draft, get_suggestion
+  if not promote_draft(suggestion_id):
+    current = get_suggestion(suggestion_id)
+    if current is None:
+      raise HTTPException(status_code=404, detail='건의를 찾을 수 없습니다.')
+    raise HTTPException(status_code=400, detail=f'draft 상태가 아닙니다 (현재: {current["status"]}).')
+  try:
+    asyncio.create_task(auto_triage_new_suggestion(suggestion_id))
+  except Exception:
+    logger.debug('promote 후 auto_triage 호출 실패', exc_info=True)
+  return get_suggestion(suggestion_id)
+
+
 @app.patch('/api/suggestions/{suggestion_id}')
 async def update_suggestion_api(suggestion_id: str, request: Request):
   '''건의 상태/답변을 업데이트한다.

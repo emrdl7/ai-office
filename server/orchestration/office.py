@@ -663,7 +663,7 @@ class Office:
 
   async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str) -> None: return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message)
 
-  async def _auto_file_suggestion(self, agent_id: str, message: str) -> None: return await suggestion_filer._auto_file_suggestion(self, agent_id, message)
+  async def _auto_file_suggestion(self, agent_id: str, message: str, source_log_id: str = '') -> None: return await suggestion_filer._auto_file_suggestion(self, agent_id, message, source_log_id)
 
   async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '', source_log_id: str = '') -> None:
     return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message, source_log_id)
