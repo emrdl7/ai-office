@@ -237,45 +237,48 @@ export function SuggestionModal() {
             </button>
           </div>
           {/* 탭 + 검색 */}
-          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-            {(() => {
-              const counts: Record<string, number> = { all: suggestions.length }
-              suggestions.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1 })
-              // auto_applied 별도 집계
-              counts['auto_applied'] = suggestions.filter((s) => s.auto_applied === 1).length
-              const tabs: [string, string][] = [
-                ['draft', '초안'],
-                ['pending', '대기'],
-                ['review_pending', '검토 대기'],
-                ['accepted', '처리 중'],
-                ['supplementing', '보완 중'],
-                ['auto_applied', '자동 반영'],
-                ['done', '완료'],
-                ['rejected', '반려'],
-                ['all', '전체'],
-              ]
-              return tabs.map(([key, label]) => {
-                const n = counts[key] || 0
-                if (n === 0 && key !== 'pending' && key !== 'all') return null
-                const active = tab === key
-                return (
-                  <button key={key} onClick={() => setTab(key)}
-                    className={`text-xs px-2.5 py-1 rounded-full cursor-pointer transition
-                      ${active
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
-                    {label} {n > 0 && <span className={active ? 'opacity-80' : 'opacity-60'}>{n}</span>}
-                  </button>
-                )
-              })
-            })()}
-            <div className="flex-1" />
+          <div className="mt-3 space-y-2">
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+              {(() => {
+                const counts: Record<string, number> = { all: suggestions.length }
+                suggestions.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1 })
+                counts['auto_applied'] = suggestions.filter((s) => s.auto_applied === 1).length
+                const tabs: [string, string][] = [
+                  ['pending', '대기'],
+                  ['review_pending', '검토 대기'],
+                  ['accepted', '처리 중'],
+                  ['supplementing', '보완 중'],
+                  ['auto_applied', '자동 반영'],
+                  ['done', '완료'],
+                  ['rejected', '반려'],
+                  ['draft', '초안'],
+                  ['all', '전체'],
+                ]
+                return tabs.map(([key, label]) => {
+                  const n = counts[key] || 0
+                  if (n === 0 && key !== 'pending' && key !== 'all') return null
+                  const active = tab === key
+                  return (
+                    <button key={key} onClick={() => setTab(key)}
+                      className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full cursor-pointer transition
+                        ${active
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                      {label}
+                      {n > 0 && (
+                        <span className={`text-[10px] leading-none ${active ? 'opacity-80' : 'opacity-50'}`}>{n}</span>
+                      )}
+                    </button>
+                  )
+                })
+              })()}
+            </div>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="검색..."
-              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800
-                text-gray-700 dark:text-gray-200 placeholder-gray-400 w-32
+              className="w-full text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800
+                text-gray-700 dark:text-gray-200 placeholder-gray-400
                 focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
           </div>
@@ -344,39 +347,40 @@ export function SuggestionModal() {
                         </span>
                       </div>
                       {/* 2행: 메타 */}
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[10px]">
+                      <div className="flex items-center gap-1 mt-1.5 flex-wrap text-[10px] leading-none">
                         <span className="text-gray-500 dark:text-gray-400 font-medium">
                           {profile?.character || s.agent_id}
                         </span>
                         {s.target_agent && s.target_agent !== s.agent_id && (
-                          <span className="text-gray-400">→</span>
-                        )}
-                        {s.target_agent && s.target_agent !== s.agent_id && (
-                          <span className="text-indigo-600 dark:text-indigo-400 font-medium"
-                            title="이 건의가 적용될 에이전트">
-                            {AGENT_PROFILE[s.target_agent]?.character || s.target_agent}
-                          </span>
+                          <>
+                            <span className="text-gray-300 dark:text-gray-700">→</span>
+                            <span className="text-indigo-600 dark:text-indigo-400 font-medium"
+                              title="이 건의가 적용될 에이전트">
+                              {AGENT_PROFILE[s.target_agent]?.character || s.target_agent}
+                            </span>
+                          </>
                         )}
                         <span className="text-gray-300 dark:text-gray-700">·</span>
-                        <span className={`px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 ${t.color}`}>
-                          <MatIcon name={t.icon} className="text-[12px]" /> {t.label}
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full leading-none ${t.color}`}>
+                          {t.label}
                         </span>
-                        <span className={`px-1.5 py-0.5 rounded-full ${statusInfo.color}`}>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full leading-none ${statusInfo.color}`}>
                           {statusInfo.text}
                         </span>
                         {s.auto_applied === 1 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700
-                            dark:bg-amber-900/30 dark:text-amber-400"
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                            bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                             title="팀장이 자동 반영함 — 24h 내 되돌리기 가능">
                             자동
                           </span>
                         )}
-                        <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                          bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
                           {catLabel}
                         </span>
                         {parentId && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/30
-                            text-purple-600 dark:text-purple-400 font-mono"
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                            bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 font-mono"
                             title="원 건의 ID">
                             #{parentId}
                           </span>
@@ -394,14 +398,14 @@ export function SuggestionModal() {
                                 setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 2000)
                               }
                             }}
-                            className="px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/30
-                              text-blue-600 dark:text-blue-400 hover:underline"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                              bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 hover:underline"
                             title="이 건의의 원본 발화 로그로 이동"
                           >
-                            📍 원본
+                            원본
                           </a>
                         )}
-                        <span className="ml-auto text-gray-400">
+                        <span className="ml-auto text-gray-400 leading-none">
                           {new Date(s.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
                         </span>
                       </div>

@@ -112,23 +112,24 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <MatIcon name="close" className="text-[20px]" />
             </button>
           </div>
-          <div className="flex items-center gap-2 text-xs flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs overflow-x-auto scrollbar-none">
             <button
               onClick={() => setErrorsPreset((v) => !v)}
-              className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
+              className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
                 errorsPreset
                   ? 'bg-red-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
               title="error / system_notice 이벤트만"
             >
-              <MatIcon name="warning" className="text-[13px] mr-0.5" /> 에러만
+              에러만
             </button>
+            <span className="shrink-0 text-gray-300 dark:text-gray-700">|</span>
             {(['all', 'logs', 'suggestions', 'dynamics'] as SearchType[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setType(t)}
-                className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
+                className={`shrink-0 inline-flex items-center px-2.5 py-1 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
                   type === t
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -137,14 +138,14 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                 {t === 'all' ? '전체' : t === 'logs' ? '로그' : t === 'suggestions' ? '건의' : '다이내믹'}
               </button>
             ))}
-            <label className="ml-auto flex items-center gap-1.5 text-gray-500 dark:text-gray-400 cursor-pointer whitespace-nowrap">
+            <label className="shrink-0 ml-auto inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-400 cursor-pointer whitespace-nowrap pl-1">
               <input
                 type="checkbox"
                 checked={includeArchive}
                 onChange={(e) => setIncludeArchive(e.target.checked)}
                 className="rounded cursor-pointer"
               />
-              아카이브 포함
+              아카이브
             </label>
           </div>
         </div>
@@ -176,9 +177,9 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                         bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-700
                         cursor-pointer transition-colors"
                     >
-                      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center gap-1.5 text-[10px] leading-none text-gray-500 dark:text-gray-400">
                         <span className="font-medium">{displayName(l.agent_id)}</span>
-                        <span>·</span>
+                        <span className="text-gray-300 dark:text-gray-700">·</span>
                         <span>{new Date(l.timestamp).toLocaleString('ko-KR')}</span>
                       </div>
                       <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 line-clamp-2">
@@ -199,11 +200,18 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <ul className="space-y-1.5">
                 {data.suggestions.map((s) => (
                   <li key={s.id} className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900">
-                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                      <span className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700">{s.category}</span>
-                      <span>·</span>
-                      <span>{s.status}</span>
-                      {s.target_agent && <><span>·</span><span>→ {displayName(s.target_agent)}</span></>}
+                    <div className="flex items-center gap-1 text-[10px] leading-none text-gray-500 dark:text-gray-400">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                        bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{s.category}</span>
+                      <span className="text-gray-300 dark:text-gray-700">·</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                        bg-gray-100 dark:bg-gray-800">{s.status}</span>
+                      {s.target_agent && (
+                        <>
+                          <span className="text-gray-300 dark:text-gray-700">→</span>
+                          <span className="text-indigo-500 dark:text-indigo-400">{displayName(s.target_agent)}</span>
+                        </>
+                      )}
                     </div>
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mt-1">{s.title}</p>
                     <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">{s.content}</p>
@@ -229,12 +237,14 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <ul className="space-y-1.5">
                 {data.dynamics.map((d, i) => (
                   <li key={i} className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900">
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      <span>{displayName(d.from_agent)}</span>
-                      <span className="mx-1">→</span>
-                      <span>{displayName(d.to_agent)}</span>
-                      <span className="mx-1.5 px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700">{d.dynamic_type}</span>
-                      <span>· {new Date(d.timestamp).toLocaleString('ko-KR')}</span>
+                    <div className="flex items-center gap-1 flex-wrap text-[10px] leading-none text-gray-500 dark:text-gray-400">
+                      <span className="font-medium">{displayName(d.from_agent)}</span>
+                      <span className="text-gray-300 dark:text-gray-700">→</span>
+                      <span className="font-medium">{displayName(d.to_agent)}</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full leading-none
+                        bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{d.dynamic_type}</span>
+                      <span className="text-gray-300 dark:text-gray-700">·</span>
+                      <span>{new Date(d.timestamp).toLocaleString('ko-KR')}</span>
                     </div>
                     {d.description && (
                       <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{d.description}</p>
