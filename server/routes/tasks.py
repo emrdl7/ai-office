@@ -257,7 +257,7 @@ async def list_tasks_api():
 async def get_dag(request: Request):
   '''TaskGraph를 React Flow 형식(nodes, edges)으로 반환한다 (WKFL-05).'''
   office: Office = request.app.state.office
-  graph: TaskGraph = getattr(office, '_task_graph', None)
+  graph: TaskGraph | None = getattr(office, '_task_graph', None)
 
   if graph is None:
     return {'nodes': [], 'edges': []}

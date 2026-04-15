@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from orchestration.state import OfficeState
 from runners.claude_runner import run_claude_isolated
@@ -29,7 +30,7 @@ def _is_stop_command(msg: str) -> bool:
   return any(kw in lowered for kw in _STOP_KEYWORDS)
 
 
-async def handle_mid_work_input(office, user_input: str) -> None:
+async def handle_mid_work_input(office: Any, user_input: str) -> None:
   '''작업 진행 중 사용자가 보낸 메시지를 처리한다.
 
   3가지 경우 판단:
@@ -100,7 +101,7 @@ async def handle_mid_work_input(office, user_input: str) -> None:
   await _record_commitment(office, 'teamlead', default_ack, msg)
 
 
-async def _record_commitment(office, committer_id: str, response_text: str, user_msg: str) -> None:
+async def _record_commitment(office: Any, committer_id: str, response_text: str, user_msg: str) -> None:
   # 팀장/에이전트 응답에 다짐 마커("반영하겠" 등)가 있으면 다짐 게시판 등록.
   # _file_commitment_suggestion 내부에서 마커 매칭·중복 가드 처리.
   try:

@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _handle_quick_task(
-  office,
+  office: Any,
   user_input: str,
   agent_name: str,
   analysis: str,
@@ -282,7 +282,7 @@ async def _handle_quick_task(
 
 
 async def _handle_project(
-  office,
+  office: Any,
   user_input: str,
   analysis: str,
   reference_context: str,
@@ -362,14 +362,15 @@ async def _handle_project(
     }
 
   # 질문 없으면 바로 전체 진행
-  return await office._execute_project(
+  result: dict[str, Any] = await office._execute_project(
     user_input, analysis, meeting_summary, reference_context, briefing,
     phases=phases,
   )
+  return result
 
 
 
-async def _continue_project(office, user_answer: str) -> dict[str, Any]:
+async def _continue_project(office: Any, user_answer: str) -> dict[str, Any]:
   '''사용자 답변을 받아 중단된 프로젝트를 이어서 진행한다.'''
   pending = office._pending_project
   if not pending:
@@ -383,7 +384,7 @@ async def _continue_project(office, user_answer: str) -> dict[str, Any]:
 
   office._pending_project = None
 
-  return await office._execute_project(
+  result: dict[str, Any] = await office._execute_project(
     pending['user_input'],
     pending['analysis'],
     meeting_summary,
@@ -391,15 +392,16 @@ async def _continue_project(office, user_answer: str) -> dict[str, Any]:
     pending['briefing'],
     phases=phases,
   )
+  return result
 
 
 
 async def _plan_project_phases(
-  office,
+  office: Any,
   user_input: str,
   analysis: str,
   meeting_summary: str,
-) -> list[dict]:
+) -> list[dict] | None:
   '''팀장(Claude)이 회의 결과를 바탕으로 프로젝트에 맞는 단계를 동적 설계한다.
 
   Returns:
@@ -457,7 +459,7 @@ async def _plan_project_phases(
     response = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=120.0)
     parsed = parse_json(response)
     if parsed and isinstance(parsed, dict) and 'phases' in parsed:
-      phases = parsed['phases']
+      phases: list[dict[Any, Any]] = parsed['phases']
       # 유효성 검증: 최소 필수 키 확인
       valid = all(
         isinstance(p, dict) and p.get('name') and p.get('assigned_to') and p.get('group')
@@ -482,7 +484,7 @@ async def _plan_project_phases(
 
 
 
-def _default_phases(office, user_input: str) -> tuple[list[dict], str]:
+def _default_phases(office: Any, user_input: str) -> tuple[list[dict], str]:
   '''기본 단계 반환 — phases 미전달 시 하위호환용.'''
   project_type = office.improvement_engine.qa_adapter.classify_project_type(user_input)
   phases = office.improvement_engine.workflow_optimizer.get_phase_dicts(project_type, user_input)
@@ -491,7 +493,7 @@ def _default_phases(office, user_input: str) -> tuple[list[dict], str]:
 
 
 async def _check_existing_phase_output(
-  office,
+  office: Any,
   phase: dict,
   PHASES: list[dict],
   all_results: dict[str, str],
@@ -577,7 +579,7 @@ _DEFAULT_FORMAT_INSTRUCTION = '마크다운 형식으로 작성하세요.'
 
 
 async def _build_phase_prompt(
-  office,
+  office: Any,
   phase: dict,
   all_results: dict[str, str],
   user_input: str,
@@ -632,7 +634,7 @@ async def _build_phase_prompt(
 
 
 async def _collect_project_metrics(
-  office,
+  office: Any,
   task_id: str,
   project_type: str,
   user_input: str,
@@ -667,8 +669,8 @@ async def _collect_project_metrics(
 
 
 async def _run_phase_with_qa(
-  office,
-  agent,
+  office: Any,
+  agent: Any,
   phase: dict,
   filename: str,
   all_results: dict[str, str],
@@ -706,7 +708,7 @@ async def _run_phase_with_qa(
     return True, 0
 
   qa_fail_event = await office._emit(
-    'qa', f'{current_group} 검수 불합격: {node.failure_reason[:200]}', 'response',
+    'qa', f'{current_group} 검수 불합격: {(node.failure_reason or "")[:200]}', 'response',
   )
   qa_fail_log_id = getattr(qa_fail_event, 'id', '') if qa_fail_event else ''
   revision_delta = 1
@@ -770,7 +772,7 @@ async def _run_phase_with_qa(
 
 
 async def _persist_phase_output(
-  office,
+  office: Any,
   phase: dict,
   content: str,
   phase_artifacts: list[str],
@@ -865,7 +867,7 @@ async def _persist_phase_output(
 
 
 async def _execute_project(
-  office,
+  office: Any,
   user_input: str,
   analysis: str,
   meeting_summary: str,
@@ -1148,7 +1150,7 @@ async def _execute_project(
 
 
 async def _emit_final_report(
-  office,
+  office: Any,
   PHASES: list[dict],
   all_results: dict[str, str],
   phase_artifacts: list[str],
@@ -1234,7 +1236,7 @@ async def _emit_final_report(
 
 
 async def _finalize_project(
-  office,
+  office: Any,
   project_type: str,
   all_results: dict[str, str],
   user_input: str,
@@ -1296,7 +1298,7 @@ async def _finalize_project(
 
 
 
-async def _auto_export(office, phase_artifacts: list[str]) -> None:
+async def _auto_export(office: Any, phase_artifacts: list[str]) -> None:
   '''프로젝트 완료 후 주요 산출물을 PDF/ZIP으로 자동 내보내기.'''
   from harness.export_engine import md_to_pdf, folder_to_zip
 
@@ -1344,7 +1346,7 @@ _CROSS_REVIEW_MAP: dict[str, tuple[str, str]] = {
 
 
 
-async def _cross_review(office, group_name: str, all_results: dict[str, str]) -> None:
+async def _cross_review(office: Any, group_name: str, all_results: dict[str, str]) -> None:
   '''그룹 완료 후 다른 역할의 에이전트가 간단히 크로스리뷰한다.'''
   review_config = office._CROSS_REVIEW_MAP.get(group_name)
   if not review_config:
@@ -1383,7 +1385,7 @@ async def _cross_review(office, group_name: str, all_results: dict[str, str]) ->
 
 
 async def _quick_task_second_opinion(
-  office,
+  office: Any,
   worker: str,
   prompt: str,
   result: str,
@@ -1467,7 +1469,7 @@ async def _quick_task_second_opinion(
 
 
 
-async def _run_qa_check(office, qa_agent: Agent, node: TaskNode, content: str) -> bool:
+async def _run_qa_check(office: Any, qa_agent: Agent, node: TaskNode, content: str) -> bool:
   '''QA 에이전트가 산출물을 검수한다 (내부 처리 — 채팅에 안 보임).'''
   ac_section = ''
   if getattr(node, 'acceptance_criteria', None):
@@ -1506,7 +1508,7 @@ async def _run_qa_check(office, qa_agent: Agent, node: TaskNode, content: str) -
 
 
 async def _run_planner_synthesize(
-  office,
+  office: Any,
   user_input: str,
   worker_results: dict[str, str],
   revision_feedback: str = '',
@@ -1554,7 +1556,7 @@ async def _run_planner_synthesize(
 
 
 
-async def _teamlead_final_review(office, user_input: str, task_graph: TaskGraph) -> bool:
+async def _teamlead_final_review(office: Any, user_input: str, task_graph: TaskGraph) -> bool:
   '''팀장(Claude)이 최종 산출물을 검수한다.'''
   final_path = office.workspace.task_dir / 'final' / 'result.md'
   if not final_path.exists():
@@ -1593,7 +1595,7 @@ async def _teamlead_final_review(office, user_input: str, task_graph: TaskGraph)
   record_rejection(office._last_review_feedback, 'final_review', str(office._memory_root))
   return False
 
-async def _create_handoff_guide(office, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
+async def _create_handoff_guide(office: Any, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
   '''이전 그룹의 산출물에서 다음 단계에 필요한 참조 가이드를 생성한다.
 
   요약이 아니라 "어느 작업 시 어느 문서의 어느 부분을 참고하라"는 지시서.
@@ -1627,7 +1629,7 @@ async def _create_handoff_guide(office, group_name: str, group_results: dict[str
     return sections_text
 
 
-async def _generate_stitch_mockup(office, all_results: dict, user_input: str) -> None:
+async def _generate_stitch_mockup(office: Any, all_results: dict, user_input: str) -> None:
   '''디자인 산출물을 바탕으로 Stitch 시안을 생성하고, 개발 단계에 전달한다.'''
   try:
     await office._emit('designer', '디자인 시안을 생성하고 있습니다... 🎨', 'response')
@@ -1676,7 +1678,7 @@ async def _generate_stitch_mockup(office, all_results: dict, user_input: str) ->
     await office._emit('designer', f'시안 생성을 건너뜁니다 ({str(e)[:100]})', 'response')
 
 
-async def _extract_user_questions(office, user_input: str, meeting_summary: str) -> str:
+async def _extract_user_questions(office: Any, user_input: str, meeting_summary: str) -> str:
   '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''
   prompt = (
     f'팀 회의가 끝났습니다. 당신은 팀장입니다.\n\n'
@@ -1700,7 +1702,7 @@ async def _extract_user_questions(office, user_input: str, meeting_summary: str)
     return ''
 
 
-async def _check_user_directive(office) -> dict | None:
+async def _check_user_directive(office: Any) -> dict | None:
   '''소단계 사이에 사용자가 보낸 메시지가 있는지 확인한다.'''
   from db.log_store import load_logs
 

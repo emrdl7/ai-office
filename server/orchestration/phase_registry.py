@@ -1,6 +1,7 @@
 # 프로젝트 유형별 Phase 레지스트리 — 유형 Enum + 템플릿 + 회의 참여자
 from __future__ import annotations
 from enum import Enum
+from typing import Any
 
 
 class ProjectType(str, Enum):
@@ -244,7 +245,7 @@ _MEETING_PARTICIPANTS: dict[ProjectType, list[str]] = {
 }
 
 
-def get_phases(project_type: ProjectType) -> list[dict]:
+def get_phases(project_type: ProjectType) -> list[dict[str, Any]]:
   '''프로젝트 유형에 맞는 Phase 목록을 반환한다.'''
   return [dict(p) for p in PHASE_TEMPLATES.get(project_type, PHASE_TEMPLATES[ProjectType.GENERAL])]
 

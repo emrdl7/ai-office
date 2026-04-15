@@ -40,6 +40,7 @@ class GroqRunner:
     '''Groq API를 호출하여 텍스트 응답을 반환한다.'''
     if not self._client:
       await self.start()
+    assert self._client is not None  # start() 후 보장
 
     if not self._api_key:
       raise GroqRunnerError('GROQ_API_KEY가 설정되지 않았습니다.')
@@ -69,7 +70,7 @@ class GroqRunner:
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data['choices'][0]['message']['content']
+        content: str = data['choices'][0]['message']['content']
         return content.strip()
       except httpx.TimeoutException:
         raise GroqRunnerError(f'Groq 타임아웃 ({REQUEST_TIMEOUT}초)')
@@ -83,6 +84,7 @@ class GroqRunner:
         raise GroqRunnerError(f'Groq HTTP {e.response.status_code}: {error_body}')
       except (KeyError, IndexError) as e:
         raise GroqRunnerError(f'Groq 응답 파싱 실패: {e}')
+    raise GroqRunnerError(f'Groq 재시도 {max_retries}회 초과')
 
   async def generate_json(self, prompt: str, system: str = '') -> Any | None:
     '''generate() + JSON 파싱 파이프라인'''

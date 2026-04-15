@@ -237,9 +237,9 @@ def resolve_references(instruction: str) -> str:
       content = read_folder(path)
       contents.append(f'[참조 폴더: {path}]\n{content}')
     elif p.is_file():
-      content = read_file(path)
-      if content:
-        contents.append(f'[참조 파일: {p.name}]\n{content}')
+      file_content = read_file(path)
+      if file_content:
+        contents.append(f'[참조 파일: {p.name}]\n{file_content}')
       else:
         contents.append(f'[참조 파일: {path} — 읽기 실패]')
     else:
@@ -255,7 +255,7 @@ def _read_pdf(path: Path, max_chars: int) -> str | None:
     doc = pymupdf.open(str(path))
     text_parts = []
     total = 0
-    for page in doc:
+    for page in doc:  # type: ignore[attr-defined]  # pymupdf.Document는 런타임에 iterable
       page_text = page.get_text()
       text_parts.append(page_text)
       total += len(page_text)

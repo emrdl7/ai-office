@@ -1,36 +1,40 @@
 # TODOS
 
-> **현재 상태 (2026-04-15, 366 commits)**
+> **현재 상태 (2026-04-15, 367 commits)**
 > - 앱 LOC: server 14.3K / routes 2.5K / tests ~3.7K / frontend 4.3K ≈ **25K total**.
 > - `main.py` 328 LOC (시작 4,144 → −92%) · 8개 라우터 분리 완료.
 > - `project_runner._execute_project` 411 → 283 LOC. `_emit_final_report` /
 >   `_finalize_project` 추출. phase 루프 본체는 중간 return 다발로 유지.
 > - 학습 루프 3종 + 말·행동 일치(P2.5 6종) + 사용자 개입 점검(P2.5-α 3종) 가동.
 > - 관측: `/api/project/status` · 통합 검색 + errors preset · placeholder 오염 감지.
-> - 테스트: **179 pass / 0 fail / 0 skip**. CI = pytest + ruff + **mypy(strict 3모듈)** + `data/` 오염 가드.
+> - 테스트: **179 pass / 0 fail / 0 skip**. CI = pytest + ruff + **mypy(strict 17모듈)** + vitest(dashboard) + `data/` 오염 가드.
 > - 경로: `core/paths.py` 단일 출처(WORKSPACE_ROOT/MEMORY_ROOT, env 주입).
 
 ---
 
-## 🚧 남은 작업 (1건)
+## 🚧 남은 작업 (2건)
 
-### mypy 승격 (orchestration 등)
-- 현재: `core/paths.py` · `db/*` · `log_bus/*` 세 모듈 strict 통과 (CI 게이트).
-  `config/team.py` var-annotated 2건도 같이 정리됨.
-- 다음 승격 후보: `bus/` → `orchestration/` → `routes/` 순. 모듈별로 타입 힌트
-  보강 후 `mypy.ini`에 per-module 섹션 추가하는 방식 유지.
-
-### React 컴포넌트 테스트 인프라
-- 배경: 현재 서버 쪽만 테스트 (170 pass). dashboard 4.3K는 `tsc --noEmit`만
-  통과하고 런타임 회귀 안전망 없음.
+### mypy strict 승격 (17모듈 완료 / orchestration 잔여 2 + routes + 기타)
+- 통과(17): `core/paths` · `db/*` · `log_bus/*` · `bus/*` +
+  `orchestration/{state,phase_registry,task_graph,intent,expertise,router,
+  meeting,agent,user_input,agent_interactions,teamlead_review,autonomous_loop,
+  project_runner}`.
 - 다음 세션 시작점:
-  1. `vitest` + `@testing-library/react` + `@testing-library/jest-dom` + `jsdom`
-     devDependency 추가.
-  2. `vite.config.ts`에 `test: { environment: 'jsdom', setupFiles: [...] }`.
-  3. 첫 테스트 대상 후보 — `ProjectStatusBar`(폴링 주기 전환) /
-     `SearchPanel`(errors preset 토글) / `MetricsPanel`(빈 상태 렌더).
-  4. `.github/workflows/server-tests.yml` 또는 별도 워크플로우에
-     `npm --prefix dashboard test` 스텝.
+  1. **orchestration 잔여** — `office.py`(클래스 내부 메서드 전수 힌트)와
+     `suggestion_filer.py`. `office: Any` 파서 스크립트는 이미 검증됨 —
+     def-경계만 터치.
+  2. **routes/*** 8종 — Request/Response 경계라 직관적. 주로 `Request`/`Any`
+     return 힌트.
+  3. **기타** — `improvement/*`, `harness/*`, `runners/*`, `memory/*`, `main.py`.
+
+### React 컴포넌트 테스트 확대
+- 인프라 부트스트랩 완료 — vitest 2 + RTL 16 + jest-dom + jsdom,
+  `vitest.config.ts`(vite config과 분리), `src/test/setup.ts` autouse cleanup,
+  `npm test` 스크립트, `.github/workflows/dashboard-tests.yml`.
+- 첫 테스트: `MetricsPanel.test.tsx` — `formatDuration` 3종 + 빈 상태 렌더 1종
+  (4 pass).
+- 다음 세션 시작점: `ProjectStatusBar`(폴링 주기 전환) / `SearchPanel`(errors
+  preset 토글) / `TaskInput` 상호작용 테스트.
 
 ---
 

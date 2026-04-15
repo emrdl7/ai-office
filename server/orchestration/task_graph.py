@@ -3,6 +3,7 @@ from __future__ import annotations
 # TaskGraph: 태스크 노드의 추가, 상태 추적, 의존성 기반 실행 순서 결정
 from enum import Enum
 from dataclasses import dataclass, field
+from typing import Any
 
 from bus.payloads import TaskRequestPayload
 
@@ -37,7 +38,7 @@ class TaskGraph:
   WorkspaceManager와 연동하여 상태를 직렬화할 수 있다 (to_state_dict).
   '''
 
-  def __init__(self):
+  def __init__(self) -> None:
     self._nodes: dict[str, TaskNode] = {}
 
   def add_task(self, payload: TaskRequestPayload) -> TaskNode:
@@ -72,7 +73,7 @@ class TaskGraph:
     self,
     task_id: str,
     status: TaskStatus,
-    **kwargs,
+    **kwargs: Any,
   ) -> None:
     '''태스크 상태를 변경하고 선택적으로 artifact_paths/failure_reason을 업데이트한다.
 
@@ -98,7 +99,7 @@ class TaskGraph:
     Returns:
         실행 가능한 TaskNode 목록
     '''
-    result = []
+    result: list[TaskNode] = []
     for node in self._nodes.values():
       if node.status != TaskStatus.PENDING:
         continue
@@ -125,7 +126,7 @@ class TaskGraph:
       for node in self._nodes.values()
     )
 
-  def to_state_dict(self) -> dict:
+  def to_state_dict(self) -> dict[str, dict[str, Any]]:
     '''직렬화 가능한 상태 딕셔너리를 반환한다.
 
     WorkspaceManager atomic write 연동용.

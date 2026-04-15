@@ -129,5 +129,5 @@ class QAAdapter:
       'document': sum(1 for kw in document_keywords if kw in instruction_lower),
     }
 
-    best = max(scores, key=scores.get)
+    best = max(scores, key=lambda k: scores[k])
     return best if scores[best] > 0 else 'document'

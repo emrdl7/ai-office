@@ -11,6 +11,7 @@ import random
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from config.team import WORKER_IDS, display_name
 from log_bus.event_bus import LogEvent
@@ -21,14 +22,15 @@ logger = logging.getLogger(__name__)
 _DIGEST_PATH = Path(__file__).parent.parent / 'data' / 'team_digests.json'
 
 
-def load_digest_state(office) -> dict:
+def load_digest_state(office: Any) -> dict:
   try:
-    return json.loads(_DIGEST_PATH.read_text())
+    data: dict = json.loads(_DIGEST_PATH.read_text())
+    return data
   except Exception:
     return {'last_reviewed_ts': '', 'last_summary': '', 'history': []}
 
 
-def save_digest_state(office, state: dict) -> None:
+def save_digest_state(office: Any, state: dict) -> None:
   try:
     _DIGEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     _DIGEST_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2))
@@ -36,7 +38,7 @@ def save_digest_state(office, state: dict) -> None:
     logger.debug('digest 저장 실패', exc_info=True)
 
 
-def stop_loop(office) -> None:
+def stop_loop(office: Any) -> None:
   '''자발적 활동 루프를 중단한다.'''
   office._autonomous_running = False
 
@@ -62,7 +64,7 @@ def stop_loop(office) -> None:
 #   다음 iteration(5~15분 후)에 복귀. 사용자 관측성이 낮아 향후 관측 이벤트 추가 여지.
 
 
-async def _gather_conversation_context(office) -> tuple[str, list[dict]]:
+async def _gather_conversation_context(office: Any) -> tuple[str, list[dict]]:
   '''최근 대화 맥락 문자열 + raw log 리스트.
 
   팀장 요약(digest)이 있으면 압축본 + 직전 5건, 없으면 raw 10건.
@@ -111,7 +113,7 @@ def _detect_topic_stuck(recent_context: str) -> tuple[bool, list[str]]:
   return stuck, repeated
 
 
-def _gather_real_seeds(office, recent_context: str) -> str:
+def _gather_real_seeds(office: Any, recent_context: str) -> str:
   '''미처리 건의 + 축적 교훈 + 최근 프로젝트에서 구체 시드 조합.'''
   from orchestration.office import _extract_keywords
   seed_parts: list[str] = []
@@ -233,7 +235,7 @@ def _load_code_context() -> str:
 
 
 async def _run_speaker_chain(
-  office, speaker_name: str, topic: str, candidates: list[str], code_ctx: str,
+  office: Any, speaker_name: str, topic: str, candidates: list[str], code_ctx: str,
 ) -> str:
   '''한 speaker의 발화 → 1단 반응 → 2단 결론 체인 실행.
 
@@ -340,7 +342,7 @@ async def _run_speaker_chain(
 
 
 async def _maybe_teamlead_closing(
-  office, recent_context: str, speaker_name: str, first_reactor: str,
+  office: Any, recent_context: str, speaker_name: str, first_reactor: str,
 ) -> None:
   '''체인이 돌았으면 50%, 아니면 10% 확률로 팀장 관찰 한 문장.'''
   teamlead_chance = 0.5 if first_reactor else 0.1
@@ -399,7 +401,7 @@ async def _maybe_teamlead_closing(
     logger.debug("팀장 자발적 활동 실패", exc_info=True)
 
 
-async def run_loop(office) -> None:
+async def run_loop(office: Any) -> None:
   '''에이전트 자발적 활동 백그라운드 루프. idle 상태에서만 5~15분 간격.
 
   단계: react_to_received_reactions → agents_react_to_peers →
@@ -456,7 +458,7 @@ async def run_loop(office) -> None:
     await asyncio.sleep(random.randint(300, 900))
 
 
-async def react_to_received_reactions(office) -> None:
+async def react_to_received_reactions(office: Any) -> None:
   '''내(에이전트) 최근 메시지에 리액션이 달렸으면 감사/답례 한마디.
 
   **무한 루프 방지:**
@@ -549,7 +551,7 @@ async def react_to_received_reactions(office) -> None:
       logger.debug('리액션 답례 생성 실패: %s', agent_id, exc_info=True)
 
 
-async def agents_react_to_peers(office) -> None:
+async def agents_react_to_peers(office: Any) -> None:
   '''동료의 최근 메시지에 에이전트가 이모지로 리액션을 단다 (Task #10).
 
   LLM 호출 없이 키워드 기반 heuristic으로 판단 — 토큰 비용 0.
@@ -590,7 +592,7 @@ async def agents_react_to_peers(office) -> None:
 
     # 이미 어떤 에이전트가 리액션 했으면 중복 방지
     existing_reactions = (target.get('data') or {}).get('reactions') or {}
-    reacted_agents = set()
+    reacted_agents: set[str] = set()
     for emoji, users in existing_reactions.items():
       reacted_agents.update(u for u in users if u != 'user')
 

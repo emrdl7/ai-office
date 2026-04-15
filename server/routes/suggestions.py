@@ -438,7 +438,7 @@ def _extract_rule_body(content: str) -> str:
   m = re.search(r'의 발언:\s*"([^"]+)"', content)
   if m:
     return m.group(1).strip()
-  lines = []
+  lines: list[str] = []
   for line in content.splitlines():
     s = line.strip()
     if not s:

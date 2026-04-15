@@ -41,6 +41,7 @@ async def generate_design(prompt: str, output_dir: str) -> dict:
     stderr=asyncio.subprocess.PIPE,
     env={**os.environ, **env},
   )
+  assert proc.stdin is not None  # PIPE로 열었으므로 항상 존재
   proc.stdin.write(prompt.encode('utf-8'))
   proc.stdin.close()
 

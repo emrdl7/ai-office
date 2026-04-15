@@ -41,7 +41,7 @@ async def trigger_teamlead_review(request: Request):
   '''팀장 배치 리뷰를 수동 트리거. 이미 실행 중이면 거절.'''
   import asyncio
   office: Office = request.app.state.office
-  if not hasattr(office, '_review_lock'):
+  if office._review_lock is None:
     office._review_lock = asyncio.Lock()
   if office._review_lock.locked():
     return {'queued': False, 'message': '이미 리뷰가 실행 중입니다'}

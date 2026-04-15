@@ -111,7 +111,7 @@ async def get_artifact_content(file_path: str, request: Request):
 
   accept = request.headers.get('accept', '')
   if 'text/html' in accept and file_path.endswith('.md'):
-    import markdown as md_lib
+    import markdown as md_lib  # type: ignore[import-untyped]
     rendered = md_lib.markdown(content, extensions=['tables', 'fenced_code', 'nl2br'])
     html = f'''<!DOCTYPE html>
 <html><head>

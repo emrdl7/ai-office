@@ -1,6 +1,7 @@
 # Office — 진짜 사무실처럼 동작하는 오케스트레이션 시스템
 from __future__ import annotations
 # 팀장이 판단하고, 팀원이 협업하고, 회의를 통해 프로젝트를 진행한다.
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -125,7 +126,13 @@ class Office:
 
     # 자발적 활동 제어
     self._autonomous_running = False
-    self._autonomous_task = None
+    self._autonomous_task: asyncio.Task[None] | None = None
+
+    # 팀장 배치 리뷰 (main.py 기동 시 주입)
+    self._review_running = False
+    self._review_lock: asyncio.Lock | None = None
+    self._teamlead_review_task: asyncio.Task[None] | None = None
+    self.latest_digest_summary: str = ''
 
     # 팀원 초기화
     self.agents: dict[str, Agent] = {}

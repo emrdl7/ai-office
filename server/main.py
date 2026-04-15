@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
     workspace=workspace,
   )
   app.state.office = office
-  app.state.log_history: list[dict] = []
+  app.state.log_history = []
 
   await office.groq_runner.start()
 

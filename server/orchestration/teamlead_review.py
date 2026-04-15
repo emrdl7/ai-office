@@ -10,6 +10,7 @@ import os as _os
 import json as _j
 import re as _re
 from datetime import datetime, timezone, timedelta
+from typing import Any
 
 from config.team import display_name
 from log_bus.event_bus import LogEvent
@@ -20,7 +21,7 @@ from runners.gemini_runner import run_gemini
 logger = logging.getLogger(__name__)
 
 
-def _summarize_team_dynamics(office, lookback: int = 100) -> str:
+def _summarize_team_dynamics(office: Any, lookback: int = 100) -> str:
   '''최근 TeamDynamic 기록을 (from→to, type) 카운트로 집계.
 
   팀장 리뷰 프롬프트에 주입되어 "누가 누구와 잘 맞는지 / stuck 패턴"을
@@ -56,7 +57,7 @@ def _summarize_team_dynamics(office, lookback: int = 100) -> str:
   return '\n'.join(lines)
 
 
-async def run_loop(office) -> None:
+async def run_loop(office: Any) -> None:
   '''팀장 역할로 최근 대화를 배치 분석한다.
 
   트리거: 30분 경과 OR 직전 리뷰 이후 30건 이상 새 메시지.
@@ -68,9 +69,9 @@ async def run_loop(office) -> None:
     → 이후 start_autonomous_loop 시드가 raw 대신 요약을 참조 (반복 차단)
   '''
   office._review_running = True
-  if not hasattr(office, '_review_lock'):
+  if office._review_lock is None:
     office._review_lock = asyncio.Lock()
-  office.latest_digest_summary: str = office._load_digest_state().get('last_summary', '')
+  office.latest_digest_summary = office._load_digest_state().get('last_summary', '')
 
   await asyncio.sleep(60)  # 서버 기동 직후 부담 줄이려 60초 대기
 
@@ -94,7 +95,7 @@ async def run_loop(office) -> None:
     await asyncio.sleep(300)
 
 
-async def run_single(office, force: bool = False) -> None:
+async def run_single(office: Any, force: bool = False) -> None:
   '''배치 리뷰 1회 실행. 락은 호출자가 소유.
 
   force=True면 트리거 조건 무시. 단 최소 간격(5분)은 유지해 연타 방지.
@@ -350,11 +351,11 @@ async def run_single(office, force: bool = False) -> None:
   logger.info('팀장 리뷰 완료: 분석=%d, 건의=%d, 자동=%d, forced=%s', len(fresh), registered, auto_applied, force)
 
 
-def stop_loop(office) -> None:
+def stop_loop(office: Any) -> None:
   office._review_running = False
 
 
-def _build_agent_metrics_context(office, agent_name: str) -> str:
+def _build_agent_metrics_context(office: Any, agent_name: str) -> str:
   '''회고 프롬프트에 주입할 에이전트별 실행 컨텍스트. QA/리비전/피드백 요약.'''
   lines = []
   metrics = list(getattr(office, '_phase_metrics', None) or [])
@@ -379,7 +380,7 @@ def _build_agent_metrics_context(office, agent_name: str) -> str:
 
 
 async def _peer_lesson_commentary(
-  office,
+  office: Any,
   lesson_pairs: list[tuple[str, str]],
 ) -> None:
   '''회고 발언 직후, 다른 팀원이 "내 다음 작업에 이렇게 적용" 한 문장 연결.
@@ -437,7 +438,7 @@ async def _peer_lesson_commentary(
 
 
 async def _synthesize_and_save_retrospective(
-  office,
+  office: Any,
   project_title: str,
   project_type: str,
   duration: float,
@@ -502,7 +503,7 @@ async def _synthesize_and_save_retrospective(
 
 
 async def run_retrospective(
-  office,
+  office: Any,
   project_title: str,
   project_type: str,
   all_results: dict[str, str],
@@ -621,7 +622,7 @@ _COMMITMENT_FOLLOWUP_MINUTES = 30  # 다짐 후 이 시간 내 실행 흔적 없
 _COMMITMENT_FOLLOWUP_COOLDOWN_HOURS = 24  # 같은 committer 재촉 주기
 
 
-async def run_commitment_followup(office) -> None:
+async def run_commitment_followup(office: Any) -> None:
   '''다짐 후 실행 궤적이 없으면 팀장이 채팅에서 재촉한다.
 
   원칙(2026-04-15): 채팅 발화가 공허한 외침이 되지 않게,

@@ -187,7 +187,7 @@ async def merge_suggestion_branch(suggestion_id: str, request: Request):
       except _a.TimeoutError:
         proc.kill()
         return (124, 'timeout')
-      return (proc.returncode, (out or b'').decode(errors='ignore')[-3000:])
+      return (proc.returncode or 0, (out or b'').decode(errors='ignore')[-3000:])
 
     from pathlib import Path as _P
     import tempfile as _tf

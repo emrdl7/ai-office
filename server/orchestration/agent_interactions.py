@@ -11,7 +11,9 @@ import json
 import logging
 import random
 import re
+from collections.abc import Collection
 from datetime import datetime, timezone
+from typing import Any
 
 from config.team import (
   AGENT_IDS, WORKER_IDS, BY_ID,
@@ -27,11 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 async def _single_agent_chat(
-  office,
+  office: Any,
   name: str,
   user_input: str,
   thread_lines: list[str],
-  mentioned_ids: list[str],
+  mentioned_ids: Collection[str],
   round_context: str = '',
 ) -> tuple[str, str]:
   '''팀 채팅방에서 한 에이전트의 응답을 생성. PASS 혹은 실패 시 빈 문자열.
@@ -101,7 +103,7 @@ async def _single_agent_chat(
     return name, ''
 
 
-async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
+async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
   '''팀 채널 대화 — 스레드 기반. 각 에이전트가 전체 대화 스레드를 읽고 판단한다.
 
   핵심: 실제 그룹 채팅처럼 이전 발언을 모두 본 뒤 새 가치를 더할 수 있을 때만 발언.
@@ -254,7 +256,7 @@ async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', team
 
 
 
-async def _team_reaction(office, worker: str, phase_name: str, content_summary: str = '') -> None:
+async def _team_reaction(office: Any, worker: str, phase_name: str, content_summary: str = '') -> None:
   '''소단계 완료 후 다른 팀원이 성격 기반 맥락 리액션을 한다 (오피스 분위기).'''
   import random
   summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
@@ -366,7 +368,7 @@ async def _team_reaction(office, worker: str, phase_name: str, content_summary: 
 
 
 async def _consult_peers(
-  office,
+  office: Any,
   worker_name: str,
   content: str,
   phase: dict,
@@ -468,7 +470,7 @@ _RELATIONSHIP_SUGGESTION_THRESHOLD = 3
 _RELATIONSHIP_SUGGESTION_COOLDOWN_HOURS = 24
 
 
-async def _maybe_file_relationship_suggestion(office, reviewer_id: str, worker_id: str) -> None:
+async def _maybe_file_relationship_suggestion(office: Any, reviewer_id: str, worker_id: str) -> None:
   '''같은 (reviewer→worker) 쌍에서 peer_concern이 임계치 누적되면 건의를 1회 등록.
 
   중복 방지: 24h 내 동일 쌍 건의 존재 시 스킵.
@@ -532,7 +534,7 @@ async def _maybe_file_relationship_suggestion(office, reviewer_id: str, worker_i
     logger.debug('선제 중재 발화 실패', exc_info=True)
 
 
-def _select_peer_reviewers(office, worker_id: str, limit: int = 2) -> list[str]:
+def _select_peer_reviewers(office: Any, worker_id: str, limit: int = 2) -> list[str]:
   '''팀 다이내믹 점수 기반 peer reviewer 선정.
 
   점수: peer_approved +1.0, committed_to_request +0.3, peer_concern -0.5.
@@ -580,7 +582,7 @@ def _select_peer_reviewers(office, worker_id: str, limit: int = 2) -> list[str]:
 
 
 async def _peer_review(
-  office,
+  office: Any,
   worker_name: str,
   phase_name: str,
   content: str,
@@ -689,7 +691,7 @@ async def _peer_review(
 
 
 async def _qa_pushback_round(
-  office,
+  office: Any,
   offending_agent: str,
   failure_reason: str,
   phase_name: str,
@@ -781,7 +783,7 @@ async def _qa_pushback_round(
 
 
 
-async def _handoff_comment(office, from_agent: str, to_agent: str, phase_name: str) -> None:
+async def _handoff_comment(office: Any, from_agent: str, to_agent: str, phase_name: str) -> None:
   '''그룹 전환 시 이전 담당자가 다음 담당자에게 인수인계 코멘트를 남긴다.'''
   from_name = display_name(from_agent)
   to_name = display_name(to_agent)
@@ -808,7 +810,7 @@ async def _handoff_comment(office, from_agent: str, to_agent: str, phase_name: s
 
 
 
-async def _task_acknowledgment(office, agent_name: str, phase_name: str) -> None:
+async def _task_acknowledgment(office: Any, agent_name: str, phase_name: str) -> None:
   '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.
 
   직전 단계에서 자신이 받은 피어 우려(peer_concern)가 있으면
@@ -857,7 +859,7 @@ async def _task_acknowledgment(office, agent_name: str, phase_name: str) -> None
 
 
 
-async def _contextual_reaction(office, reactor: str, phase_name: str, worker: str) -> str:
+async def _contextual_reaction(office: Any, reactor: str, phase_name: str, worker: str) -> str:
   '''Haiku로 해당 캐릭터가 할 법한 문맥 리액션 한마디 생성 (15자 이내).'''
   try:
     response = await run_claude_isolated(
@@ -903,7 +905,7 @@ _KEYWORD_REVIEWER_MAP: list[tuple[list[str], str, str]] = [
 
 
 
-def _resolve_reviewer(office, worker: str, prompt: str) -> tuple[str, str] | None:
+def _resolve_reviewer(office: Any, worker: str, prompt: str) -> tuple[str, str] | None:
   '''업무 내용 키워드 기반으로 리뷰어를 결정한다. 자기 자신은 제외.'''
   for keywords, reviewer, perspective in _KEYWORD_REVIEWER_MAP:
     if reviewer == worker:
@@ -918,7 +920,7 @@ def _resolve_reviewer(office, worker: str, prompt: str) -> tuple[str, str] | Non
 
 
 
-async def _work_commentary(office, worker: str, phase_name: str, result_preview: str) -> None:
+async def _work_commentary(office: Any, worker: str, phase_name: str, result_preview: str) -> None:
   '''작업 완료 직후 관련 팀원 1명이 결과물 기반 전문 의견을 짧게 끼어든다.
 
   발동 확률: 40%. 매번 나오면 지루하므로 확률적으로 동작한다.
@@ -960,7 +962,7 @@ async def _work_commentary(office, worker: str, phase_name: str, result_preview:
 
 
 
-async def _phase_intro(office, agent_name: str, phase_name: str) -> None:
+async def _phase_intro(office: Any, agent_name: str, phase_name: str) -> None:
   '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.
 
   과거 실패 교훈 1개 + 팀원의 협업 조언 1줄을 프롬프트에 주입해
@@ -1017,7 +1019,7 @@ async def _phase_intro(office, agent_name: str, phase_name: str) -> None:
 
 
 
-async def _route_agent_mentions(office, speaker: str, content: str) -> None:
+async def _route_agent_mentions(office: Any, speaker: str, content: str) -> None:
   '''에이전트 산출물/발언에서 @멘션을 감지하고 대상 에이전트가 응답하게 한다.
 
   작업 중 에이전트끼리 자연스럽게 질문/토론하는 효과.

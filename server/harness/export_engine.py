@@ -7,7 +7,7 @@ from pathlib import Path
 def md_to_html(md_content: str, title: str = '산출물') -> str:
   '''마크다운을 스타일 적용된 HTML로 변환한다.'''
   try:
-    import markdown
+    import markdown  # type: ignore[import-untyped]
     body = markdown.markdown(md_content, extensions=['tables', 'fenced_code', 'nl2br', 'toc'])
   except ImportError:
     body = f'<pre>{md_content}</pre>'
@@ -93,7 +93,7 @@ def folder_to_zip(folder_path: str | Path, zip_path: str | Path) -> Path:
 
 def get_exportable_formats(task_dir: Path) -> list[str]:
   '''태스크 디렉토리에서 내보내기 가능한 포맷 목록을 반환한다.'''
-  formats = []
+  formats: list[str] = []
   if not task_dir.exists():
     return formats
 

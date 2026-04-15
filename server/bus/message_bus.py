@@ -112,5 +112,5 @@ class MessageBus:
             self._conn.rollback()
             raise
 
-    def close(self):
+    def close(self) -> None:
         self._conn.close()

@@ -15,7 +15,7 @@ interface ProjectMetric {
   finished_at: string
 }
 
-function formatDuration(sec: number): string {
+export function formatDuration(sec: number): string {
   if (!sec || sec <= 0) return '-'
   const m = Math.floor(sec / 60)
   if (m < 60) return `${m}분`
