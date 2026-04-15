@@ -39,9 +39,11 @@
        `_auto_export`, `_run_qa_check`, `_teamlead_final_review`,
        `_run_planner_synthesize`, `_quick_task_second_opinion`, `_handle_quick_task`
        분리 완료. office.py 2,564 → 1,228 LOC (−1,336). project_runner.py 1,452 LOC.
-5. [ ] **`suggestion_filer.py`** — `_file_reaction_suggestion`, `_auto_file_suggestion`.
+5. [x] **`suggestion_filer.py`** — `_file_reaction_suggestion`, `_auto_file_suggestion`,
+       `_file_commitment_suggestion` 분리 완료. office.py 1,228 → 948 LOC (−280).
+       suggestion_filer.py 312 LOC 신규.
 6. [ ] **`Office` 본체** = 상태 머신 + `receive()` 디스패치 + `__init__`만 남김.
-       목표 ≤ 500 LOC.
+       목표 ≤ 500 LOC. (현재 948 — `receive`, `_route_agent_mentions`, 기타 헬퍼 잔존)
 
 ### 각 분할 단계 공통 원칙
 
