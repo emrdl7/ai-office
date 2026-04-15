@@ -46,7 +46,8 @@ async def run_loop(office) -> None:
 
   idle 상태에서만 동작하며, 5~15분 간격으로 에이전트가 자발적으로 발언한다.
   '''
-  from orchestration.office import OfficeState, _extract_keywords
+  from orchestration.office import _extract_keywords
+  from orchestration.state import OfficeState
 
   office._autonomous_running = True
   # 서버 시작 후 첫 자발적 활동은 2~5분 뒤

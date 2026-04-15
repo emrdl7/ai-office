@@ -649,13 +649,13 @@ _KEYWORD_REVIEWER_MAP: list[tuple[list[str], str, str]] = [
 
 def _resolve_reviewer(office, worker: str, prompt: str) -> tuple[str, str] | None:
   '''업무 내용 키워드 기반으로 리뷰어를 결정한다. 자기 자신은 제외.'''
-  for keywords, reviewer, perspective in office._KEYWORD_REVIEWER_MAP:
+  for keywords, reviewer, perspective in _KEYWORD_REVIEWER_MAP:
     if reviewer == worker:
       continue  # 자기 자신에게 자문 요청 불가
     if any(kw in prompt for kw in keywords):
       return reviewer, perspective
   # 키워드 매칭 없으면 기본 매핑 사용
-  config = office._SECOND_OPINION_MAP.get(worker)
+  config = _SECOND_OPINION_MAP.get(worker)
   if config and config[0] != worker:
     return config
   return None

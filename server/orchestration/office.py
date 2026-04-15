@@ -67,17 +67,7 @@ def _extract_keywords(text: str) -> set[str]:
   return {t.lower() for t in tokens if t.lower() not in stopwords and len(t) >= 2}
 
 
-class OfficeState(str, Enum):
-  '''사무실 상태'''
-  IDLE = 'idle'
-  TEAMLEAD_THINKING = 'teamlead_thinking'  # 팀장이 판단 중
-  MEETING = 'meeting'                       # 회의 중
-  WORKING = 'working'                       # 팀원이 작업 중
-  QA_REVIEW = 'qa_review'                   # QA 검수 중
-  TEAMLEAD_REVIEW = 'teamlead_review'       # 팀장 최종 검수
-  REVISION = 'revision'                     # 보완 중
-  COMPLETED = 'completed'
-  ESCALATED = 'escalated'
+from orchestration.state import OfficeState  # re-export for main.py, tests
 
 
 class Office:

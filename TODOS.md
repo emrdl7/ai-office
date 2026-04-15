@@ -1,6 +1,6 @@
 # TODOS
 
-> **현재 상태 (2026-04-15)**: office.py **948 LOC** (시작 4,144 대비 −77%).
+> **현재 상태 (2026-04-15)**: office.py **706 LOC** (시작 4,144 대비 −83%).
 > 도메인별 분할 완료 — teamlead_review / autonomous_loop / agent_interactions /
 > project_runner / suggestion_filer. 상호작용·학습·관찰 루프 3종 가동 중.
 
@@ -8,18 +8,19 @@
 
 ## P1 — office.py 본체 최종 정리 (목표 ≤500 LOC)
 
-현재 948 LOC. 잔존 약 450 LOC가 목표 초과분이며, 대부분은 **이관 가능한 보조
-메서드**와 **37개 forwarder**의 반복 패턴이다.
+현재 706 LOC. 잔존 약 200 LOC가 목표 초과분. 대부분 forwarder 37개 (~110 LOC)와
+핵심 로직(`__init__`, `receive()` 디스패치, `_emit` 등)이다.
 
 ### 잔존 대표 메서드
-- [ ] `_route_agent_mentions` (~80 LOC) → **`agent_interactions`로 이동**.
-      에이전트 산출물에서 `@멘션` 라우팅 — 상호작용 도메인.
-- [ ] `_create_handoff_guide` + `_generate_stitch_mockup` (~110 LOC) →
-      **`project_runner`로 이동**. 프로젝트 실행 중 파생 산출물 생성.
-- [ ] `_extract_user_questions` + `_check_user_directive` (~67 LOC) →
-      **`receive()` 주변 헬퍼**. 새 `dispatch.py` 또는 `receive_helpers.py`로 분리.
-- [ ] forwarder 37개의 `from orchestration import X` 반복 → **모듈 상수로 캐싱**
-      하여 호출당 import 비용 제거 (한 번만 import).
+- [x] `_route_agent_mentions` → `agent_interactions`로 이동 (2026-04-15).
+- [x] `_create_handoff_guide` + `_generate_stitch_mockup` → `project_runner`로 이동 (2026-04-15).
+- [x] `_extract_user_questions` + `_check_user_directive` → `project_runner`로 이동 (2026-04-15).
+- [x] forwarder `from orchestration import X` → 모듈 상수로 캐싱 (2026-04-15).
+- [ ] 37개 forwarder를 `__getattr__` 기반 동적 위임으로 압축 → ~70 LOC 추가 절감
+      예상. 단, IDE 자동완성 손해 있음 — 트레이드오프 검토 필요.
+- [ ] **선결 버그**: `project_runner.py`가 `OfficeState`를 import 없이 참조
+      (16곳). `test_quick_task_routes_to_single_agent` 실패. OfficeState를
+      별도 모듈(`orchestration/state.py`)로 추출하면 해결.
 
 ### 유지 (Office 본체 핵심)
 - `__init__`, `receive()` 디스패치, `_emit`, `_compress_history`,

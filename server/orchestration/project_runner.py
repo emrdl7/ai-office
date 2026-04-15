@@ -21,6 +21,7 @@ from config.team import (
   TEAM, BY_ID, AGENT_IDS, WORKER_IDS,
   display_name, display_with_role, profile_names,
 )
+from orchestration.state import OfficeState
 from orchestration.intent import IntentType, classify_intent, classify_project_type
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
@@ -1482,7 +1483,6 @@ async def _create_handoff_guide(office, group_name: str, group_results: dict[str
 
 async def _generate_stitch_mockup(office, all_results: dict, user_input: str) -> None:
   '''디자인 산출물을 바탕으로 Stitch 시안을 생성하고, 개발 단계에 전달한다.'''
-  from orchestration.office import OfficeState
   try:
     await office._emit('designer', '디자인 시안을 생성하고 있습니다... 🎨', 'response')
     office._state = OfficeState.WORKING
