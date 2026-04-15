@@ -2080,6 +2080,13 @@ class Office:
               'phase': phase.get('name', ''),
               'content': answer_text[:100],
             })
+            # 협업 관찰 기록 — 작업자 → 자문 대상 의존 관계
+            self._record_dynamic(
+              from_agent=worker_name,
+              to_agent=target,
+              dynamic_type='consulted',
+              description=f'[{phase.get("name", "")}] {question[:80]}',
+            )
         except Exception:
           logger.debug("팀원 자문 실행 실패: %s", target, exc_info=True)
 
@@ -2088,6 +2095,32 @@ class Office:
     except Exception:
       logger.debug("자문 필요 여부 판단 실패", exc_info=True)
       return ''
+
+  def _record_dynamic(
+    self,
+    from_agent: str,
+    to_agent: str,
+    dynamic_type: str,
+    description: str,
+  ) -> None:
+    '''팀 다이나믹 기록 래퍼 — 상호작용 후처리 훅.
+
+    dynamic_type: 'peer_concern' | 'peer_approved' | 'consulted'
+                | 'committed_to_request' | 'needs_clarification' | 그 외 자유.
+    기록 실패는 조용히 무시 (본 작업 영향 방지).
+    '''
+    if not from_agent or not to_agent or from_agent == to_agent:
+      return
+    try:
+      self.team_memory.add_dynamic(TeamDynamic(
+        from_agent=from_agent,
+        to_agent=to_agent,
+        dynamic_type=dynamic_type,
+        description=description[:100],
+        timestamp=datetime.now(timezone.utc).isoformat(),
+      ))
+    except Exception:
+      logger.debug('팀 다이나믹 기록 실패: %s→%s (%s)', from_agent, to_agent, dynamic_type, exc_info=True)
 
   # 피어 리뷰어 매핑: 작업자 역할 → 리뷰어 목록
   _PEER_REVIEWERS: dict[str, list[str]] = {
@@ -2153,6 +2186,13 @@ class Office:
             'phase': phase_name,
             'content': feedback.replace('[CONCERN]', '').strip(),
           })
+          # 협업 관찰 기록 — 리뷰어 → 작업자 상호작용
+          self._record_dynamic(
+            from_agent=reviewer_id,
+            to_agent=worker_name,
+            dynamic_type='peer_concern' if has_concern else 'peer_approved',
+            description=f'[{phase_name}] {feedback.replace("[CONCERN]", "").strip()[:80]}',
+          )
       except Exception:
         logger.debug("피어 리뷰 실행 실패: %s", reviewer_id, exc_info=True)
 
@@ -4075,6 +4115,14 @@ class Office:
         'system_notice',
       )
       logger.info('다짐 건의 등록: %s | %s', committer_id, first_line[:60])
+      # 협업 관찰 기록 — committer가 source_speaker 요청에 약속 이행
+      if source_speaker:
+        self._record_dynamic(
+          from_agent=committer_id,
+          to_agent=source_speaker,
+          dynamic_type='committed_to_request',
+          description=first_line[:80],
+        )
       try:
         from main import auto_triage_new_suggestion
         asyncio.create_task(auto_triage_new_suggestion(created['id']))

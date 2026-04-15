@@ -140,10 +140,14 @@ class TeamMemory:
             lesson_lines = [f'- [{l.category}] {l.lesson[:100]}' for l in lessons]
             parts.append('## 팀이 배운 교훈\n' + '\n'.join(lesson_lines))
 
-        # 2. 협업 관계
+        # 2. 협업 관계 — 최신순 최대 5개, 타입까지 표시
         dynamics = self.get_dynamics_for(agent_name)
         if dynamics:
-            dyn_lines = [f'- {d.from_agent}→{d.to_agent}: {d.description[:80]}' for d in dynamics[:3]]
+            dynamics_sorted = sorted(dynamics, key=lambda d: d.timestamp, reverse=True)[:5]
+            dyn_lines = [
+                f'- [{d.dynamic_type}] {d.from_agent}→{d.to_agent}: {d.description[:80]}'
+                for d in dynamics_sorted
+            ]
             parts.append('## 팀 협업 패턴\n' + '\n'.join(dyn_lines))
 
         # 3. 최근 프로젝트
