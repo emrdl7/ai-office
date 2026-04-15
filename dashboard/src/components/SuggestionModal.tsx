@@ -27,6 +27,7 @@ const TYPE_BADGE: Record<string, { Icon: typeof IconBrain; label: string; color:
 }
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
+  draft: { text: '초안', color: 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
   pending: { text: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
   accepted: { text: '처리 중...', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse' },
   review_pending: { text: '검토 대기', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
@@ -237,6 +238,7 @@ export function SuggestionModal() {
               // auto_applied 별도 집계
               counts['auto_applied'] = suggestions.filter((s) => s.auto_applied === 1).length
               const tabs: [string, string][] = [
+                ['draft', '📝 초안'],
                 ['pending', '대기'],
                 ['review_pending', '검토 대기'],
                 ['accepted', '처리 중'],
@@ -445,6 +447,32 @@ export function SuggestionModal() {
                           </label>
                         )}
                         <div className="flex gap-2">
+                          {s.status === 'draft' && (
+                            <>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation()
+                                  const r = await fetch(`/api/suggestions/${s.id}/promote`, { method: 'POST' })
+                                  if (r.ok) {
+                                    const updated = await r.json()
+                                    setSuggestions((prev) => prev.map((x) => (x.id === s.id ? { ...x, ...updated } : x)))
+                                  }
+                                }}
+                                className="text-xs px-3 py-1 rounded-lg bg-blue-500 text-white
+                                  hover:bg-blue-600 cursor-pointer transition-colors"
+                                title="draft → pending 수동 승격 + auto_triage 실행"
+                              >
+                                승격
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleStatusChange(s.id, 'rejected', comment || '다짐 철회') }}
+                                className="text-xs px-3 py-1 rounded-lg bg-gray-400 text-white
+                                  hover:bg-gray-500 cursor-pointer transition-colors"
+                              >
+                                철회
+                              </button>
+                            </>
+                          )}
                           {s.status === 'pending' && (
                             <>
                               <button
