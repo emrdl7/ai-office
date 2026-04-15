@@ -75,6 +75,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
   asyncio.create_task(office.restore_pending_tasks())
   # 재기동 복구 — 코드 패치 중단으로 남은 orphan git 상태 정리
   asyncio.create_task(_recover_orphan_patches())
+  # 재시작 완료 알림 — 직전이 "재시작 중" 시스템 알림이면 후속 알림 발행
+  asyncio.create_task(_announce_restart_complete())
 
   # 에이전트 자발적 활동 백그라운드 루프 시작
   office._autonomous_task = asyncio.create_task(office.start_autonomous_loop())
@@ -242,6 +244,35 @@ async def get_improvement_report(request: Request) -> dict[str, Any]:
   '''최신 자가개선 분석 보고서를 반환한다.'''
   office: Office = request.app.state.office
   return office.improvement_engine.get_report()
+
+
+async def _announce_restart_complete() -> None:
+  '''직전 로그가 "재시작 중" 시스템 알림이면 "재시작 완료" 후속 알림.
+
+  콜드 스타트(첫 부팅 / 무관한 종료 후 재기동)에서는 발행 안 함.
+  웹소켓 구독자가 붙을 시간을 짧게 주기 위해 1.5초 대기.
+  '''
+  await asyncio.sleep(1.5)
+  try:
+    from db.log_store import load_logs
+    recent = load_logs(limit=3)
+  except Exception:
+    return
+  was_restart = any(
+    l.get('agent_id') == 'teamlead'
+    and l.get('event_type') == 'system_notice'
+    and '재시작 중' in (l.get('message') or '')
+    for l in recent
+  )
+  if not was_restart:
+    return
+  try:
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message='✅ 서버 재시작 완료 — 새 코드로 동작 중.',
+    ))
+  except Exception:
+    logger.debug('재시작 완료 알림 실패', exc_info=True)
 
 
 async def _recover_orphan_patches() -> None:
