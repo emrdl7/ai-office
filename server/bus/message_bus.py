@@ -1,11 +1,14 @@
 # SQLite WAL 기반 메시지 버스 (INFR-01)
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .schemas import AgentMessage
 from db.client import get_connection, init_schema
+
+
+DEFAULT_ARCHIVE_AFTER_DAYS = 30
 
 
 class MessageBus:
@@ -72,6 +75,42 @@ class MessageBus:
             'ack_at': row['ack_at'],
             'status': row['status'],
         })
+
+    def archive_old_messages(self, days: int = DEFAULT_ARCHIVE_AFTER_DAYS) -> int:
+        '''완료(status=done)된 N일 이전 메시지를 messages_archive로 이관.
+
+        ack_at이 없으면 created_at 기준. 트랜잭션 하나로 INSERT + DELETE 하여
+        부분 실패 시 롤백. 이관된 행 수를 반환.
+        '''
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._conn.cursor()
+        try:
+            cur.execute('BEGIN IMMEDIATE')
+            # status=done AND COALESCE(ack_at, created_at) < cutoff
+            cur.execute(
+                '''INSERT INTO messages_archive
+                   (id, type, from_agent, to_agent, payload, reply_to,
+                    priority, tags, metadata, created_at, ack_at, status, archived_at)
+                   SELECT id, type, from_agent, to_agent, payload, reply_to,
+                          priority, tags, metadata, created_at, ack_at, status, ?
+                   FROM messages
+                   WHERE status = 'done'
+                     AND COALESCE(ack_at, created_at) < ?''',
+                (now, cutoff),
+            )
+            moved = cur.rowcount
+            cur.execute(
+                '''DELETE FROM messages
+                   WHERE status = 'done'
+                     AND COALESCE(ack_at, created_at) < ?''',
+                (cutoff,),
+            )
+            self._conn.commit()
+            return moved
+        except sqlite3.Error:
+            self._conn.rollback()
+            raise
 
     def close(self):
         self._conn.close()

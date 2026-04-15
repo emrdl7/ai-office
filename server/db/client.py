@@ -46,5 +46,26 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_messages_to_status
             ON messages(to_agent, status, created_at);
+
+        -- 아카이브 테이블 (messages와 동일 스키마 + archived_at)
+        -- 완료된 메시지를 N일 후 이관해 핫 테이블 크기를 일정하게 유지.
+        CREATE TABLE IF NOT EXISTS messages_archive (
+            id          TEXT PRIMARY KEY,
+            type        TEXT NOT NULL,
+            from_agent  TEXT NOT NULL,
+            to_agent    TEXT NOT NULL,
+            payload     TEXT NOT NULL,
+            reply_to    TEXT,
+            priority    TEXT NOT NULL DEFAULT 'normal',
+            tags        TEXT NOT NULL DEFAULT '[]',
+            metadata    TEXT NOT NULL DEFAULT '{}',
+            created_at  TEXT NOT NULL,
+            ack_at      TEXT,
+            status      TEXT NOT NULL DEFAULT 'done',
+            archived_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_messages_archive_created
+            ON messages_archive(created_at);
     ''')
     conn.commit()
