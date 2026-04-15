@@ -66,8 +66,10 @@
 - [x] `suggestions.source_log_id` 컬럼 + `create_suggestion` 매개변수 (2026-04-15).
 - [x] autonomous_loop의 speaker/reactor/closing 3개 경로에서 LogEvent.id를
       캡처해 `_file_commitment_suggestion` / `_auto_file_suggestion`에 전파.
-- [ ] `_file_reaction_suggestion` / 멘션 응답 경로 추가 배선 (선택).
-- [ ] 대시보드에서 건의 → 원본 발화 이동 링크.
+- [x] `_file_reaction_suggestion` source_log_id 매개변수 + create_suggestion
+      전파 (2026-04-15). 호출부 배선은 해당 위치에서 log id가 가용해질 때 추가.
+- [x] 대시보드 SuggestionModal에 '📍 원본' 링크 + ChatRoom 메시지 컨테이너에
+      `id='log-{id}'` 부여 — 클릭 시 스크롤 + 2초 ring 강조 (2026-04-15).
 
 ---
 
@@ -97,12 +99,13 @@
 
 - [ ] `_execute_project` (659 LOC) 자체 분할 — 프로젝트 실행 로직의 단계별
       sub-helper(`_run_phase_group`, `_persist_phase_output` 등)로 쪼갬.
-      project_runner.py 내부 리팩터.
+      project_runner.py 내부 리팩터. **위험도 높음** — 행동 변경 없는 분할이
+      어려워 충분한 E2E 테스트 선행 필요.
 - [ ] `agent_interactions._team_chat` (~220 LOC)의 `_single_agent_chat` 내부
-      함수 외부화 — 테스트 가능하게.
+      함수 외부화 — 테스트 가능하게. office/user_input/mentioned_ids를 인자로 승격.
 - [ ] MCP 재연결 시 plugin:telegram 토큰/정책 재점검 (세션 간 연결 실패 관찰됨).
-- [ ] 로그 DB 아카이빙 — `log_storage_stats` 임계치(30일+ 1만건 or 50MB)에
-      도달하면 `chat_logs_archive`로 이관 (버스 아카이브와 동일 패턴).
+- [x] 로그 DB 아카이빙 (2026-04-15) — `chat_logs_archive` + `archive_old_logs`
+      / `maybe_archive_logs` (1만건 또는 50MB 임계). main.archive_loop에 통합.
 
 ---
 
