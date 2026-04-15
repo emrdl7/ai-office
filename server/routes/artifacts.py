@@ -207,6 +207,59 @@ async def get_active_project_api(request: Request):
   return {'project_id': '', 'title': ''}
 
 
+@router.get('/api/project/status')
+async def get_project_status(request: Request):
+  '''현재 프로젝트 진행 상태를 반환 — 대시보드 실시간 표시용.
+
+  필드:
+  - state: Office 상태 (idle/working/qa_review/...)
+  - project_id/title: 활성 프로젝트
+  - active_agent: 현재 작업 중인 에이전트
+  - current_phase: 현재 단계명
+  - work_started_at: 업무 시작 ISO
+  - elapsed_sec: 업무 경과 시간 (초)
+  - revision_count: 현재 리비전 반복 횟수
+  - nodes: TaskGraph가 있으면 {total, completed, in_progress} 집계
+  '''
+  from datetime import datetime, timezone
+  office: Office = request.app.state.office
+
+  elapsed_sec = 0
+  started = (office._work_started_at or '').strip()
+  if started:
+    try:
+      started_dt = datetime.fromisoformat(started.replace('Z', '+00:00'))
+      elapsed_sec = int((datetime.now(timezone.utc) - started_dt).total_seconds())
+    except Exception:
+      elapsed_sec = 0
+
+  nodes_summary = None
+  graph = getattr(office, '_task_graph', None)
+  if graph is not None:
+    try:
+      state_dict = graph.to_state_dict()
+      total = len(state_dict)
+      completed = sum(1 for t in state_dict.values() if t.get('status') == 'completed')
+      in_progress = sum(1 for t in state_dict.values() if t.get('status') == 'in_progress')
+      nodes_summary = {
+        'total': total, 'completed': completed, 'in_progress': in_progress,
+      }
+    except Exception:
+      nodes_summary = None
+
+  return {
+    'state': office._state.value,
+    'project_id': office._active_project_id or '',
+    'title': office._active_project_title or '',
+    'active_agent': office._active_agent or '',
+    'current_phase': office._current_phase or '',
+    'work_started_at': started,
+    'elapsed_sec': elapsed_sec,
+    'revision_count': office._revision_count,
+    'nodes': nodes_summary,
+  }
+
+
 @router.get('/api/exports/{task_id}')
 async def get_exportable_formats(task_id: str):
   '''태스크의 내보내기 가능 포맷 목록을 반환한다.'''

@@ -19,6 +19,10 @@ async def list_suggestions_api(
   )
 
 
+# 실패/경고 이벤트 프리셋 — 'preset=errors' 지정 시 아래 타입만 필터
+_ERROR_EVENT_TYPES = ['error', 'system_notice']
+
+
 @router.get('/api/search')
 async def unified_search_api(
   q: str = '',
@@ -26,18 +30,25 @@ async def unified_search_api(
   agent_id: str = '',
   include_archive: bool = False,
   limit: int = 50,
+  preset: str = '',
 ):
   '''chat_logs / suggestions / dynamics 통합 검색.
 
   type: 'logs' | 'suggestions' | 'dynamics' | 'all'
+  preset: 'errors' → logs만 event_type in (error, system_notice)로 제한
   '''
   from db.log_store import search_logs
   from db.suggestion_store import list_suggestions
-  result: dict = {'q': q, 'type': type}
+  result: dict = {'q': q, 'type': type, 'preset': preset}
   t = (type or 'all').lower()
+  event_types = _ERROR_EVENT_TYPES if preset == 'errors' else None
+  if preset == 'errors':
+    t = 'logs'  # 실패 프리셋은 logs만 의미 있음
+    result['type'] = 'logs'
   if t in ('logs', 'all'):
     result['logs'] = search_logs(
       q=q, agent_id=agent_id, include_archive=include_archive, limit=limit,
+      event_types=event_types,
     )
   if t in ('suggestions', 'all'):
     result['suggestions'] = list_suggestions(q=q, target_agent=agent_id, limit=limit)

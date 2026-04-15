@@ -1,7 +1,10 @@
 # 채팅 로그 영속 저장소 — SQLite 기반
 import json
+import logging
 import sqlite3
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / 'data' / 'logs.db'
 
@@ -79,8 +82,35 @@ def maybe_archive_logs(days: int = 30) -> int:
   return 0
 
 
+# placeholder 오염 감지 — 테스트용 mock 문자열이 프로덕션에 유입되면 warning
+_PLACEHOLDER_PATTERNS = (
+  '초안 내용입니다',
+  '샘플 응답입니다',
+  'lorem ipsum',
+  'Lorem ipsum',
+  'TODO: fill',
+  'PLACEHOLDER',
+)
+
+
+def _check_placeholder_contamination(log_dict: dict) -> None:
+  msg = log_dict.get('message', '') or ''
+  agent = log_dict.get('agent_id', '')
+  # 테스트/mock 에이전트 이벤트는 예상된 placeholder — 제외
+  if agent in ('system', 'user'):
+    return
+  for pat in _PLACEHOLDER_PATTERNS:
+    if pat in msg:
+      logger.warning(
+        'placeholder 오염 감지 — agent=%s event=%s pattern=%r msg_preview=%r',
+        agent, log_dict.get('event_type', ''), pat, msg[:120],
+      )
+      return
+
+
 def save_log(log_dict: dict) -> None:
   '''로그를 저장한다.'''
+  _check_placeholder_contamination(log_dict)
   c = _conn()
   c.execute(
     'INSERT OR IGNORE INTO chat_logs (id, agent_id, event_type, message, data, timestamp) '
@@ -227,10 +257,12 @@ def search_logs(
   agent_id: str = '',
   include_archive: bool = False,
   limit: int = 100,
+  event_types: list[str] | None = None,
 ) -> list[dict]:
   '''채팅 로그 검색. q는 message LIKE, agent_id는 정확 매치.
 
   include_archive=True면 chat_logs_archive도 UNION으로 함께 검색.
+  event_types가 주어지면 해당 타입만 (실패 이벤트 프리셋용).
   결과는 timestamp DESC, 최대 limit건.
   '''
   q_trim = (q or '').strip()
@@ -243,6 +275,10 @@ def search_logs(
   if agent_id:
     where.append('agent_id = ?')
     params.append(agent_id)
+  if event_types:
+    placeholders = ','.join('?' * len(event_types))
+    where.append(f'event_type IN ({placeholders})')
+    params.extend(event_types)
   where_sql = f'WHERE {" AND ".join(where)}' if where else ''
   base = (
     f'SELECT id, agent_id, event_type, message, data, timestamp '
