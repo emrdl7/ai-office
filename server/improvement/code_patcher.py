@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # 지수 백오프 재시도 설정
-_RETRY_MAX = 3        # 최대 재시도 횟수 (초기 시도 제외)
+_RETRY_MAX = 2        # 최대 재시도 횟수 (초기 시도 제외) — 3→2: 락 점유 시간 단축 (UX)
 _RETRY_BASE = 2.0     # 기본 대기 초 (2^n 배수로 증가)
 _RETRY_MAX_DELAY = 30.0  # 대기 상한 (초) — 600초 타임아웃의 5% 이내로 제한
-# ↑ 최악의 경우 총 실행 시간: 600s × (1 + _RETRY_MAX) + 대기(2+4+8)초 ≈ 2414초(약 40분).
-#   이는 의도된 동작 — 일시적 API 과부하를 감수하고 최종 성공을 목표로 한다.
-#   빠른 실패가 필요하면 _RETRY_MAX를 1~2로 줄이거나 apply_suggestion 호출 측의 timeout을 조정하라.
+# ↑ 최악의 경우 총 실행 시간: 600s × (1 + _RETRY_MAX) + 대기(2+4)초 ≈ 1806초(약 30분).
+#   대시보드에서 다른 suggestion apply가 락을 기다리는 시간도 이 값 이내로 제한됨.
+#   더 오래 참아도 괜찮다면 _RETRY_MAX를 3으로 올려라.
 
 # 호출자용 힌트 — apply_suggestion 한 건의 최대 소요 시간(초) 상한선
 # 계산: Claude 단일 timeout × 총 시도 횟수 + 대기 합계(2+4+…+2^_RETRY_MAX)
@@ -214,12 +214,18 @@ def _build_patch_prompt(suggestion: dict) -> str:
 ## ⚠️ 범위 제약 (반드시 준수) — 어기면 패치 전체 폐기
 - **변경 범위는 건의 내용에 명시된 파일·모듈에만 한정**하라. 건의가 "디자인 토큰"이면 토큰 관련 파일(tokens/, tokens.css, 빌드 스크립트)만 허용. 서버 코드·설정·라이브러리는 건드리지 마라.
 - **최대 15개 파일, 총 500줄 이하** 변경을 목표로. 초과가 불가피하면 중단하고 "범위 초과: [이유]"로 응답.
-- **다음 파일은 특별한 언급이 없는 한 절대 수정 금지**:
+- **다음 파일은 건의 본문의 `FILES:` 블록에 정확 경로로 선언된 경우에만 수정 허용**:
   - `server/main.py`, `server/orchestration/office.py` (핵심 오케스트레이션)
   - `dashboard/src/components/SuggestionModal.tsx`, `ChatRoom.tsx`, `Sidebar.tsx` (UI 핵심)
   - `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` (의존성)
   - `vite.config.ts`, `tsconfig.json`, `.gitignore`, `.gitattributes` (프로젝트 설정)
-- 위 금지 파일을 손대야만 한다면 **먼저 중단하고 "범위 확인 필요: 건의가 {{파일명}} 수정을 포함하는지 불분명"** 으로 응답하라.
+- 선언 형식 (건의 본문 내 구조화 블록):
+  ```
+  FILES:
+  - server/main.py
+  - dashboard/src/components/SuggestionModal.tsx
+  ```
+- 위 블록이 없는데 금지 파일을 손대야 한다면 **중단하고 "범위 확인 필요: 건의가 {{파일명}} 수정을 포함하는지 불분명"** 으로 응답하라. 자연어 언급만으로는 수정 불가 (post-patch 스코프 검사에서 폐기됨).
 - 건의에서 요구하지 않은 **라이브러리 추가·버전 업·설정 변경 금지**.
 
 ## 작업 지침
@@ -241,14 +247,22 @@ async def apply_suggestion(suggestion: dict) -> bool:
   suggestion_id = suggestion['id']
   branch = f'{BRANCH_PREFIX}/{suggestion_id}'
 
-  # 락 대기 중이면 대기 안내
-  if _PATCH_LOCK.locked():
+  # 락 대기 중이면 예상 시간과 함께 안내
+  was_queued = _PATCH_LOCK.locked()
+  if was_queued:
+    max_min = int(_APPLY_TOTAL_TIMEOUT_HINT // 60)
     await _emit(
       'teamlead',
-      f'⏳ 건의 #{suggestion_id} — 다른 코드 패치 작업 중입니다. 대기 큐에 추가됨.',
+      f'⏳ 건의 #{suggestion_id} — 다른 코드 패치 작업 중입니다. '
+      f'대기 큐에 추가됨 (최대 약 {max_min}분).',
     )
 
   async with _PATCH_LOCK:
+    if was_queued:
+      await _emit(
+        'teamlead',
+        f'▶️ 건의 #{suggestion_id} — 대기 종료, 패치 시작.',
+      )
     return await _apply_suggestion_locked(suggestion, suggestion_id, branch)
 
 

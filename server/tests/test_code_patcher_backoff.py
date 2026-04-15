@@ -33,7 +33,7 @@ async def test_retry_on_runner_error_then_success():
 
 
 async def test_exponential_backoff_delays():
-    """재시도마다 지수적으로 증가하는 대기 시간: 2s → 4s → 8s."""
+    """재시도마다 지수적으로 증가하는 대기 시간 — _RETRY_MAX에 맞춰 동적 검증."""
     side_effects = [ClaudeRunnerError('오류')] * _RETRY_MAX + ['최종 성공']
     with patch('improvement.code_patcher.run_claude_isolated', new_callable=AsyncMock,
                side_effect=side_effects), \
@@ -44,7 +44,8 @@ async def test_exponential_backoff_delays():
 
     assert result == '최종 성공'
     delays = [c.args[0] for c in mock_sleep.await_args_list]
-    assert delays == [2.0, 4.0, 8.0]  # min(2^1,30), min(2^2,30), min(2^3,30)
+    expected = [min(2.0 ** (i + 1), 30.0) for i in range(_RETRY_MAX)]
+    assert delays == expected
 
 
 async def test_timeout_not_retried():
