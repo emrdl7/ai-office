@@ -7,22 +7,21 @@
 >   `_finalize_project` 추출. phase 루프 본체는 중간 return 다발로 유지.
 > - 학습 루프 3종 + 말·행동 일치(P2.5 6종) + 사용자 개입 점검(P2.5-α 3종) 가동.
 > - 관측: `/api/project/status` · 통합 검색 + errors preset · placeholder 오염 감지.
-> - 테스트: **179 pass / 0 fail / 0 skip**. CI = pytest + ruff + **mypy(strict 17모듈)** + vitest(dashboard) + `data/` 오염 가드.
+> - 테스트: **179 pass / 0 fail / 0 skip**. CI = pytest + ruff + **mypy(strict 18모듈)** + vitest(dashboard) + `data/` 오염 가드.
 > - 경로: `core/paths.py` 단일 출처(WORKSPACE_ROOT/MEMORY_ROOT, env 주입).
 
 ---
 
 ## 🚧 남은 작업 (2건)
 
-### mypy strict 승격 (17모듈 완료 / orchestration 잔여 2 + routes + 기타)
-- 통과(17): `core/paths` · `db/*` · `log_bus/*` · `bus/*` +
+### mypy strict 승격 (18모듈 완료 / orchestration 잔여 1 + routes + 기타)
+- 통과(18): `core/paths` · `db/*` · `log_bus/*` · `bus/*` +
   `orchestration/{state,phase_registry,task_graph,intent,expertise,router,
   meeting,agent,user_input,agent_interactions,teamlead_review,autonomous_loop,
-  project_runner}`.
+  project_runner,suggestion_filer}`.
 - 다음 세션 시작점:
-  1. **orchestration 잔여** — `office.py`(클래스 내부 메서드 전수 힌트)와
-     `suggestion_filer.py`. `office: Any` 파서 스크립트는 이미 검증됨 —
-     def-경계만 터치.
+  1. **orchestration 잔여** — `office.py` (클래스 내부 메서드 전수 힌트).
+     `office: Any` 파서 스크립트 이미 검증됨 — def-경계만 터치.
   2. **routes/*** 8종 — Request/Response 경계라 직관적. 주로 `Request`/`Any`
      return 힌트.
   3. **기타** — `improvement/*`, `harness/*`, `runners/*`, `memory/*`, `main.py`.

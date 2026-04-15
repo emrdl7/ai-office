@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from config.team import display_name
 from log_bus.event_bus import LogEvent
@@ -15,7 +16,7 @@ from log_bus.event_bus import LogEvent
 logger = logging.getLogger(__name__)
 
 
-async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None:
+async def _file_reaction_suggestion(office: Any, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None:
   '''소단계 리액션의 [건의] 라벨을 건의게시판에 등록. _auto_file_suggestion의 dedup을 재사용.'''
   from db.suggestion_store import create_suggestion, list_suggestions
 
@@ -97,7 +98,7 @@ async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, mess
 
 
 
-async def _auto_file_suggestion(office, agent_id: str, message: str, source_log_id: str = '') -> None:
+async def _auto_file_suggestion(office: Any, agent_id: str, message: str, source_log_id: str = '') -> None:
   '''자발적 대화 중 개선 제안/도구 요구가 감지되면 건의게시판에 자동 등록.
 
   키워드 기반 heuristic (LLM 호출 없음 → 비용 0).
@@ -226,12 +227,12 @@ async def _auto_file_suggestion(office, agent_id: str, message: str, source_log_
 
 
 async def _file_qa_rule_suggestion(
-  office,
+  office: Any,
   offending_agent: str,
   rule_text: str,
   failure_reason: str,
   arb_reason: str,
-  opinions: list[dict],
+  opinions: list[dict[str, Any]],
   phase_name: str,
   source_log_id: str = '',
 ) -> None:
@@ -290,7 +291,7 @@ async def _file_qa_rule_suggestion(
 
 
 async def _file_commitment_suggestion(
-  office,
+  office: Any,
   committer_id: str,
   message: str,
   source_speaker: str = '',
@@ -421,7 +422,7 @@ async def _file_commitment_suggestion(
 
 
 async def _file_capability_gap_suggestion(
-  office,
+  office: Any,
   speaker_id: str,
   message: str,
   source_log_id: str = '',
