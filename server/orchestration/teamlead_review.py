@@ -342,6 +342,95 @@ def stop_loop(office) -> None:
   office._review_running = False
 
 
+def _build_agent_metrics_context(office, agent_name: str) -> str:
+  '''회고 프롬프트에 주입할 에이전트별 실행 컨텍스트. QA/리비전/피드백 요약.'''
+  lines = []
+  metrics = list(getattr(office, '_phase_metrics', None) or [])
+  own = [m for m in metrics if getattr(m, 'agent_name', '') == agent_name]
+  if own:
+    qa_fails = sum(1 for m in own if not getattr(m, 'qa_passed', True))
+    rev = sum(int(getattr(m, 'revision_count', 0) or 0) for m in own)
+    total_s = sum(float(getattr(m, 'duration_seconds', 0.0) or 0.0) for m in own)
+    lines.append(
+      f'- 담당 단계 {len(own)}개 · QA 불합격 {qa_fails}회 · 리비전 {rev}회 · 총 {int(total_s // 60)}분'
+    )
+  feedback = getattr(office, '_phase_feedback', None) or []
+  received = [
+    f for f in feedback
+    if isinstance(f, dict) and display_name(agent_name) not in (f.get('from') or '')
+  ][-3:]
+  if received:
+    lines.append('- 받은 피드백 (최근):')
+    for f in received:
+      lines.append(f'  · {f.get("from", "")}[{f.get("phase", "")}]: {(f.get("content") or "")[:80]}')
+  return '\n'.join(lines)
+
+
+async def _synthesize_and_save_retrospective(
+  office,
+  project_title: str,
+  project_type: str,
+  duration: float,
+  user_input: str,
+  lessons: list[tuple[str, str]],
+) -> None:
+  '''팀원 회고 발언을 팀장이 종합해 retrospective.md 아티팩트로 저장.
+
+  유기성 원칙: 팀장이 단순 나열이 아니라 *관통하는 실마리*를 뽑고,
+  다음 프로젝트에 적용할 액션 1~2개를 제시.
+  '''
+  if not lessons:
+    return
+  lessons_block = '\n'.join(f'- {display_name(n)}: {t}' for n, t in lessons)
+  synth_prompt = (
+    f'팀원들의 회고 발언을 종합해 회고록을 작성하세요.\n\n'
+    f'[프로젝트] {project_title} ({project_type}) · {int(duration // 60)}분 소요\n'
+    f'[사용자 지시 요약]\n{user_input[:400]}\n\n'
+    f'[팀원 회고]\n{lessons_block}\n\n'
+    f'아래 마크다운 형식 그대로, 간결하게. 각 섹션 2~3문장.\n\n'
+    f'## 이번 프로젝트 핵심\n'
+    f'(프로젝트가 무엇이었고 어떻게 진행되었는지 한 단락)\n\n'
+    f'## 관통하는 실마리\n'
+    f'(팀원 회고들을 가로지르는 공통 교훈/패턴 1~2개)\n\n'
+    f'## 다음 프로젝트에 적용할 액션\n'
+    f'(구체적 실행 액션 1~2개, 책임 에이전트 명시)'
+  )
+  synthesis = ''
+  try:
+    synthesis = await run_claude_isolated(
+      synth_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+    )
+  except Exception:
+    logger.debug('회고 종합 생성 실패', exc_info=True)
+
+  header = (
+    f'# {project_title} — 팀 회고\n\n'
+    f'- 유형: {project_type}\n'
+    f'- 소요: {int(duration // 60)}분 {int(duration % 60)}초\n'
+    f'- 참여: {", ".join(display_name(n) for n, _ in lessons)}\n\n'
+    f'## 팀원별 배운 점\n'
+    f'{lessons_block}\n\n'
+  )
+  body = (synthesis or '').strip() or '_(팀장 종합 생략)_'
+  doc = header + body + '\n'
+
+  try:
+    office.workspace.write_artifact('retrospective.md', doc)
+    logger.info('retrospective.md 저장: %s', project_title)
+  except Exception:
+    logger.debug('retrospective.md 저장 실패', exc_info=True)
+
+  # 팀장이 종합 요지 한마디 채팅에 공유
+  if synthesis:
+    first_action = ''
+    for line in synthesis.splitlines():
+      if '액션' in line or line.strip().startswith('-'):
+        first_action = line.strip()[:120]
+        break
+    if first_action:
+      await office._emit('teamlead', f'📘 회고 종합: {first_action}', 'response')
+
+
 async def run_retrospective(
   office,
   project_title: str,
@@ -352,7 +441,9 @@ async def run_retrospective(
 ) -> None:
   '''프로젝트 완료 후 각 에이전트가 배운 점을 팀 메모리에 기록한다.
 
-  채팅에도 회고 발언이 표시되어 "실제 회고 미팅" 느낌을 준다.
+  각 회고 프롬프트에는 해당 에이전트의 실제 실행 메트릭·피드백을 주입하여
+  "30자 한 줄"에 그치지 않고 구체 교훈이 나오도록 유도. 팀장이 회고를
+  종합해 `retrospective.md` 아티팩트로 저장한다 — 사람이 읽을 회고록.
   '''
   await office._emit('teamlead', '프로젝트 회고를 진행하겠습니다. 각자 배운 점 한마디씩 해주세요.', 'response')
 
@@ -371,13 +462,16 @@ async def run_retrospective(
       return name, ''
     try:
       system = agent._build_system_prompt()
+      metrics_ctx = _build_agent_metrics_context(office, name)
+      metrics_section = f'\n[당신의 이번 프로젝트 실행 요약]\n{metrics_ctx}\n' if metrics_ctx else ''
       retro_prompt = (
         f'프로젝트 "{project_title}"이(가) 완료되었습니다.\n'
         f'프로젝트 유형: {project_type}\n'
-        f'소요 시간: {int(duration // 60)}분\n\n'
-        f'이번 프로젝트에서 당신({display_name(name)})이 배운 점을 한 줄로 공유하세요.\n'
-        f'구체적 교훈이어야 합니다 (예: "IA 설계 시 모바일 우선으로 접근해야 속도가 빠르다").\n'
-        f'30자 이내, 메신저 톤, 마크다운 금지.'
+        f'소요 시간: {int(duration // 60)}분\n'
+        f'{metrics_section}\n'
+        f'위 실행 요약을 참고해서, 당신({display_name(name)})이 이번 프로젝트에서 배운 점을 한 줄로 공유하세요.\n'
+        f'- 실제 겪은 일에 근거한 구체 교훈 (예: "리비전 2회 반복 → 초안에 AC 체크 먼저 해야")\n'
+        f'- 30자 이내, 메신저 톤, 마크다운 금지.'
       )
       result = await run_claude_isolated(
         f'{system}\n\n---\n\n{retro_prompt}',
@@ -394,6 +488,7 @@ async def run_retrospective(
   )
 
   key_decisions = []
+  lesson_pairs: list[tuple[str, str]] = []
   for name, lesson_text in results:
     if not lesson_text:
       continue
@@ -401,6 +496,7 @@ async def run_retrospective(
     # 채팅에 회고 발언 표시
     await office._emit(name, f'💭 {lesson_text}', 'response')
     key_decisions.append(lesson_text)
+    lesson_pairs.append((name, lesson_text))
 
     # 팀 메모리에 교훈 저장
     try:
@@ -414,6 +510,14 @@ async def run_retrospective(
       ))
     except Exception:
       logger.debug("팀 교훈 저장 실패: %s", name, exc_info=True)
+
+  # 팀장 종합 → retrospective.md 아티팩트
+  try:
+    await _synthesize_and_save_retrospective(
+      office, project_title, project_type, duration, user_input, lesson_pairs,
+    )
+  except Exception:
+    logger.debug('회고 종합/저장 실패', exc_info=True)
 
   # 팀장 마무리 한마디
   await office._emit('teamlead', '좋은 회고였습니다. 다음 프로젝트에 반영하겠습니다. 수고하셨습니다 👏', 'response')

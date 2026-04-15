@@ -185,13 +185,11 @@ class Office:
           'response',
         )
 
-  async def _emit(self, agent_id: str, message: str, event_type: str = 'message') -> None:
-    '''이벤트 버스에 로그 발행'''
-    await self.event_bus.publish(LogEvent(
-      agent_id=agent_id,
-      event_type=event_type,
-      message=message,
-    ))
+  async def _emit(self, agent_id: str, message: str, event_type: str = 'message') -> LogEvent:
+    '''이벤트 버스에 로그 발행. 후속 건의 등록 등에서 추적용으로 event를 반환.'''
+    event = LogEvent(agent_id=agent_id, event_type=event_type, message=message)
+    await self.event_bus.publish(event)
+    return event
 
   async def _compress_history(self) -> None:
     '''기획자가 이전 대화를 압축 요약한다.
@@ -502,77 +500,8 @@ class Office:
   async def _phase_intro(self, agent_name: str, phase_name: str) -> None: return await agent_interactions._phase_intro(self, agent_name, phase_name)
 
   async def handle_mid_work_input(self, user_input: str) -> None:
-    '''작업 진행 중 사용자가 보낸 메시지를 처리한다.
-
-    3가지 경우를 판단:
-    1. @멘션 피드백 → 해당 에이전트가 즉시 응답
-    2. 일반 대화/의견 → 팀장이 확인 + 작업 컨텍스트에 반영
-    3. 중단/방향전환 → 기존 _check_user_directive 로직
-    '''
-    import re
-    from orchestration.meeting import MENTION_MAP
-
-    msg = user_input.strip()
-
-    # 중단 요청 확인
-    stop_keywords = ('중단', '멈춰', '그만', '스탑', 'stop', '취소')
-    if any(kw in msg.lower() for kw in stop_keywords):
-      await self._emit('teamlead', '작업을 중단하겠습니다.', 'response')
-      self._state = OfficeState.IDLE
-      self._active_agent = ''
-      self._work_started_at = ''
-      self._current_phase = ''
-      return
-
-    # @멘션 파싱
-    mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
-    if mentions:
-      for raw_mention in mentions:
-        target_id = MENTION_MAP.get(raw_mention)
-        if not target_id:
-          stripped = raw_mention.rstrip('님')
-          target_id = MENTION_MAP.get(stripped)
-        if not target_id or target_id == 'user':
-          continue
-
-        if target_id == 'teamlead':
-          # 팀장에게 멘션 → Claude가 응답
-          try:
-            response = await run_claude_isolated(
-              f'당신은 팀장 잡스입니다. 팀이 작업 중인데 사용자가 이렇게 말했습니다:\n'
-              f'"{msg}"\n짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
-              model='claude-haiku-4-5-20251001',
-              timeout=15.0,
-            )
-            await self._emit('teamlead', response.strip(), 'response')
-          except Exception:
-            logger.debug("팀장 멘션 응답 생성 실패", exc_info=True)
-            await self._emit('teamlead', '네, 확인했습니다. 반영하겠습니다.', 'response')
-        else:
-          # 특정 에이전트에게 멘션
-          agent = self.agents.get(target_id)
-          if agent:
-            system = agent._build_system_prompt()
-            try:
-              response = await run_claude_isolated(
-                f'{system}\n\n---\n\n'
-                f'작업 중인데 사용자(상사)가 당신에게 이렇게 말했습니다:\n'
-                f'"{msg}"\n짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
-                model='claude-haiku-4-5-20251001',
-                timeout=15.0,
-              )
-              await self._emit(target_id, response.strip(), 'response')
-            except Exception:
-              logger.debug("에이전트 멘션 응답 생성 실패: %s", target_id, exc_info=True)
-              await self._emit(target_id, '네, 확인했습니다. 반영하겠습니다.', 'response')
-
-      # 피드백을 작업 컨텍스트에 축적
-      self._user_mid_feedback.append(msg)
-      return
-
-    # @멘션 없는 일반 의견/피드백
-    self._user_mid_feedback.append(msg)
-    await self._emit('teamlead', f'말씀 확인했습니다. 작업에 반영하겠습니다.', 'response')
+    from orchestration import user_input as _ui
+    return await _ui.handle_mid_work_input(self, user_input)
 
   async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
     return await project_runner._create_handoff_guide(self, group_name, group_results, target_phase)

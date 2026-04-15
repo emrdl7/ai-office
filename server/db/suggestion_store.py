@@ -407,15 +407,41 @@ def get_suggestion(suggestion_id: str) -> dict | None:
   return dict(row) if row else None
 
 
-def list_suggestions(status: str = '') -> list[dict]:
-  '''건의 목록을 반환한다.'''
+def list_suggestions(
+  status: str = '',
+  category: str = '',
+  target_agent: str = '',
+  q: str = '',
+  limit: int = 0,
+) -> list[dict]:
+  '''건의 목록을 반환한다.
+
+  status/category/target_agent 정확 매치, q는 title+content LIKE 검색.
+  limit>0이면 최대 N건. 기본 정렬 created_at DESC.
+  '''
   c = _conn()
+  where: list[str] = []
+  params: list = []
   if status:
-    rows = c.execute(
-      'SELECT * FROM suggestions WHERE status = ? ORDER BY created_at DESC', (status,)
-    ).fetchall()
-  else:
-    rows = c.execute('SELECT * FROM suggestions ORDER BY created_at DESC').fetchall()
+    where.append('status = ?')
+    params.append(status)
+  if category:
+    where.append('category = ?')
+    params.append(category)
+  if target_agent:
+    where.append('target_agent = ?')
+    params.append(target_agent)
+  q_trim = (q or '').strip()
+  if q_trim:
+    where.append('(title LIKE ? OR content LIKE ?)')
+    like = f'%{q_trim}%'
+    params.extend([like, like])
+  where_sql = f'WHERE {" AND ".join(where)}' if where else ''
+  sql = f'SELECT * FROM suggestions {where_sql} ORDER BY created_at DESC'
+  if limit and limit > 0:
+    sql += ' LIMIT ?'
+    params.append(int(limit))
+  rows = c.execute(sql, params).fetchall()
   c.close()
   return [dict(r) for r in rows]
 

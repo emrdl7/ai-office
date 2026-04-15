@@ -42,6 +42,10 @@ const CATEGORY_LABEL: Record<string, string> = {
   '도구 부족': '도구',
   '정보 부족': '정보',
   '데이터 부족': '데이터',
+  'QA 규칙': 'QA규칙',
+  '프로세스 개선': '프로세스',
+  '아이디어': '아이디어',
+  'collaboration': '협업',
 }
 
 export function SuggestionModal() {

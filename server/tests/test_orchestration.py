@@ -44,11 +44,16 @@ async def test_quick_task_routes_to_single_agent(office_setup):
     '''단순 요청은 담당 팀원 한 명에게만 전달된다'''
     office, bus = office_setup
 
-    # office.py 내부 LLM 호출(팀장 검수 등)도 mock — 재작업 루프 방지
+    # project_runner 내부 LLM 호출(peer 기여·팀장 검수) mock — 재작업 루프 방지
+    async def _fake_claude(prompt, *args, **kwargs):
+        # peer 기여(second_opinion)는 "없음"으로 스킵, 팀장 검수는 PASS
+        if '합격이면' in prompt:
+            return '[PASS] 검수 완료'
+        return '없음'
+
     with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_intent, \
-         patch('orchestration.office.run_claude_isolated', new_callable=AsyncMock) as mock_office_claude:
+         patch('orchestration.project_runner.run_claude_isolated', side_effect=_fake_claude):
         mock_intent.return_value = '[QUICK_TASK:developer]\n이 코드를 분석하세요.'
-        mock_office_claude.return_value = '[PASS] 검수 완료'
 
         # developer와 qa agent의 handle을 mock — QA 루프가 재작업을 트리거하지 않도록
         office.agents['developer'].handle = AsyncMock(return_value='코드 분석 결과입니다.')
@@ -60,7 +65,13 @@ async def test_quick_task_routes_to_single_agent(office_setup):
 
     assert result['state'] == 'completed'
     assert '코드 분석 결과' in result['response']
+    # 담당 에이전트(developer)만 handle 호출 — 다른 에이전트는 routing 되지 않음
     office.agents['developer'].handle.assert_called_once()
+    for name, agent in office.agents.items():
+        if name in ('developer', 'qa'):
+            continue
+        if hasattr(agent.handle, 'assert_not_called'):
+            agent.handle.assert_not_called()
 
 
 @pytest.mark.asyncio

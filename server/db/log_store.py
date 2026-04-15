@@ -220,3 +220,53 @@ def load_logs(limit: int = 200) -> list[dict]:
       'timestamp': r['timestamp'],
     })
   return result
+
+
+def search_logs(
+  q: str = '',
+  agent_id: str = '',
+  include_archive: bool = False,
+  limit: int = 100,
+) -> list[dict]:
+  '''채팅 로그 검색. q는 message LIKE, agent_id는 정확 매치.
+
+  include_archive=True면 chat_logs_archive도 UNION으로 함께 검색.
+  결과는 timestamp DESC, 최대 limit건.
+  '''
+  q_trim = (q or '').strip()
+  c = _conn()
+  params: list = []
+  where = []
+  if q_trim:
+    where.append('message LIKE ?')
+    params.append(f'%{q_trim}%')
+  if agent_id:
+    where.append('agent_id = ?')
+    params.append(agent_id)
+  where_sql = f'WHERE {" AND ".join(where)}' if where else ''
+  base = (
+    f'SELECT id, agent_id, event_type, message, data, timestamp '
+    f'FROM chat_logs {where_sql}'
+  )
+  if include_archive:
+    base = (
+      base + ' UNION ALL '
+      + f'SELECT id, agent_id, event_type, message, data, timestamp '
+      + f'FROM chat_logs_archive {where_sql}'
+    )
+    params = params + list(params)  # WHERE 두 번 바인딩
+  sql = base + ' ORDER BY timestamp DESC LIMIT ?'
+  params.append(limit)
+  rows = c.execute(sql, params).fetchall()
+  c.close()
+  return [
+    {
+      'id': r['id'],
+      'agent_id': r['agent_id'],
+      'event_type': r['event_type'],
+      'message': r['message'],
+      'data': json.loads(r['data']) if r['data'] else {},
+      'timestamp': r['timestamp'],
+    }
+    for r in rows
+  ]

@@ -224,6 +224,70 @@ async def _auto_file_suggestion(office, agent_id: str, message: str, source_log_
 
 
 
+async def _file_qa_rule_suggestion(
+  office,
+  offending_agent: str,
+  rule_text: str,
+  failure_reason: str,
+  arb_reason: str,
+  opinions: list[dict],
+  phase_name: str,
+  source_log_id: str = '',
+) -> None:
+  '''QA pushback 라운드에서 ADOPT/MODIFY 합의된 규칙을 draft 건의로 등록.
+
+  draft 상태로 등록되어 기존 1h auto_promote 루프가 pending으로 승격시키면
+  PromptEvolver가 target_agent의 prompt rule로 반영한다.
+  '''
+  if not rule_text:
+    return
+  from db.suggestion_store import create_suggestion, is_duplicate, log_event
+
+  title = f'[QA규칙] {display_name(offending_agent)}: {rule_text[:50]}'
+  opinions_block = '\n'.join(
+    f'- {display_name(o.get("agent", ""))} [{o.get("stance", "")}]: {o.get("text", "")[:120]}'
+    for o in (opinions or [])
+  )
+  content = (
+    f'**규칙**: {rule_text}\n\n'
+    f'**QA 불합격 사유**: {failure_reason[:300]}\n\n'
+    f'**단계**: {phase_name}\n\n'
+    f'**팀장 중재 근거**: {arb_reason}\n\n'
+    f'**팀원 의견**\n{opinions_block or "(없음)"}\n\n'
+    f'_QA 판정 → 팀 합의 → 규칙 학습 루프로 자동 등록된 draft입니다. '
+    f'승격 시 {display_name(offending_agent)}의 prompt rule로 반영._'
+  )
+  dup, reason = is_duplicate(title, content)
+  if dup:
+    logger.info('QA 규칙 건의 중복 skip: %s | %s', title[:30], reason)
+    return
+  try:
+    created = create_suggestion(
+      agent_id='teamlead',
+      title=title,
+      content=content,
+      category='QA 규칙',
+      target_agent=offending_agent,
+      status='draft',
+      source_log_id=source_log_id,
+    )
+    log_event(created['id'], 'auto_filed', {
+      'kind': 'qa_rule',
+      'offending_agent': offending_agent,
+      'phase': phase_name,
+      'source_log_id': source_log_id,
+    })
+    await office._emit(
+      'teamlead',
+      f'📝 QA 합의 규칙을 draft 건의로 등록 ({display_name(offending_agent)}): "{rule_text[:40]}..."',
+      'system_notice',
+    )
+    logger.info('QA 규칙 건의 등록: target=%s | %s', offending_agent, rule_text[:60])
+  except Exception:
+    logger.debug('QA 규칙 create_suggestion 실패', exc_info=True)
+
+
+
 async def _file_commitment_suggestion(
   office,
   committer_id: str,

@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '../config/team'
-import { IconClipboard, IconChart, IconRefresh } from './icons'
+import { IconClipboard, IconChart, IconRefresh, IconSearch } from './icons'
 import { ReactionStatsPanel } from './ReactionStats'
+import { SearchPanel } from './SearchPanel'
 
 export { AGENT_PROFILE }
 
@@ -219,6 +220,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { activeChannel, setActiveChannel, toggleTheme, theme, toggleArtifacts, showArtifacts, logs } = useStore()
   const prevLogsLen = useRef(0)
   const [showReactions, setShowReactions] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
   function selectChannel(channel: ChannelId) {
     setActiveChannel(channel)
@@ -348,6 +350,16 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       {/* 하단 메뉴 */}
       <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-1">
         <button
+          onClick={() => setShowSearch(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
+            text-sm text-gray-600 dark:text-gray-400
+            hover:bg-gray-100 dark:hover:bg-gray-800
+            cursor-pointer transition-colors"
+        >
+          <IconSearch className="w-4 h-4" />
+          <span>통합 검색</span>
+        </button>
+        <button
           onClick={() => useStore.getState().setShowSuggestions(true)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
             text-sm text-gray-600 dark:text-gray-400
@@ -391,6 +403,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         </button>
       </div>
       {showReactions && <ReactionStatsPanel onClose={() => setShowReactions(false)} />}
+      {showSearch && <SearchPanel onClose={() => setShowSearch(false)} />}
     </aside>
   )
 }

@@ -17,12 +17,88 @@ from config.team import (
   AGENT_IDS, WORKER_IDS, BY_ID,
   display_name, display_with_role,
 )
+from orchestration.intent import classify_intent, IntentType
 from log_bus.event_bus import LogEvent
 from memory.team_memory import SharedLesson, TeamDynamic
 from runners.claude_runner import run_claude_isolated
 from runners.gemini_runner import run_gemini
 
 logger = logging.getLogger(__name__)
+
+
+async def _single_agent_chat(
+  office,
+  name: str,
+  user_input: str,
+  thread_lines: list[str],
+  mentioned_ids: list[str],
+  round_context: str = '',
+) -> tuple[str, str]:
+  '''팀 채팅방에서 한 에이전트의 응답을 생성. PASS 혹은 실패 시 빈 문자열.
+
+  Round 1: round_context 빈 값, 멘션 여부에 따라 강제응답/자율판단 분기.
+  Round 2: round_context에 Round 1 발언을 넣어 추가 반응 여부 결정.
+  '''
+  agent = office.agents.get(name)
+  if not agent:
+    return name, ''
+  system = agent._build_system_prompt(task_hint=user_input)
+  thread_text = '\n'.join(thread_lines)
+  is_mentioned = name in mentioned_ids
+
+  if round_context:
+    prompt = (
+      f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+      f'{thread_text}\n\n'
+      f'[라운드 1 발언]\n{round_context}\n\n'
+      f'---\n\n'
+      f'당신은 {name}입니다.\n'
+      f'위 발언들을 읽고 한마디 더 하겠습니까?\n'
+      f'새로운 관점이나 반박이 있으면 1문장으로 하세요. 없으면 [PASS].'
+      f'\n마크다운 금지.'
+    )
+  elif is_mentioned:
+    prompt = (
+      f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+      f'{thread_text}\n\n'
+      f'---\n\n'
+      f'당신은 {name}입니다.\n'
+      f'사용자가 당신을 직접 지목(@멘션)했습니다. 반드시 응답하세요.\n\n'
+      f'1~2문장, 메신저 톤, 마크다운 금지.\n'
+      f'이미 완료된 작업에 대한 새 약속은 금지.\n'
+      f'대화 중 업무 요청이 감지되면 [TASK_DETECTED:업무 설명]을 출력하세요.'
+    )
+  else:
+    prompt = (
+      f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+      f'{thread_text}\n\n'
+      f'---\n\n'
+      f'당신은 {name}입니다.\n'
+      f'위 대화를 읽고 반응해야 하는지 판단하세요.\n\n'
+      f'[판단 기준]\n'
+      f'- 누군가 이미 적절히 답한 내용은 반복하지 마라.\n'
+      f'- 새로운 관점이나 정보를 더할 수 있을 때만 발언하라.\n'
+      f'- 일상 대화(날씨, 교통, 안부)는 대부분 [PASS]\n'
+      f'- 직접 지목(@멘션)되지 않았고 추가할 가치가 없으면 [PASS]\n'
+      f'- 업무 요청이 감지되면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
+      f'반응 불필요: [PASS]\n'
+      f'반응 필요: 1~2문장, 메신저 톤, 마크다운 금지. 이미 나온 말 반복 금지.\n'
+      f'이미 완료된 작업에 대한 새 약속은 금지.'
+    )
+
+  try:
+    await office._emit(name, '', 'typing')
+    resp = await run_claude_isolated(
+      f'{system}\n\n---\n\n{prompt}',
+      model='claude-haiku-4-5-20251001',
+      timeout=30.0,
+    )
+    content = resp.strip()
+    is_pass = '[PASS]' in content.upper() or content.strip().upper() == 'PASS'
+    return name, ('' if is_pass else content)
+  except Exception:
+    logger.debug("팀 채팅 에이전트 응답 실패: %s", name, exc_info=True)
+    return name, ''
 
 
 async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
@@ -103,78 +179,9 @@ async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', team
   if teamlead_response:
     base_thread.append(f'[팀장] {teamlead_response}')
 
-  # ── Round 1: 4명 병렬 호출 ──
-  async def _single_agent_chat(
-    name: str,
-    thread_lines: list[str],
-    round_context: str = '',
-  ) -> tuple[str, str]:
-    '''(name, 응답) 반환. PASS 혹은 실패 시 빈 문자열.'''
-    agent = office.agents.get(name)
-    if not agent:
-      return name, ''
-    system = agent._build_system_prompt(task_hint=user_input)
-    thread_text = '\n'.join(thread_lines)
-    is_mentioned = name in mentioned_ids
-
-    if round_context:
-      # Round 2 프롬프트 — 상대 발언을 보고 추가 반응 여부 결정
-      prompt = (
-        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
-        f'{thread_text}\n\n'
-        f'[라운드 1 발언]\n{round_context}\n\n'
-        f'---\n\n'
-        f'당신은 {name}입니다.\n'
-        f'위 발언들을 읽고 한마디 더 하겠습니까?\n'
-        f'새로운 관점이나 반박이 있으면 1문장으로 하세요. 없으면 [PASS].'
-        f'\n마크다운 금지.'
-      )
-    elif is_mentioned:
-      prompt = (
-        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
-        f'{thread_text}\n\n'
-        f'---\n\n'
-        f'당신은 {name}입니다.\n'
-        f'사용자가 당신을 직접 지목(@멘션)했습니다. 반드시 응답하세요.\n\n'
-        f'1~2문장, 메신저 톤, 마크다운 금지.\n'
-        f'이미 완료된 작업에 대한 새 약속은 금지.\n'
-        f'대화 중 업무 요청이 감지되면 [TASK_DETECTED:업무 설명]을 출력하세요.'
-      )
-    else:
-      prompt = (
-        f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
-        f'{thread_text}\n\n'
-        f'---\n\n'
-        f'당신은 {name}입니다.\n'
-        f'위 대화를 읽고 반응해야 하는지 판단하세요.\n\n'
-        f'[판단 기준]\n'
-        f'- 누군가 이미 적절히 답한 내용은 반복하지 마라.\n'
-        f'- 새로운 관점이나 정보를 더할 수 있을 때만 발언하라.\n'
-        f'- 일상 대화(날씨, 교통, 안부)는 대부분 [PASS]\n'
-        f'- 직접 지목(@멘션)되지 않았고 추가할 가치가 없으면 [PASS]\n'
-        f'- 업무 요청이 감지되면 [TASK_DETECTED:업무 설명]을 출력하세요.\n\n'
-        f'반응 불필요: [PASS]\n'
-        f'반응 필요: 1~2문장, 메신저 톤, 마크다운 금지. 이미 나온 말 반복 금지.\n'
-        f'이미 완료된 작업에 대한 새 약속은 금지.'
-      )
-
-    try:
-      await office._emit(name, '', 'typing')
-      resp = await run_claude_isolated(
-        f'{system}\n\n---\n\n{prompt}',
-        model='claude-haiku-4-5-20251001',
-        timeout=30.0,
-      )
-      content = resp.strip()
-      is_pass = '[PASS]' in content.upper() or content.strip().upper() == 'PASS'
-      return name, ('' if is_pass else content)
-    except Exception:
-      logger.debug("팀 채팅 에이전트 응답 실패: %s", name, exc_info=True)
-      return name, ''
-
   all_agents = ['planner', 'designer', 'developer', 'qa']
   round1_results = await asyncio.gather(
-    *[_single_agent_chat(n, base_thread) for n in all_agents],
+    *[_single_agent_chat(office, n, user_input, base_thread, mentioned_ids) for n in all_agents],
     return_exceptions=False,
   )
 
@@ -239,7 +246,7 @@ async def _team_chat(office, user_input: str, chat_subtype: str = 'casual', team
   )
   if round1_context:
     round2_results = await asyncio.gather(
-      *[_single_agent_chat(n, thread_after_r1, round_context=round1_context) for n in all_agents],
+      *[_single_agent_chat(office, n, user_input, thread_after_r1, mentioned_ids, round_context=round1_context) for n in all_agents],
       return_exceptions=False,
     )
     for name, content in round2_results:
@@ -286,7 +293,7 @@ async def _team_reaction(office, worker: str, phase_name: str, content_summary: 
   for reactor_name, text in results:
     if not text:
       continue
-    await office._emit(reactor_name, text, 'response')
+    reactor_event = await office._emit(reactor_name, text, 'response')
     if not first_reaction_text:
       first_reaction_text = text
       first_reactor = reactor_name
@@ -302,7 +309,9 @@ async def _team_reaction(office, worker: str, phase_name: str, content_summary: 
       })
     if has_suggestion_label:
       try:
-        await office._file_reaction_suggestion(reactor_name, phase_name, text)
+        await office._file_reaction_suggestion(
+          reactor_name, phase_name, text, source_log_id=reactor_event.id,
+        )
       except Exception:
         logger.debug('리액션 건의 등록 실패', exc_info=True)
 
@@ -510,6 +519,53 @@ async def _maybe_file_relationship_suggestion(office, reviewer_id: str, worker_i
     logger.debug('관계 건의 등록 실패', exc_info=True)
 
 
+def _select_peer_reviewers(office, worker_id: str, limit: int = 2) -> list[str]:
+  '''팀 다이내믹 점수 기반 peer reviewer 선정.
+
+  점수: peer_approved +1.0, committed_to_request +0.3, peer_concern -0.5.
+  양방향 상호작용을 모두 집계 (worker↔candidate). 신호가 부족하면
+  (총 누적 < 3) 기존 `_PEER_REVIEWERS` 하드코딩 매핑으로 폴백.
+
+  유기적 팀 자기조직화: 과거 협업이 부드러웠던 쌍이 다음 리뷰에도 이어짐.
+  '''
+  fallback = (office._PEER_REVIEWERS.get(worker_id) or ['planner', 'developer'])[:limit]
+  try:
+    dynamics = office.team_memory.get_dynamics_for(worker_id)
+  except Exception:
+    return fallback
+  if not dynamics:
+    return fallback
+
+  weights = {'peer_approved': 1.0, 'committed_to_request': 0.3, 'peer_concern': -0.5}
+  scores: dict[str, float] = {}
+  signal_count = 0
+  for d in dynamics:
+    dt = d.dynamic_type if hasattr(d, 'dynamic_type') else d.get('dynamic_type', '')
+    w = weights.get(dt)
+    if w is None:
+      continue
+    from_a = d.from_agent if hasattr(d, 'from_agent') else d.get('from_agent', '')
+    to_a = d.to_agent if hasattr(d, 'to_agent') else d.get('to_agent', '')
+    other = to_a if from_a == worker_id else from_a
+    if not other or other == worker_id or other not in WORKER_IDS or other == 'qa':
+      continue
+    scores[other] = scores.get(other, 0.0) + w
+    signal_count += 1
+
+  if signal_count < 3:
+    return fallback
+
+  ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+  picks = [aid for aid, s in ranked if s > 0][:limit]
+  if len(picks) < limit:
+    for aid in fallback:
+      if aid not in picks and aid != worker_id:
+        picks.append(aid)
+        if len(picks) >= limit:
+          break
+  return picks[:limit]
+
+
 async def _peer_review(
   office,
   worker_name: str,
@@ -522,10 +578,17 @@ async def _peer_review(
   Returns:
     리뷰 결과 리스트. [CONCERN] 태그가 있으면 심각한 우려사항.
   '''
-  # 리뷰어 선정: 작업자 외 관련 팀원 1~2명
-  reviewer_ids = office._PEER_REVIEWERS.get(worker_name, ['planner', 'developer'])
-  # 최대 2명
-  reviewer_ids = reviewer_ids[:2]
+  reviewer_ids = _select_peer_reviewers(office, worker_name, limit=2)
+  if reviewer_ids:
+    reviewer_names = ', '.join(display_name(r) for r in reviewer_ids)
+    try:
+      await office._emit(
+        'teamlead',
+        f'💬 {display_name(worker_name)}의 {phase_name} 피어 리뷰어: {reviewer_names}',
+        'system_notice',
+      )
+    except Exception:
+      logger.debug('피어 리뷰어 선정 공지 실패', exc_info=True)
 
   reviews = []
   concern_detected = False
@@ -609,6 +672,99 @@ async def _peer_review(
       logger.warning("피어 리뷰 우려사항 보완 실패: %s", worker_name, exc_info=True)
 
   return reviews
+
+
+
+async def _qa_pushback_round(
+  office,
+  offending_agent: str,
+  failure_reason: str,
+  phase_name: str,
+  user_input: str,
+  content: str,
+  source_log_id: str = '',
+) -> dict:
+  '''QA 불합격 직후 팀원들이 반박/지지/보강 의견을 내고 팀장이 중재한다.
+
+  목표: QA의 1회성 판정을 팀 합의로 승격시켜, 반복되는 사유는 prompt rule로 학습.
+
+  Returns:
+    {'decision': 'ADOPT'|'MODIFY'|'REJECT',
+     'rule': str,  # 합의된 규칙 문장 (REJECT면 빈 문자열)
+     'reason': str,  # 팀장 판단 근거
+     'opinions': [{'agent': id, 'stance': '지지'|'반박'|'보강', 'text': ...}]}
+  '''
+  # 리뷰어 선정: QA·담당자 제외한 워커 최대 2명
+  candidates = [aid for aid in WORKER_IDS if aid not in (offending_agent, 'qa')]
+  reviewer_ids = candidates[:2]
+  opinions: list[dict] = []
+
+  for reviewer_id in reviewer_ids:
+    reviewer_name_kr = display_name(reviewer_id)
+    offending_name_kr = display_name(offending_agent)
+    try:
+      await office._emit(reviewer_id, '', 'typing')
+      prompt = (
+        f'QA({display_name("qa")})가 {offending_name_kr}의 {phase_name} 산출물에 불합격 판정을 내렸습니다.\n\n'
+        f'[불합격 사유]\n{failure_reason[:400]}\n\n'
+        f'[산출물 요약]\n{content[:1500]}\n\n'
+        f'당신({reviewer_name_kr})의 전문 관점에서 이 지적에 대해 의견을 내세요.\n'
+        f'- 문장 시작에 [지지]/[반박]/[보강] 중 하나를 반드시 붙이세요.\n'
+        f'- 1~2문장, 메신저 톤, 마크다운 금지.\n'
+      )
+      response = await run_claude_isolated(
+        prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+      )
+      text = response.strip().split('\n')[0][:220]
+      if not text:
+        continue
+      stance = '보강'
+      for tag in ('[지지]', '[반박]', '[보강]'):
+        if tag in text:
+          stance = tag.strip('[]')
+          break
+      await office._emit(reviewer_id, text, 'response')
+      opinions.append({'agent': reviewer_id, 'stance': stance, 'text': text})
+    except Exception:
+      logger.debug('QA pushback 의견 수집 실패: %s', reviewer_id, exc_info=True)
+
+  if not opinions:
+    return {'decision': 'REJECT', 'rule': '', 'reason': '의견 수집 실패', 'opinions': []}
+
+  # 팀장 중재
+  opinions_text = '\n'.join(f'- {display_name(o["agent"])} [{o["stance"]}]: {o["text"]}' for o in opinions)
+  arbitrate_prompt = (
+    f'QA({display_name("qa")})가 {display_name(offending_agent)}의 {phase_name}에 불합격을 냈고, '
+    f'팀원들이 다음 의견을 냈습니다.\n\n'
+    f'[QA 불합격 사유]\n{failure_reason[:400]}\n\n'
+    f'[팀원 의견]\n{opinions_text}\n\n'
+    f'팀장으로서 판단하세요. 반드시 아래 JSON 한 줄로만 응답:\n'
+    f'{{"decision":"ADOPT|MODIFY|REJECT","rule":"향후 {display_name(offending_agent)}가 지켜야 할 규칙 1문장","reason":"판단 근거 1문장"}}\n'
+    f'- ADOPT: QA 지적 그대로 규칙화\n'
+    f'- MODIFY: 팀원 보강 의견 반영해 수정된 규칙\n'
+    f'- REJECT: 반박 의견이 타당, 규칙화 보류 (rule은 빈 문자열)\n'
+  )
+  try:
+    await office._emit('teamlead', '', 'typing')
+    arb_response = await run_claude_isolated(
+      arbitrate_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+    )
+    match = re.search(r'\{.*\}', arb_response, re.DOTALL)
+    if not match:
+      raise ValueError('JSON 미검출')
+    data = json.loads(match.group())
+    decision = data.get('decision', 'REJECT').upper()
+    if decision not in ('ADOPT', 'MODIFY', 'REJECT'):
+      decision = 'REJECT'
+    rule = (data.get('rule') or '').strip()[:300]
+    reason = (data.get('reason') or '').strip()[:200]
+    label = {'ADOPT': '✅ 규칙 채택', 'MODIFY': '🔧 규칙 수정 채택', 'REJECT': '↩️ 규칙화 보류'}[decision]
+    teamlead_msg = f'{label}: {rule or reason}'
+    await office._emit('teamlead', teamlead_msg[:220], 'response')
+    return {'decision': decision, 'rule': rule, 'reason': reason, 'opinions': opinions}
+  except Exception:
+    logger.debug('팀장 중재 실패', exc_info=True)
+    return {'decision': 'REJECT', 'rule': '', 'reason': '중재 실패', 'opinions': opinions}
 
 
 
@@ -893,7 +1049,7 @@ async def _route_agent_mentions(office, speaker: str, content: str) -> None:
           await office._emit(target_id, '', 'typing')
           answer = await agent.respond_to(display_name(speaker), question)
           if answer:
-            await office._emit(target_id, answer[:200], 'response')
+            answer_event = await office._emit(target_id, answer[:200], 'response')
 
             try:
               await office._file_commitment_suggestion(
@@ -901,6 +1057,7 @@ async def _route_agent_mentions(office, speaker: str, content: str) -> None:
                 message=answer,
                 source_speaker=speaker,
                 source_message=question,
+                source_log_id=answer_event.id,
               )
             except Exception:
               logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)

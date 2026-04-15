@@ -80,3 +80,61 @@ async def test_commitment_records_committed_to_request(office_stub, team_memory)
   assert len(committed) == 1
   assert committed[0].from_agent == 'developer'
   assert committed[0].to_agent == 'planner'
+
+
+def _seed_peer_concerns(team_memory, reviewer, worker, count):
+  from datetime import datetime, timezone
+  from memory.team_memory import TeamDynamic
+  for i in range(count):
+    team_memory.add_dynamic(TeamDynamic(
+      from_agent=reviewer, to_agent=worker, dynamic_type='peer_concern',
+      description=f'우려 {i}',
+      timestamp=datetime.now(timezone.utc).isoformat(),
+    ))
+
+
+@pytest.mark.asyncio
+async def test_relationship_suggestion_below_threshold(office_stub, team_memory):
+  '''peer_concern 3회 미만이면 건의 등록되지 않는다.'''
+  from orchestration import agent_interactions
+  from db import suggestion_store
+
+  _seed_peer_concerns(team_memory, 'designer', 'developer', 2)
+  await agent_interactions._maybe_file_relationship_suggestion(
+    office_stub, reviewer_id='designer', worker_id='developer',
+  )
+  assert suggestion_store.list_suggestions(status='') == []
+
+
+@pytest.mark.asyncio
+async def test_relationship_suggestion_at_threshold(office_stub, team_memory):
+  '''peer_concern 3회 누적 시 관계 개선 건의가 등록된다.'''
+  from orchestration import agent_interactions
+  from db import suggestion_store
+
+  _seed_peer_concerns(team_memory, 'designer', 'developer', 3)
+  await agent_interactions._maybe_file_relationship_suggestion(
+    office_stub, reviewer_id='designer', worker_id='developer',
+  )
+  items = suggestion_store.list_suggestions(status='')
+  assert len(items) == 1
+  assert '관계 개선 필요: designer↔developer' in items[0]['title']
+
+
+@pytest.mark.asyncio
+async def test_relationship_suggestion_cooldown(office_stub, team_memory):
+  '''24h 내 동일 쌍 건의 존재 시 중복 등록되지 않는다.'''
+  from orchestration import agent_interactions
+  from db import suggestion_store
+
+  _seed_peer_concerns(team_memory, 'designer', 'developer', 3)
+  await agent_interactions._maybe_file_relationship_suggestion(
+    office_stub, reviewer_id='designer', worker_id='developer',
+  )
+  # 추가 우려 누적 후 재호출 — 쿨다운으로 중복 차단
+  _seed_peer_concerns(team_memory, 'designer', 'developer', 2)
+  await agent_interactions._maybe_file_relationship_suggestion(
+    office_stub, reviewer_id='designer', worker_id='developer',
+  )
+  items = suggestion_store.list_suggestions(status='')
+  assert len(items) == 1

@@ -490,6 +490,380 @@ def _default_phases(office, user_input: str) -> tuple[list[dict], str]:
 
 
 
+async def _check_existing_phase_output(
+  office,
+  phase: dict,
+  PHASES: list[dict],
+  all_results: dict[str, str],
+  phase_artifacts: list[str],
+  user_input: str,
+) -> str | None:
+  '''현재/전체 workspace에서 단계 산출물을 검색해 스킵 가능하면 채우고 content 반환.
+
+  Returns: 스킵 대상이면 기존 content 문자열, 아니면 None.
+  '''
+  phase_name = phase['name']
+  agent_name = phase['assigned_to']
+  existing_file = f'{phase_name}/{agent_name}-result.md'
+  existing_content = ''
+  found_task_id = ''
+  try:
+    existing_path = office.workspace.task_dir / existing_file
+    if existing_path.exists():
+      existing_content = existing_path.read_text(encoding='utf-8')
+      found_task_id = office.workspace.task_id
+
+    if not existing_content or len(existing_content) < 100:
+      workspace_root = office.workspace.task_dir.parent
+      latest_path = None
+      latest_mtime = 0
+      for ws_dir in workspace_root.iterdir():
+        candidate = ws_dir / existing_file
+        if candidate.exists() and candidate.stat().st_mtime > latest_mtime:
+          latest_mtime = candidate.stat().st_mtime
+          latest_path = candidate
+          found_task_id = ws_dir.name
+      if latest_path:
+        existing_content = latest_path.read_text(encoding='utf-8')
+
+    if existing_content and len(existing_content) > 100:
+      all_results[phase_name] = existing_content
+      phase_artifacts.append(f'{found_task_id}/{existing_file}')
+      await office._emit('teamlead', f'{phase_name} 단계는 이미 완료되어 있습니다. 다음 단계로 넘어갑니다.', 'response')
+
+      current_group = phase.get('group', phase_name)
+      remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
+      _has_design_group = any(p.get('group') == '디자인' for p in PHASES)
+      if not remaining_in_group and _has_design_group and current_group == '디자인':
+        has_stitch = False
+        workspace_root = office.workspace.task_dir.parent
+        for ws_dir in workspace_root.iterdir():
+          sd = ws_dir / 'stitch'
+          if sd.exists() and any(sd.iterdir()):
+            has_stitch = True
+            break
+        if not has_stitch and office._current_project_type in ('web_development', 'website'):
+          await office._generate_stitch_mockup(all_results, user_input)
+        elif has_stitch:
+          await office._emit('designer', '이전에 생성된 Stitch 시안이 있습니다. 그대로 사용합니다. 🎨', 'response')
+      return existing_content
+  except Exception:
+    logger.debug("그룹 전환 처리 실패: %s", phase_name, exc_info=True)
+  return None
+
+
+_FORMAT_INSTRUCTIONS: dict[str, str] = {
+  'html': (
+    '마크다운으로 분석/설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
+    '완성된 HTML 문서(<!DOCTYPE html>로 시작)를 포함하세요. '
+    'HTML에는 CSS 스타일을 인라인으로 포함하여 보기 좋은 보고서 형태로 만드세요.'
+  ),
+  'html+pdf': (
+    '마크다운으로 분석/설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
+    '완성된 HTML 문서(<!DOCTYPE html>로 시작)를 포함하세요. '
+    'HTML에는 CSS 스타일을 인라인으로 포함하여 보기 좋은 보고서 형태로 만드세요.'
+  ),
+  'html_slide+pdf': (
+    '마크다운으로 설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
+    '슬라이드 형식의 HTML 문서를 포함하세요. '
+    '각 슬라이드는 <section> 태그로 구분하고, CSS로 페이지 단위 스타일을 적용하세요.'
+  ),
+  'md+code': (
+    '마크다운 형식으로 작성하세요. '
+    '분석에 사용한 Python 코드가 있으면 ```python 코드블록으로 포함하세요.'
+  ),
+}
+_DEFAULT_FORMAT_INSTRUCTION = '마크다운 형식으로 작성하세요.'
+
+
+async def _build_phase_prompt(
+  office,
+  phase: dict,
+  all_results: dict[str, str],
+  user_input: str,
+  reference_context: str,
+) -> str:
+  '''단계 프롬프트 조립 — 프로젝트/현재 단계/동일 그룹 전문/타 그룹 가이드/포맷 지침.'''
+  phase_name = phase['name']
+  current_group = phase.get('group', phase_name)
+
+  # 프로젝트 설명: 첫 그룹(기획)에만 첨부 전문, 이후는 핵심만
+  if current_group == '기획':
+    project_text = user_input
+  elif '[첨부된 참조 자료]' in user_input:
+    project_text = user_input.split('[첨부된 참조 자료]')[0].strip()
+  else:
+    project_text = user_input
+
+  phase_prompt = (
+    f'[프로젝트]\n{project_text}\n\n'
+    f'[현재 단계]\n{phase_name}: {phase["description"]}\n\n'
+  )
+
+  # 같은 그룹 내 이전 소단계 결과는 전문 전달
+  for k, v in all_results.items():
+    if current_group in k:
+      phase_prompt += f'[이전 작업: {k}]\n{v}\n\n'
+
+  # 다른 그룹의 산출물은 참조 가이드로 전달
+  other_groups: set[str] = set()
+  for k in all_results:
+    g = k.split('-')[0] if '-' in k else k
+    if g != current_group and g not in other_groups:
+      other_groups.add(g)
+      group_results = {key: val for key, val in all_results.items() if key.startswith(g)}
+      guide = await office._create_handoff_guide(g, group_results, phase_name)
+      phase_prompt += f'[{g} 단계 참조 가이드]\n{guide}\n\n'
+
+  if reference_context and current_group == '기획':
+    phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
+
+  format_instruction = _FORMAT_INSTRUCTIONS.get(
+    phase.get('output_format', 'md'), _DEFAULT_FORMAT_INSTRUCTION,
+  )
+  phase_prompt += (
+    f'위 내용을 바탕으로 {phase_name} 작업을 수행하세요.\n'
+    f'실무에서 바로 활용할 수 있는 수준으로 상세하게 작성하세요.\n'
+    f'{format_instruction}\n'
+    f'중요: 반드시 모든 섹션을 끝까지 완성하세요. 절대 중간에 끊지 마세요.\n'
+    f'착수 인사는 이미 채팅으로 전달했다. 산출물 본문만 바로 작성하라.'
+  )
+  return phase_prompt
+
+
+async def _collect_project_metrics(
+  office,
+  task_id: str,
+  project_type: str,
+  user_input: str,
+  started_at: str,
+  phase_metrics: list['PhaseMetrics'],
+) -> None:
+  '''프로젝트 완료 메트릭 계산 + improvement_engine 전달. 실패가 프로젝트 완료를 막지 않음.'''
+  finished_at = datetime.now(timezone.utc).isoformat()
+  try:
+    total_dur = (
+      datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)
+    ).total_seconds()
+  except Exception:
+    logger.debug("프로젝트 총 소요시간 계산 실패", exc_info=True)
+    total_dur = 0.0
+
+  metrics = ProjectMetrics(
+    task_id=task_id or 'unknown',
+    project_type=project_type,
+    instruction=user_input[:500],
+    started_at=started_at,
+    finished_at=finished_at,
+    total_duration=total_dur,
+    phases=phase_metrics,
+    final_review_passed=True,
+    final_review_rounds=office._revision_count,
+  )
+  try:
+    await office.improvement_engine.on_project_complete(metrics)
+  except Exception:
+    logger.warning("자가개선 메트릭 수집 실패", exc_info=True)
+
+
+async def _run_phase_with_qa(
+  office,
+  agent,
+  phase: dict,
+  filename: str,
+  all_results: dict[str, str],
+  user_input: str,
+) -> tuple[bool, int]:
+  '''그룹 마지막 단계의 QA 검수 + 1회 보완 루프.
+
+  Returns: (qa_passed, revision_count_delta).
+  '''
+  from orchestration.task_graph import TaskNode
+
+  phase_name = phase['name']
+  agent_name = phase['assigned_to']
+  current_group = phase.get('group', phase_name)
+
+  office._state = OfficeState.QA_REVIEW
+  office._active_agent = 'qa'
+  await office._emit('qa', '', 'typing')
+  qa_agent = office.agents['qa']
+
+  group_content = '\n\n'.join(v for k, v in all_results.items() if current_group in k)
+  node = TaskNode(
+    task_id=f'group-{current_group}',
+    description=f'{current_group} 전체 산출물',
+    requirements=user_input,
+    assigned_to=agent_name,
+    depends_on=[],
+  )
+  node.artifact_paths = [filename]
+
+  qa_passed = await office._run_qa_check(qa_agent, node, group_content)
+  revision_delta = 0
+  if qa_passed:
+    await office._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
+    return True, 0
+
+  qa_fail_event = await office._emit(
+    'qa', f'{current_group} 검수 불합격: {node.failure_reason[:200]}', 'response',
+  )
+  qa_fail_log_id = getattr(qa_fail_event, 'id', '') if qa_fail_event else ''
+  revision_delta = 1
+
+  # QA pushback: 팀원 의견 → 팀장 중재 → ADOPT/MODIFY면 draft rule 등록.
+  # 실패해도 revision 루프는 계속.
+  try:
+    from orchestration import agent_interactions, suggestion_filer
+    pushback = await agent_interactions._qa_pushback_round(
+      office,
+      offending_agent=agent_name,
+      failure_reason=node.failure_reason or '',
+      phase_name=current_group,
+      user_input=user_input,
+      content=group_content,
+      source_log_id=qa_fail_log_id,
+    )
+    if pushback.get('decision') in ('ADOPT', 'MODIFY') and pushback.get('rule'):
+      await suggestion_filer._file_qa_rule_suggestion(
+        office,
+        offending_agent=agent_name,
+        rule_text=pushback['rule'],
+        failure_reason=node.failure_reason or '',
+        arb_reason=pushback.get('reason', ''),
+        opinions=pushback.get('opinions', []),
+        phase_name=current_group,
+        source_log_id=qa_fail_log_id,
+      )
+  except Exception:
+    logger.debug('QA pushback round 실패', exc_info=True)
+
+  await office._emit('teamlead', f'{current_group} 보완 요청합니다.', 'response')
+  office._state = OfficeState.REVISION
+  office._active_agent = agent_name
+  await office._emit(agent_name, '', 'typing')
+
+  revision_prompt = (
+    f'[프로젝트]\n{user_input}\n\n'
+    f'[{current_group} 산출물]\n{group_content}\n\n'
+    f'[QA 불합격 사유]\n{node.failure_reason}\n\n'
+    f'위 불합격 사유를 반영하여 {current_group} 산출물을 보완하세요.\n'
+    f'불합격 지적 사항을 모두 해결하고, 전체를 다시 작성하세요.\n'
+    f'마크다운 형식으로 작성하세요.'
+  )
+  revised = await agent.handle(revision_prompt)
+
+  try:
+    office.workspace.write_artifact(filename, revised)
+  except Exception:
+    logger.warning("QA 보완 결과 저장 실패: %s", filename, exc_info=True)
+  all_results[phase_name] = revised
+
+  await office.event_bus.publish(LogEvent(
+    agent_id=agent_name,
+    event_type='response',
+    message=f'{current_group} 보완 완료했습니다.',
+    data={'artifacts': [f'{office.workspace.task_id}/{filename}']},
+  ))
+  await office._team_reaction(agent_name, f'{current_group}-보완')
+  return qa_passed, revision_delta
+
+
+async def _persist_phase_output(
+  office,
+  phase: dict,
+  content: str,
+  phase_artifacts: list[str],
+  all_results: dict[str, str],
+  user_input: str,
+) -> str:
+  '''단계 산출물 저장 + 포맷별 부가 산출물(HTML/PDF/code/site) 생성.
+
+  Returns: 기본 MD 파일명 (후속 QA/피어리뷰 재저장에서 사용).
+  '''
+  import re as _re
+  phase_name = phase['name']
+  agent_name = phase['assigned_to']
+  current_group = phase.get('group', phase_name)
+  output_format = phase.get('output_format', 'md')
+
+  filename = f'{phase_name}/{agent_name}-result.md'
+  try:
+    office.workspace.write_artifact(filename, content)
+    phase_artifacts.append(f'{office.workspace.task_id}/{filename}')
+  except Exception:
+    logger.warning("단계 산출물 저장 실패: %s", filename, exc_info=True)
+
+  # HTML 추출 (퍼블리싱 or html/html+pdf/html_slide+pdf)
+  if current_group == '퍼블리싱' or output_format in ('html', 'html+pdf', 'html_slide+pdf'):
+    html_match = _re.search(r'```(?:html)?\s*\n(<!DOCTYPE[\s\S]*?)\n```', content, _re.IGNORECASE)
+    if not html_match:
+      html_match = _re.search(r'```(?:html)?\s*\n(<html[\s\S]*?)\n```', content, _re.IGNORECASE)
+    if html_match:
+      html_code = html_match.group(1)
+      html_filename = f'{phase_name}/index.html' if current_group == '퍼블리싱' else f'{phase_name}/result.html'
+      try:
+        html_file_path = office.workspace.write_artifact(html_filename, html_code)
+        phase_artifacts.append(f'{office.workspace.task_id}/{html_filename}')
+        html_url = f'/api/artifacts/{office.workspace.task_id}/{html_filename}'
+        await office.event_bus.publish(LogEvent(
+          agent_id=agent_name,
+          event_type='response',
+          message=f'{phase_name} HTML 산출물 생성 완료 👇\n{html_url}',
+          data={'artifacts': [f'{office.workspace.task_id}/{html_filename}']},
+        ))
+        if '+pdf' in output_format:
+          try:
+            from harness.pdf_converter import html_to_pdf
+            html_to_pdf(html_file_path)
+            pdf_rel = f'{phase_name}/result.pdf'
+            phase_artifacts.append(f'{office.workspace.task_id}/{pdf_rel}')
+            await office.event_bus.publish(LogEvent(
+              agent_id=agent_name,
+              event_type='response',
+              message=f'{phase_name} PDF 생성 완료 📄',
+              data={'artifacts': [f'{office.workspace.task_id}/{pdf_rel}']},
+            ))
+          except Exception:
+            logger.warning("PDF 변환 실패: %s", phase_name, exc_info=True)
+      except Exception:
+        logger.warning("HTML 산출물 저장 실패: %s", phase_name, exc_info=True)
+
+  # md+code: Python 코드블록 추출
+  if output_format == 'md+code':
+    for i, code in enumerate(_re.findall(r'```(?:python|py)\s*\n([\s\S]*?)\n```', content)):
+      code_filename = f'{phase_name}/code_{i}.py'
+      try:
+        office.workspace.write_artifact(code_filename, code)
+        phase_artifacts.append(f'{office.workspace.task_id}/{code_filename}')
+      except Exception:
+        logger.debug("코드 블록 저장 실패: %s", code_filename, exc_info=True)
+
+  # 멀티페이지 사이트 빌더 — 퍼블리싱/html 그룹 + 웹 프로젝트
+  _is_html_output = output_format in ('html', 'html+pdf')
+  if (current_group == '퍼블리싱' or _is_html_output) and office._current_project_type in ('web_development', 'website'):
+    try:
+      ia_content = next((v for k, v in all_results.items() if 'IA' in k), '')
+      design_content = '\n'.join(v for k, v in all_results.items() if '디자인' in k)
+      if ia_content:
+        from harness.site_builder import build_multipage_site
+        site_result = await build_multipage_site(
+          ia_content=ia_content,
+          design_specs=design_content,
+          stitch_html=content if '<html' in content.lower() else None,
+          workspace_dir=office.workspace.task_dir,
+          project_brief=user_input[:500],
+        )
+        if site_result.get('pages'):
+          for page_path in site_result['pages']:
+            phase_artifacts.append(f'{office.workspace.task_id}/{page_path}')
+          await office._emit('developer', f'멀티페이지 사이트 생성 완료 ({len(site_result["pages"])}페이지) 🌐', 'response')
+    except Exception:
+      logger.warning("멀티페이지 사이트 빌드 실패", exc_info=True)
+
+  return filename
+
+
 async def _execute_project(
   office,
   user_input: str,
@@ -532,58 +906,12 @@ async def _execute_project(
     agent = office.agents[agent_name]
 
     # 이미 완료된 단계는 스킵 (서버 재시작 후 중복 실행 방지)
-    # 현재 workspace + 전체 workspace에서 가장 최신 산출물 검색
-    existing_file = f'{phase_name}/{agent_name}-result.md'
-    existing_content = ''
-    found_task_id = ''
-    try:
-      # 1) 현재 workspace에서 먼저 찾기
-      existing_path = office.workspace.task_dir / existing_file
-      if existing_path.exists():
-        existing_content = existing_path.read_text(encoding='utf-8')
-        found_task_id = office.workspace.task_id
-
-      # 2) 없으면 전체 workspace에서 가장 최신 찾기
-      if not existing_content or len(existing_content) < 100:
-        workspace_root = office.workspace.task_dir.parent
-        latest_path = None
-        latest_mtime = 0
-        for ws_dir in workspace_root.iterdir():
-          candidate = ws_dir / existing_file
-          if candidate.exists() and candidate.stat().st_mtime > latest_mtime:
-            latest_mtime = candidate.stat().st_mtime
-            latest_path = candidate
-            found_task_id = ws_dir.name
-        if latest_path:
-          existing_content = latest_path.read_text(encoding='utf-8')
-
-      if existing_content and len(existing_content) > 100:
-        all_results[phase_name] = existing_content
-        prev_phase_result = existing_content
-        phase_artifacts.append(f'{found_task_id}/{existing_file}')
-        await office._emit('teamlead', f'{phase_name} 단계는 이미 완료되어 있습니다. 다음 단계로 넘어갑니다.', 'response')
-
-        # 스킵해도 그룹 마지막이면 Stitch 시안 생성 체크
-        current_group = phase.get('group', phase_name)
-        remaining_in_group = [p for p in PHASES[PHASES.index(phase)+1:] if p.get('group') == current_group]
-        _has_design_group = any(p.get('group') == '디자인' for p in PHASES)
-        if not remaining_in_group and _has_design_group and current_group == '디자인':
-          # Stitch 시안이 아직 없으면 생성
-          # 전체 workspace에서 Stitch 시안 검색
-          has_stitch = False
-          workspace_root = office.workspace.task_dir.parent
-          for ws_dir in workspace_root.iterdir():
-            sd = ws_dir / 'stitch'
-            if sd.exists() and any(sd.iterdir()):
-              has_stitch = True
-              break
-          if not has_stitch and office._current_project_type in ('web_development', 'website'):
-            await office._generate_stitch_mockup(all_results, user_input)
-          elif has_stitch:
-            await office._emit('designer', '이전에 생성된 Stitch 시안이 있습니다. 그대로 사용합니다. 🎨', 'response')
-        continue
-    except Exception:
-      logger.debug("그룹 전환 처리 실패: %s", phase_name, exc_info=True)
+    skipped = await _check_existing_phase_output(
+      office, phase, PHASES, all_results, phase_artifacts, user_input,
+    )
+    if skipped is not None:
+      prev_phase_result = skipped
+      continue
 
     office._state = OfficeState.WORKING
     office._active_agent = agent_name
@@ -594,69 +922,9 @@ async def _execute_project(
     await office._emit('teamlead', f'{phase_name} 단계를 시작합니다.', 'response')
     await office._emit(agent_name, '', 'typing')
 
-    # 각 단계에 필요한 컨텍스트 구성
     current_group = phase.get('group', phase_name)
-
-    # 프로젝트 설명: 첫 그룹(기획)에만 첨부 전문, 이후는 핵심만
-    if current_group == '기획':
-      project_text = user_input
-    elif '[첨부된 참조 자료]' in user_input:
-      project_text = user_input.split('[첨부된 참조 자료]')[0].strip()
-    else:
-      project_text = user_input
-
-    phase_prompt = (
-      f'[프로젝트]\n{project_text}\n\n'
-      f'[현재 단계]\n{phase_name}: {phase["description"]}\n\n'
-    )
-
-    # 같은 그룹 내 이전 소단계 결과는 전문 전달
-    same_group_results = [(k, v) for k, v in all_results.items() if current_group in k]
-    if same_group_results:
-      for k, v in same_group_results:
-        phase_prompt += f'[이전 작업: {k}]\n{v}\n\n'
-
-    # 다른 그룹의 산출물은 참조 가이드로 전달 (어디 문서의 어디 부분 참고하라)
-    other_groups = set()
-    for k, v in all_results.items():
-      g = k.split('-')[0] if '-' in k else k
-      if g != current_group and g not in other_groups:
-        other_groups.add(g)
-        group_results = {key: val for key, val in all_results.items() if key.startswith(g)}
-        guide = await office._create_handoff_guide(g, group_results, phase_name)
-        phase_prompt += f'[{g} 단계 참조 가이드]\n{guide}\n\n'
-
-    if reference_context and current_group == '기획':
-      phase_prompt += f'[참조 자료]\n{reference_context}\n\n'
-
-    # output_format에 따른 작성 지침
-    _of = phase.get('output_format', 'md')
-    if _of in ('html', 'html+pdf'):
-      format_instruction = (
-        '마크다운으로 분석/설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
-        '완성된 HTML 문서(<!DOCTYPE html>로 시작)를 포함하세요. '
-        'HTML에는 CSS 스타일을 인라인으로 포함하여 보기 좋은 보고서 형태로 만드세요.'
-      )
-    elif _of == 'html_slide+pdf':
-      format_instruction = (
-        '마크다운으로 설명을 작성하고, 최종 결과물은 반드시 ```html 코드블록으로 '
-        '슬라이드 형식의 HTML 문서를 포함하세요. '
-        '각 슬라이드는 <section> 태그로 구분하고, CSS로 페이지 단위 스타일을 적용하세요.'
-      )
-    elif _of == 'md+code':
-      format_instruction = (
-        '마크다운 형식으로 작성하세요. '
-        '분석에 사용한 Python 코드가 있으면 ```python 코드블록으로 포함하세요.'
-      )
-    else:
-      format_instruction = '마크다운 형식으로 작성하세요.'
-
-    phase_prompt += (
-      f'위 내용을 바탕으로 {phase_name} 작업을 수행하세요.\n'
-      f'실무에서 바로 활용할 수 있는 수준으로 상세하게 작성하세요.\n'
-      f'{format_instruction}\n'
-      f'중요: 반드시 모든 섹션을 끝까지 완성하세요. 절대 중간에 끊지 마세요.\n'
-      f'착수 인사는 이미 채팅으로 전달했다. 산출물 본문만 바로 작성하라.'
+    phase_prompt = await _build_phase_prompt(
+      office, phase, all_results, user_input, reference_context,
     )
 
     # 팀원 피드백 주입 — high priority 우선
@@ -685,86 +953,9 @@ async def _execute_project(
 
     content = await agent.handle(phase_prompt)
 
-    # 저장
-    filename = f'{phase_name}/{agent_name}-result.md'
-    try:
-      office.workspace.write_artifact(filename, content)
-      phase_artifacts.append(f'{office.workspace.task_id}/{filename}')
-    except Exception:
-      logger.warning("단계 산출물 저장 실패: %s", filename, exc_info=True)
-
-    # output_format에 따른 산출물 추출 및 저장
-    output_format = phase.get('output_format', 'md')
-    import re as _re
-
-    # 퍼블리싱 단계 또는 html/html+pdf 포맷: 코드블록에서 HTML 추출
-    if current_group == '퍼블리싱' or output_format in ('html', 'html+pdf', 'html_slide+pdf'):
-      html_match = _re.search(r'```(?:html)?\s*\n(<!DOCTYPE[\s\S]*?)\n```', content, _re.IGNORECASE)
-      if not html_match:
-        html_match = _re.search(r'```(?:html)?\s*\n(<html[\s\S]*?)\n```', content, _re.IGNORECASE)
-      if html_match:
-        html_code = html_match.group(1)
-        html_filename = f'{phase_name}/index.html' if current_group == '퍼블리싱' else f'{phase_name}/result.html'
-        try:
-          html_file_path = office.workspace.write_artifact(html_filename, html_code)
-          phase_artifacts.append(f'{office.workspace.task_id}/{html_filename}')
-          html_url = f'/api/artifacts/{office.workspace.task_id}/{html_filename}'
-          await office.event_bus.publish(LogEvent(
-            agent_id=agent_name,
-            event_type='response',
-            message=f'{phase_name} HTML 산출물 생성 완료 👇\n{html_url}',
-            data={'artifacts': [f'{office.workspace.task_id}/{html_filename}']},
-          ))
-          # PDF 변환
-          if '+pdf' in output_format:
-            try:
-              from harness.pdf_converter import html_to_pdf
-              pdf_path = html_to_pdf(html_file_path)
-              pdf_rel = f'{phase_name}/result.pdf'
-              phase_artifacts.append(f'{office.workspace.task_id}/{pdf_rel}')
-              await office.event_bus.publish(LogEvent(
-                agent_id=agent_name,
-                event_type='response',
-                message=f'{phase_name} PDF 생성 완료 📄',
-                data={'artifacts': [f'{office.workspace.task_id}/{pdf_rel}']},
-              ))
-            except Exception:
-              logger.warning("PDF 변환 실패: %s", phase_name, exc_info=True)
-        except Exception:
-          logger.warning("HTML 산출물 저장 실패: %s", phase_name, exc_info=True)
-
-    # md+code 포맷: Python/JS 코드블록 추출
-    if output_format == 'md+code':
-      code_blocks = _re.findall(r'```(?:python|py)\s*\n([\s\S]*?)\n```', content)
-      for i, code in enumerate(code_blocks):
-        code_filename = f'{phase_name}/code_{i}.py'
-        try:
-          office.workspace.write_artifact(code_filename, code)
-          phase_artifacts.append(f'{office.workspace.task_id}/{code_filename}')
-        except Exception:
-          logger.debug("코드 블록 저장 실패: %s", code_filename, exc_info=True)
-
-    # HTML 출력 그룹 완료 시 멀티페이지 사이트 빌더 실행
-    _is_html_output = phase.get('output_format', '') in ('html', 'html+pdf')
-    if (current_group == '퍼블리싱' or _is_html_output) and office._current_project_type in ('web_development', 'website'):
-      try:
-        ia_content = next((v for k, v in all_results.items() if 'IA' in k), '')
-        design_content = '\n'.join(v for k, v in all_results.items() if '디자인' in k)
-        if ia_content:
-          from harness.site_builder import build_multipage_site
-          site_result = await build_multipage_site(
-            ia_content=ia_content,
-            design_specs=design_content,
-            stitch_html=content if '<html' in content.lower() else None,
-            workspace_dir=office.workspace.task_dir,
-            project_brief=user_input[:500],
-          )
-          if site_result.get('pages'):
-            for page_path in site_result['pages']:
-              phase_artifacts.append(f'{office.workspace.task_id}/{page_path}')
-            await office._emit('developer', f'멀티페이지 사이트 생성 완료 ({len(site_result["pages"])}페이지) 🌐', 'response')
-      except Exception:
-        logger.warning("멀티페이지 사이트 빌드 실패", exc_info=True)
+    filename = await _persist_phase_output(
+      office, phase, content, phase_artifacts, all_results, user_input,
+    )
 
     all_results[phase_name] = content
     prev_phase_result = content
@@ -867,62 +1058,14 @@ async def _execute_project(
         meeting_summary += f'\n\n[사용자 중간 지시]\n{user_directive["message"]}'
         await office._emit('teamlead', f'말씀하신 내용 반영하여 다음 단계 진행하겠습니다.', 'response')
 
-    # QA 검수 — 그룹의 마지막 소단계에서만 실행 (current_group, _is_group_last는 위에서 계산됨)
+    # QA 검수 — 그룹의 마지막 소단계에서만 실행
     if _is_group_last:
-      # 그룹 마지막 → QA 검수
-      office._state = OfficeState.QA_REVIEW
-      office._active_agent = 'qa'
-      await office._emit('qa', '', 'typing')
-      qa_agent = office.agents['qa']
-      from orchestration.task_graph import TaskNode
-      group_content = '\n\n'.join(v for k, v in all_results.items() if current_group in k)
-      node = TaskNode(
-        task_id=f'group-{current_group}',
-        description=f'{current_group} 전체 산출물',
-        requirements=user_input,
-        assigned_to=agent_name,
-        depends_on=[],
+      qa_passed, _rev_delta = await _run_phase_with_qa(
+        office, agent, phase, filename, all_results, user_input,
       )
-      node.artifact_paths = [filename]
-      qa_passed = await office._run_qa_check(qa_agent, node, group_content)
-      if not qa_passed:
-        await office._emit('qa', f'{current_group} 검수 불합격: {node.failure_reason[:200]}', 'response')
-
-        _phase_revision_count += 1
-        # 보완 1회 — 불합격 사유를 담당 에이전트에게 전달하여 수정
-        await office._emit('teamlead', f'{current_group} 보완 요청합니다.', 'response')
-        office._state = OfficeState.REVISION
-        office._active_agent = agent_name
-        await office._emit(agent_name, '', 'typing')
-
-        # 해당 그룹의 모든 소단계 산출물 + 불합격 사유로 보완 프롬프트 생성
-        revision_prompt = (
-          f'[프로젝트]\n{user_input}\n\n'
-          f'[{current_group} 산출물]\n{group_content}\n\n'
-          f'[QA 불합격 사유]\n{node.failure_reason}\n\n'
-          f'위 불합격 사유를 반영하여 {current_group} 산출물을 보완하세요.\n'
-          f'불합격 지적 사항을 모두 해결하고, 전체를 다시 작성하세요.\n'
-          f'마크다운 형식으로 작성하세요.'
-        )
-        revised = await agent.handle(revision_prompt)
-
-        # 보완 결과 저장 (마지막 소단계 파일에 덮어쓰기)
-        try:
-          office.workspace.write_artifact(filename, revised)
-        except Exception:
-          logger.warning("QA 보완 결과 저장 실패: %s", filename, exc_info=True)
-        all_results[phase_name] = revised
-        prev_phase_result = revised
-
-        await office.event_bus.publish(LogEvent(
-          agent_id=agent_name,
-          event_type='response',
-          message=f'{current_group} 보완 완료했습니다.',
-          data={'artifacts': [f'{office.workspace.task_id}/{filename}']},
-        ))
-        await office._team_reaction(agent_name, f'{current_group}-보완')
-      else:
-        await office._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
+      _phase_revision_count += _rev_delta
+      if _rev_delta:
+        prev_phase_result = all_results[phase_name]
 
       # phase 메트릭 기록
       _phase_finished_at = datetime.now(timezone.utc).isoformat()
@@ -1112,30 +1255,10 @@ async def _execute_project(
     _update_task(task_id, 'completed')
 
   # 자가개선: 프로젝트 메트릭 수집 및 분석
-  _project_finished_at = datetime.now(timezone.utc).isoformat()
-  try:
-    _p_start = datetime.fromisoformat(_project_started_at)
-    _p_end = datetime.fromisoformat(_project_finished_at)
-    _total_dur = (_p_end - _p_start).total_seconds()
-  except Exception:
-    logger.debug("프로젝트 총 소요시간 계산 실패", exc_info=True)
-    _total_dur = 0.0
-
-  project_metrics = ProjectMetrics(
-    task_id=task_id or 'unknown',
-    project_type=project_type,
-    instruction=user_input[:500],
-    started_at=_project_started_at,
-    finished_at=_project_finished_at,
-    total_duration=_total_dur,
-    phases=_phase_metrics,
-    final_review_passed=True,
-    final_review_rounds=office._revision_count,
+  await _collect_project_metrics(
+    office, task_id, project_type, user_input,
+    _project_started_at, _phase_metrics,
   )
-  try:
-    await office.improvement_engine.on_project_complete(project_metrics)
-  except Exception:
-    logger.warning("자가개선 메트릭 수집 실패", exc_info=True)  # 자가개선 실패가 프로젝트 완료를 막지 않음
 
   # ── 자동 내보내기 — 산출물 PDF/DOCX/ZIP 생성 ──
   try:
@@ -1161,8 +1284,9 @@ async def _auto_export(office, phase_artifacts: list[str]) -> None:
 
   exported = []
 
-  # 최종 보고서 MD → PDF
-  for md_file in task_dir.rglob('*result*.md'):
+  # 최종 보고서 MD → PDF (retrospective.md 포함)
+  md_candidates = list(task_dir.rglob('*result*.md')) + list(task_dir.rglob('retrospective.md'))
+  for md_file in md_candidates:
     if 'uploads' in str(md_file):
       continue
     content = md_file.read_text(encoding='utf-8', errors='replace')
