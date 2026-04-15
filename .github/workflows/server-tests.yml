@@ -1,0 +1,44 @@
+name: Server — Pytest + data/ 오염 가드
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    name: 서버 테스트 + 프로덕션 DB 오염 방지
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Setup Python
+        run: uv python install 3.12
+
+      - name: Install deps
+        working-directory: server
+        run: uv sync
+
+      - name: Run pytest
+        working-directory: server
+        env:
+          AI_OFFICE_WORKSPACE: ${{ runner.temp }}/ai-office-ws
+          AI_OFFICE_MEMORY: ${{ runner.temp }}/ai-office-mem
+        run: uv run pytest -q
+
+      - name: data/ 디렉토리 오염 감지
+        run: |
+          if [ -n "$(git status --porcelain data/)" ]; then
+            echo "::error::테스트 실행 후 data/ 디렉토리가 변경되었습니다 — 프로덕션 DB 오염 의심"
+            git status --porcelain data/
+            git diff data/ | head -100
+            exit 1
+          fi
+          echo "✅ data/ 변경 없음 — 테스트 격리 정상"
