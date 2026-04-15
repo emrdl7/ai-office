@@ -2,6 +2,7 @@
 import json
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import logging
 
@@ -18,16 +19,17 @@ def _today() -> str:
   return date.today().isoformat()
 
 
-def load() -> dict:
+def load() -> dict[str, Any]:
   if STORE_PATH.exists():
     try:
-      return json.loads(STORE_PATH.read_text(encoding='utf-8'))
+      result: dict[str, Any] = json.loads(STORE_PATH.read_text(encoding='utf-8'))
+      return result
     except Exception:
       logger.debug("오늘의 한마디 JSON 로드 실패", exc_info=True)
   return {}
 
 
-def save(data: dict):
+def save(data: dict[str, Any]) -> None:
   STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
   STORE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 
@@ -36,10 +38,11 @@ def get_quotes() -> dict[str, str]:
   '''오늘의 한마디를 반환한다. 저장된 오늘 날짜 데이터가 있으면 그대로, 없으면 빈 dict.'''
   data = load()
   if data.get('date') == _today():
-    return data.get('quotes', {})
+    quotes: dict[str, str] = data.get('quotes', {})
+    return quotes
   return {}
 
 
-def save_quotes(quotes: dict[str, str]):
+def save_quotes(quotes: dict[str, str]) -> None:
   '''오늘 날짜로 한마디를 저장한다.'''
   save({'date': _today(), 'quotes': quotes})

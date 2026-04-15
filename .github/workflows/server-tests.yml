@@ -1,4 +1,4 @@
-name: Server — Ruff + Pytest + data/ 오염 가드
+name: Server — Ruff + Mypy + Pytest + data/ 오염 가드
 
 on:
   push:
@@ -29,6 +29,10 @@ jobs:
       - name: Run ruff (lint — 실 버그만)
         working-directory: server
         run: uv run ruff check .
+
+      - name: Run mypy (strict — core/db/log_bus)
+        working-directory: server
+        run: uv run mypy core/paths.py db/ log_bus/
 
       - name: Run pytest
         working-directory: server

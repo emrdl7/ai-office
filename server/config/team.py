@@ -150,14 +150,14 @@ def team_roster_prompt() -> str:
     for m in TEAM:
         lines.append(f'- {m.role_ko}: **{m.display_name}** ({m.full_name})')
     lines.append('')
-    legacy_pairs = []
+    legacy_pairs: list[tuple[str, str]] = []
     for old, aid in LEGACY_ALIASES.items():
         if len(old) >= 2:  # 짧은 별칭(상식, 그래 등) 제외, 풀네임만
             member = BY_ID.get(aid)
             if member and old not in [p[0] for p in legacy_pairs]:
                 legacy_pairs.append((old, member.display_name))
     # 중복 제거 후 대표 매핑만
-    unique_legacy = {}
+    unique_legacy: dict[str, str] = {}
     for old, new in legacy_pairs:
         if new not in unique_legacy.values():
             unique_legacy[old] = new

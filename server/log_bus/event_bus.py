@@ -44,7 +44,7 @@ class EventBus:
       미호출 시 닫힌 큐에 계속 put_nowait 시도로 메모리 누수 발생.
     '''
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._subscribers: list[asyncio.Queue] = []
 
     def subscribe(self) -> asyncio.Queue:

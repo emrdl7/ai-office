@@ -7,24 +7,18 @@
 >   `_finalize_project` 추출. phase 루프 본체는 중간 return 다발로 유지.
 > - 학습 루프 3종 + 말·행동 일치(P2.5 6종) + 사용자 개입 점검(P2.5-α 3종) 가동.
 > - 관측: `/api/project/status` · 통합 검색 + errors preset · placeholder 오염 감지.
-> - 테스트: **170 pass / 0 fail / 0 skip**. CI = pytest + ruff + `data/` 오염 가드.
+> - 테스트: **179 pass / 0 fail / 0 skip**. CI = pytest + ruff + **mypy(strict 3모듈)** + `data/` 오염 가드.
 > - 경로: `core/paths.py` 단일 출처(WORKSPACE_ROOT/MEMORY_ROOT, env 주입).
 
 ---
 
-## 🚧 남은 작업 (2건, 모두 인프라성)
+## 🚧 남은 작업 (1건)
 
-### mypy 점진 도입
-- 배경: ruff 정착 완료. 다음 단계는 타입 체커.
-- 장벽: `orchestration/` 계열 시그니처에 타입 힌트 부족. 한꺼번에 `strict`는
-  비현실적.
-- 다음 세션 시작점:
-  1. `mypy.ini` 생성 — `ignore_missing_imports=true`, `check_untyped_defs=false`,
-     `warn_unused_ignores=true`, `warn_redundant_casts=true` 정도로 시작.
-  2. 파일별 per-module section으로 `core/paths.py`, `db/*`, `log_bus/*`만
-     strict 적용 (이미 힌트 잘 된 모듈).
-  3. `.github/workflows/server-tests.yml`에 `mypy server/` 스텝 추가.
-  4. 이후 orchestration 모듈을 하나씩 strict로 승격.
+### mypy 승격 (orchestration 등)
+- 현재: `core/paths.py` · `db/*` · `log_bus/*` 세 모듈 strict 통과 (CI 게이트).
+  `config/team.py` var-annotated 2건도 같이 정리됨.
+- 다음 승격 후보: `bus/` → `orchestration/` → `routes/` 순. 모듈별로 타입 힌트
+  보강 후 `mypy.ini`에 per-module 섹션 추가하는 방식 유지.
 
 ### React 컴포넌트 테스트 인프라
 - 배경: 현재 서버 쪽만 테스트 (170 pass). dashboard 4.3K는 `tsc --noEmit`만

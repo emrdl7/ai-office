@@ -66,7 +66,7 @@ def archive_old_logs(days: int = 30) -> int:
     moved = c.execute('SELECT changes()').fetchone()[0]
     c.execute('DELETE FROM chat_logs WHERE timestamp < ?', (cutoff,))
     c.commit()
-    return moved
+    return int(moved)
   except Exception:
     c.rollback()
     raise
@@ -126,7 +126,7 @@ def clear_logs() -> int:
   c.execute('DELETE FROM chat_logs')
   c.commit()
   c.close()
-  return count
+  return int(count)
 
 
 def update_log_reactions(log_id: str, emoji: str, user: str = 'user') -> dict | None:
