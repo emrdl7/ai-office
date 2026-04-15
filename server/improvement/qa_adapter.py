@@ -45,7 +45,8 @@ class QAAdapter:
     if self._path.exists():
       try:
         with open(self._path, encoding='utf-8') as f:
-          return json.load(f)
+          data: dict[str, dict[str, Any]] = json.load(f)
+          return data
       except (json.JSONDecodeError, OSError):
         pass
     return dict(DEFAULT_CRITERIA)

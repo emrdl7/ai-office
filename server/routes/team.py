@@ -1,4 +1,6 @@
 # 팀/에이전트 조회 엔드포인트
+from typing import Any
+
 from fastapi import APIRouter, Request
 
 from orchestration.office import Office, OfficeState
@@ -7,7 +9,7 @@ router = APIRouter()
 
 
 @router.get('/api/agents')
-async def get_agents(request: Request):
+async def get_agents(request: Request) -> list[dict[str, Any]]:
   '''에이전트별 현재 상태를 Office 상태에서 추론한다.'''
   office: Office = request.app.state.office
   state = office._state
@@ -29,7 +31,7 @@ async def get_agents(request: Request):
     OfficeState.TEAMLEAD_REVIEW, OfficeState.REVISION,
   }
 
-  agents = []
+  agents: list[dict[str, Any]] = []
   for agent_id in ['teamlead', 'planner', 'designer', 'developer', 'qa']:
     if active == 'all':
       status = 'meeting'
@@ -67,7 +69,7 @@ async def get_agents(request: Request):
 
 
 @router.get('/api/agents/quotes')
-async def get_daily_quotes():
+async def get_daily_quotes() -> dict[str, str]:
   '''오늘의 한마디 반환. 없으면 Haiku로 생성 후 캐싱.'''
   from db.daily_quote_store import get_quotes, save_quotes, AGENT_PERSONAS
   from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
@@ -113,14 +115,14 @@ async def get_daily_quotes():
 
 
 @router.get('/api/team')
-async def get_team():
+async def get_team() -> list[dict[str, Any]]:
   '''팀 구성 조회 — 프론트엔드에서 이름/역할/페르소나 등을 동기화한다.'''
   from config.team import to_api_dict
   return to_api_dict()
 
 
 @router.get('/api/team-memory')
-async def get_team_memory():
+async def get_team_memory() -> dict[str, Any]:
   '''팀 공유 메모리 조회 — 교훈, 협업 패턴, 프로젝트 이력'''
   from memory.team_memory import TeamMemory
   tm = TeamMemory()
@@ -139,7 +141,7 @@ async def get_team_memory():
 
 
 @router.get('/api/reactions/stats')
-async def get_reaction_stats_api(days: int = 30):
+async def get_reaction_stats_api(days: int = 30) -> dict[str, Any]:
   '''에이전트별 리액션 통계 (최근 N일).'''
   from db.log_store import get_reaction_stats
   return get_reaction_stats(limit_days=days)

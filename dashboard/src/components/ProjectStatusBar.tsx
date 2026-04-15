@@ -17,7 +17,7 @@ interface ProjectStatus {
   nodes: { total: number; completed: number; in_progress: number } | null
 }
 
-function formatElapsed(sec: number): string {
+export function formatElapsed(sec: number): string {
   if (sec <= 0) return ''
   const m = Math.floor(sec / 60)
   const s = sec % 60

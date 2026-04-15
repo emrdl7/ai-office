@@ -1,5 +1,6 @@
 # 관리자/자가개선 관련 엔드포인트
 from dataclasses import asdict
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -10,7 +11,7 @@ router = APIRouter()
 
 
 @router.post('/api/server/restart')
-async def restart_server(request: Request):
+async def restart_server(request: Request) -> dict[str, Any]:
   '''백엔드 프로세스를 종료 — serve.sh 감독 루프가 3초 내 재기동.
 
   코드 패치 진행 중이면 거절 (force=true 쿼리로 강제).
@@ -24,7 +25,7 @@ async def restart_server(request: Request):
       status_code=409,
       detail='코드 패치가 진행 중입니다. 완료 후 재시작하거나 ?force=true로 강제하세요',
     )
-  async def _bye():
+  async def _bye() -> None:
     await _a.sleep(1.0)
     await event_bus.publish(LogEvent(
       agent_id='teamlead', event_type='system_notice',
@@ -37,7 +38,7 @@ async def restart_server(request: Request):
 
 
 @router.post('/api/teamlead/review')
-async def trigger_teamlead_review(request: Request):
+async def trigger_teamlead_review(request: Request) -> dict[str, Any]:
   '''팀장 배치 리뷰를 수동 트리거. 이미 실행 중이면 거절.'''
   import asyncio
   office: Office = request.app.state.office
@@ -45,22 +46,23 @@ async def trigger_teamlead_review(request: Request):
     office._review_lock = asyncio.Lock()
   if office._review_lock.locked():
     return {'queued': False, 'message': '이미 리뷰가 실행 중입니다'}
-  async def _run_once():
-    async with office._review_lock:
+  lock = office._review_lock
+  async def _run_once() -> None:
+    async with lock:
       await office._run_single_review(force=True)
   asyncio.create_task(_run_once())
   return {'queued': True, 'message': '팀장 리뷰 대기열 투입'}
 
 
 @router.get('/api/improvement/metrics')
-async def get_improvement_metrics(request: Request):
+async def get_improvement_metrics(request: Request) -> list[dict[str, Any]]:
   '''프로젝트별 성과 메트릭을 반환한다.'''
   office: Office = request.app.state.office
   return office.improvement_engine.get_metrics_summary()
 
 
 @router.get('/api/improvement/rules/{agent}')
-async def get_agent_rules(agent: str, request: Request):
+async def get_agent_rules(agent: str, request: Request) -> list[dict[str, Any]]:
   '''에이전트별 학습된 품질 규칙 목록을 반환한다.'''
   office: Office = request.app.state.office
   rules = office.improvement_engine.prompt_evolver.load_rules(agent)
@@ -68,7 +70,7 @@ async def get_agent_rules(agent: str, request: Request):
 
 
 @router.post('/api/improvement/rules/{agent}/toggle')
-async def toggle_agent_rule(agent: str, request: Request):
+async def toggle_agent_rule(agent: str, request: Request) -> dict[str, Any]:
   '''규칙 활성화/비활성화 토글.'''
   body = await request.json()
   rule_id = body.get('rule_id', '')

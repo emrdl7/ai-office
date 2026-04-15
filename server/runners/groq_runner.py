@@ -25,7 +25,7 @@ class GroqRunner:
   무료 한도: 분당 30회, 일 14,400회.
   '''
 
-  def __init__(self):
+  def __init__(self) -> None:
     self._client: httpx.AsyncClient | None = None
     self._api_key = os.environ.get('GROQ_API_KEY', '')
 

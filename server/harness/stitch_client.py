@@ -2,6 +2,7 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import logging
 
@@ -52,7 +53,8 @@ async def generate_design(prompt: str, output_dir: str) -> dict:
     return {'success': False, 'error': f'Stitch 타임아웃 ({TIMEOUT}초)'}
 
   try:
-    return json.loads(stdout.decode())
+    result: dict[str, Any] = json.loads(stdout.decode())
+    return result
   except Exception:
     logger.debug("Stitch 응답 JSON 파싱 실패", exc_info=True)
     return {

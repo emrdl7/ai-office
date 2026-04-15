@@ -3,6 +3,7 @@ import asyncio
 import logging
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
@@ -43,7 +44,7 @@ async def chat(
   message: str = Form(default=''),
   to: str = Form(default='all'),
   files: list[UploadFile] = File(default=[]),
-):
+) -> dict[str, Any]:
   '''메신저 채팅 — 팀 채널 또는 특정 팀원에게 메시지 전송 (파일 첨부 지원)'''
   from harness.file_reader import read_file
 
@@ -53,7 +54,7 @@ async def chat(
   save_task(task_id, message, 'idle', attachments=','.join(file_names))
 
   attachments_text = ''
-  file_urls: list[dict] = []
+  file_urls: list[dict[str, Any]] = []
   IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'}
   if files:
     upload_dir = paths.WORKSPACE_ROOT / task_id / 'uploads'
@@ -89,7 +90,7 @@ async def chat(
   if attachments_text:
     full_message = f'{message}\n\n[첨부된 참조 자료]\n{attachments_text}'
 
-  async def _run():
+  async def _run() -> None:
     try:
       update_task_state(task_id, 'running')
       has_pending = (hasattr(office, '_interrupted_task_id') and office._interrupted_task_id) or \
@@ -158,7 +159,7 @@ async def chat(
       ))
 
   task = asyncio.create_task(_run())
-  def _handle_task_error(t):
+  def _handle_task_error(t: asyncio.Task[None]) -> None:
     if t.exception():
       logger.warning('비동기 태스크 미처리 예외 발생: %s', t.exception(), exc_info=t.exception())
   task.add_done_callback(_handle_task_error)
@@ -170,7 +171,7 @@ async def create_task(
   request: Request,
   instruction: str = Form(...),
   files: list[UploadFile] = File(default=[]),
-):
+) -> dict[str, Any]:
   '''사용자 지시 + 첨부파일을 받아 오케스트레이션을 시작한다.'''
   from harness.file_reader import read_file
 
@@ -200,7 +201,7 @@ async def create_task(
   if attachments_text:
     full_instruction = f'{instruction}\n\n[첨부된 참조 자료 — 핵심 입력]\n{attachments_text}'
 
-  async def _run():
+  async def _run() -> None:
     try:
       update_task_state(task_id, 'running')
       task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
@@ -217,7 +218,7 @@ async def create_task(
 
 
 @router.get('/api/tasks/{task_id}')
-async def get_task_status_api(task_id: str):
+async def get_task_status_api(task_id: str) -> dict[str, Any]:
   '''태스크 현재 상태를 반환한다'''
   task = get_task(task_id)
   if not task:
@@ -226,7 +227,7 @@ async def get_task_status_api(task_id: str):
 
 
 @router.delete('/api/tasks/{task_id}')
-async def delete_task_api(task_id: str):
+async def delete_task_api(task_id: str) -> dict[str, str]:
   '''태스크 삭제 — DB + workspace 폴더 모두 삭제'''
   import shutil
   task = get_task(task_id)
@@ -244,7 +245,7 @@ async def delete_task_api(task_id: str):
 
 
 @router.get('/api/tasks')
-async def list_tasks_api():
+async def list_tasks_api() -> list[dict[str, Any]]:
   '''전체 작업 지시 내역을 순서대로 반환한다 (DASH-05) — SQLite 영속'''
   tasks = list_tasks()
   return [
@@ -254,7 +255,7 @@ async def list_tasks_api():
 
 
 @router.get('/api/dag')
-async def get_dag(request: Request):
+async def get_dag(request: Request) -> dict[str, Any]:
   '''TaskGraph를 React Flow 형식(nodes, edges)으로 반환한다 (WKFL-05).'''
   office: Office = request.app.state.office
   graph: TaskGraph | None = getattr(office, '_task_graph', None)
@@ -266,7 +267,7 @@ async def get_dag(request: Request):
 
   depth: dict[str, int] = {}
 
-  def get_depth(task_id: str, visited: set) -> int:
+  def get_depth(task_id: str, visited: set[str]) -> int:
     if task_id in depth:
       return depth[task_id]
     if task_id in visited:
@@ -285,7 +286,7 @@ async def get_dag(request: Request):
 
   x_counter: dict[int, int] = {}
 
-  nodes = []
+  nodes: list[dict[str, Any]] = []
   for tid, task_data in state_dict.items():
     d = depth.get(tid, 0)
     x_counter[d] = x_counter.get(d, 0) + 1
@@ -303,7 +304,7 @@ async def get_dag(request: Request):
       'position': {'x': x, 'y': y},
     })
 
-  edges = []
+  edges: list[dict[str, Any]] = []
   for tid, task_data in state_dict.items():
     for dep_id in task_data.get('depends_on', []):
       edges.append({

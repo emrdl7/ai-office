@@ -116,7 +116,7 @@ def _fetch_web_page(url: str, max_chars: int = 8000) -> str:
       content_type = resp.headers.get('Content-Type', '')
       if 'image' in content_type or 'pdf' in content_type or 'octet-stream' in content_type:
         return ''
-      raw = resp.read().decode('utf-8', errors='replace')
+      raw: str = resp.read().decode('utf-8', errors='replace')
 
     # HTML 태그 제거 → 텍스트 추출
     if '<html' in raw.lower() or '<body' in raw.lower():

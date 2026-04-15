@@ -63,7 +63,8 @@ class WorkflowOptimizer:
     if self._data_path.exists():
       try:
         with open(self._data_path, encoding='utf-8') as f:
-          return json.load(f)
+          data: dict[str, Any] = json.load(f)
+          return data
       except (json.JSONDecodeError, OSError):
         pass
     return {}

@@ -137,7 +137,7 @@ def _branch_exists(branch: str) -> bool:
   return code == 0
 
 
-async def _emit(agent_id: str, message: str, event_type: str = 'message'):
+async def _emit(agent_id: str, message: str, event_type: str = 'message') -> None:
   await event_bus.publish(LogEvent(
     agent_id=agent_id,
     event_type=event_type,
@@ -353,7 +353,7 @@ async def _apply_suggestion_locked(suggestion: dict, suggestion_id: str, branch:
     return False
 
 
-def _rollback(branch: str, original_branch: str):
+def _rollback(branch: str, original_branch: str) -> None:
   '''실패 시 원래 브랜치로 되돌리고 feature 브랜치 삭제.'''
   _git(['checkout', original_branch])
   _git(['branch', '-D', branch])

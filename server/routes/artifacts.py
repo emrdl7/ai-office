@@ -1,7 +1,9 @@
 # 산출물/업로드/파일/내보내기 관련 엔드포인트
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 
 from db.task_store import list_tasks
 from orchestration.office import Office
@@ -13,7 +15,7 @@ from core import paths
 
 
 @router.get('/api/artifacts')
-async def list_all_artifacts(task_id: str = ''):
+async def list_all_artifacts(task_id: str = '') -> list[dict[str, Any]]:
   '''산출물 목록 반환. task_id 지정 시 해당 태스크만.
 
   workspace 디렉토리명이 project_id인 경우 projects 테이블에서 메타데이터를 가져온다.
@@ -26,13 +28,13 @@ async def list_all_artifacts(task_id: str = ''):
   project_map = {p['project_id']: p for p in list_projects()}
   task_list = list_tasks()
   task_map = {t['task_id']: t for t in task_list}
-  project_to_task = {}
+  project_to_task: dict[str, dict[str, Any]] = {}
   for t in task_list:
     pid = t.get('project_id', '')
     if pid and pid not in project_to_task:
       project_to_task[pid] = t
 
-  result = []
+  result: list[dict[str, Any]] = []
   dirs = [paths.WORKSPACE_ROOT / task_id] if task_id else sorted(paths.WORKSPACE_ROOT.iterdir())
   for task_dir in dirs:
     if not task_dir.is_dir() or task_dir.name.startswith('.'):
@@ -79,21 +81,19 @@ async def list_all_artifacts(task_id: str = ''):
 
 
 @router.get('/api/uploads/{task_id}/{filename}')
-async def get_upload_file(task_id: str, filename: str):
+async def get_upload_file(task_id: str, filename: str) -> FileResponse:
   '''업로드된 파일을 바이너리로 반환한다 (이미지 썸네일 등).'''
   if '..' in task_id or '..' in filename:
     raise HTTPException(status_code=400, detail='유효하지 않은 경로')
   target = paths.WORKSPACE_ROOT / task_id / 'uploads' / filename
   if not target.exists() or not target.is_file():
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
-  from fastapi.responses import FileResponse
   return FileResponse(str(target), filename=filename)
 
 
 @router.get('/api/artifacts/{file_path:path}')
-async def get_artifact_content(file_path: str, request: Request):
+async def get_artifact_content(file_path: str, request: Request) -> Any:
   '''산출물 파일 내용을 반환한다.'''
-  from fastapi.responses import HTMLResponse, PlainTextResponse
   if '..' in file_path:
     raise HTTPException(status_code=400, detail='유효하지 않은 경로')
   target = paths.WORKSPACE_ROOT / file_path
@@ -101,7 +101,6 @@ async def get_artifact_content(file_path: str, request: Request):
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
 
   if file_path.endswith('.pdf'):
-    from fastapi.responses import FileResponse
     return FileResponse(str(target), media_type='application/pdf', filename=target.name)
 
   content = target.read_text(encoding='utf-8', errors='replace')
@@ -111,7 +110,7 @@ async def get_artifact_content(file_path: str, request: Request):
 
   accept = request.headers.get('accept', '')
   if 'text/html' in accept and file_path.endswith('.md'):
-    import markdown as md_lib  # type: ignore[import-untyped]
+    import markdown as md_lib  # type: ignore[import-untyped, unused-ignore]
     rendered = md_lib.markdown(content, extensions=['tables', 'fenced_code', 'nl2br'])
     html = f'''<!DOCTYPE html>
 <html><head>
@@ -142,7 +141,7 @@ async def get_artifact_content(file_path: str, request: Request):
 
 
 @router.get('/api/files/{task_id}')
-async def list_files(task_id: str):
+async def list_files(task_id: str) -> list[dict[str, Any]]:
   '''task_id의 산출물 파일 목록을 반환한다 (DASH-04).
 
   경로 순회 공격 방지: task_id에 '..' 또는 '/' 포함 시 400 반환.
@@ -158,7 +157,7 @@ async def list_files(task_id: str):
   wm = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
   artifacts = wm.list_artifacts()
 
-  result = []
+  result: list[dict[str, Any]] = []
   for p in artifacts:
     rel = p.relative_to(task_dir)
     result.append({
@@ -170,7 +169,7 @@ async def list_files(task_id: str):
 
 
 @router.get('/api/files/{task_id}/{file_path:path}')
-async def get_file(task_id: str, file_path: str):
+async def get_file(task_id: str, file_path: str) -> dict[str, str]:
   '''파일 내용을 반환한다 (DASH-04).
 
   WorkspaceManager.safe_path()로 경로 순회를 방지한다.
@@ -196,7 +195,7 @@ async def get_file(task_id: str, file_path: str):
 
 
 @router.get('/api/project/active')
-async def get_active_project_api(request: Request):
+async def get_active_project_api(request: Request) -> dict[str, str]:
   '''현재 활성 프로젝트 정보를 반환한다.'''
   office: Office = request.app.state.office
   if office._active_project_id:
@@ -208,7 +207,7 @@ async def get_active_project_api(request: Request):
 
 
 @router.get('/api/project/status')
-async def get_project_status(request: Request):
+async def get_project_status(request: Request) -> dict[str, Any]:
   '''현재 프로젝트 진행 상태를 반환 — 대시보드 실시간 표시용.
 
   필드:
@@ -233,7 +232,7 @@ async def get_project_status(request: Request):
     except Exception:
       elapsed_sec = 0
 
-  nodes_summary = None
+  nodes_summary: dict[str, int] | None = None
   graph = getattr(office, '_task_graph', None)
   if graph is not None:
     try:
@@ -261,7 +260,7 @@ async def get_project_status(request: Request):
 
 
 @router.get('/api/exports/{task_id}')
-async def get_exportable_formats(task_id: str):
+async def get_exportable_formats(task_id: str) -> dict[str, list[str]]:
   '''태스크의 내보내기 가능 포맷 목록을 반환한다.'''
   from harness.export_engine import get_exportable_formats
   task_dir = paths.WORKSPACE_ROOT / task_id
@@ -269,7 +268,7 @@ async def get_exportable_formats(task_id: str):
 
 
 @router.post('/api/exports/{task_id}/{fmt}')
-async def export_artifact(task_id: str, fmt: str):
+async def export_artifact(task_id: str, fmt: str) -> dict[str, str]:
   '''온디맨드 내보내기 — PDF, DOCX, ZIP 생성.'''
   from harness.export_engine import md_to_pdf, md_to_docx, folder_to_zip
 
@@ -281,10 +280,10 @@ async def export_artifact(task_id: str, fmt: str):
   export_dir.mkdir(parents=True, exist_ok=True)
 
   if fmt == 'zip':
-    out = folder_to_zip(task_dir, export_dir / 'bundle.zip')
+    folder_to_zip(task_dir, export_dir / 'bundle.zip')
     return {'path': f'{task_id}/exports/bundle.zip', 'format': 'zip'}
 
-  md_parts = []
+  md_parts: list[str] = []
   for md_file in sorted(task_dir.rglob('*result*.md')):
     if 'uploads' in str(md_file) or 'exports' in str(md_file):
       continue

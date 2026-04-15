@@ -1,4 +1,5 @@
 # 건의 리스트 + 통합 검색 엔드포인트
+from typing import Any
 from fastapi import APIRouter
 
 router = APIRouter()
@@ -11,7 +12,7 @@ async def list_suggestions_api(
   target_agent: str = '',
   q: str = '',
   limit: int = 0,
-):
+) -> list[dict[str, Any]]:
   '''건의 목록을 반환한다. status/category/target_agent 매치, q는 title+content LIKE.'''
   from db.suggestion_store import list_suggestions
   return list_suggestions(
@@ -31,7 +32,7 @@ async def unified_search_api(
   include_archive: bool = False,
   limit: int = 50,
   preset: str = '',
-):
+) -> dict[str, Any]:
   '''chat_logs / suggestions / dynamics 통합 검색.
 
   type: 'logs' | 'suggestions' | 'dynamics' | 'all'
@@ -39,7 +40,7 @@ async def unified_search_api(
   '''
   from db.log_store import search_logs
   from db.suggestion_store import list_suggestions
-  result: dict = {'q': q, 'type': type, 'preset': preset}
+  result: dict[str, Any] = {'q': q, 'type': type, 'preset': preset}
   t = (type or 'all').lower()
   event_types = _ERROR_EVENT_TYPES if preset == 'errors' else None
   if preset == 'errors':

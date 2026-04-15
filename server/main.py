@@ -9,8 +9,10 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -57,7 +59,7 @@ workspace = WorkspaceManager(task_id='', workspace_root=str(paths.WORKSPACE_ROOT
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
   '''FastAPI 생명주기 관리.'''
   office = Office(
     bus=message_bus,
@@ -90,7 +92,7 @@ async def lifespan(app: FastAPI):
   message_bus.close()
 
 
-async def _archive_loop():
+async def _archive_loop() -> None:
   '''서버 생존 동안 24시간 주기로 오래된 done 메시지 + 임계치 도달한 chat_logs를 archive로 이관.'''
   from db.log_store import maybe_archive_logs
   while True:
@@ -116,7 +118,7 @@ async def _archive_loop():
       break
 
 
-async def _draft_promotion_loop():
+async def _draft_promotion_loop() -> None:
   '''1시간 주기로 24h 경과 draft 건의를 pending으로 자동 승격.
 
   draft → pending 승격 후 auto_triage_new_suggestion을 호출해 정상 흐름 진입.
@@ -148,7 +150,7 @@ app.state.ws_token = WS_AUTH_TOKEN
 
 
 @app.middleware('http')
-async def _rest_auth_middleware(request: Request, call_next):
+async def _rest_auth_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
   '''REST_AUTH_TOKEN이 설정된 경우 /api/* 경로를 Bearer 또는 ?token=으로 보호.
 
   WS 엔드포인트는 기존 WS_AUTH_TOKEN 쿼리 파라미터로 별도 보호.
@@ -221,7 +223,7 @@ class TaskResponse(BaseModel):
 
 
 @app.get('/health')
-async def health():
+async def health() -> dict[str, Any]:
   '''서버 상태 확인'''
   return {
     'status': 'ok',
@@ -236,13 +238,13 @@ async def health():
 # --- 자가개선 API ---
 
 @app.get('/api/improvement/report')
-async def get_improvement_report(request: Request):
+async def get_improvement_report(request: Request) -> dict[str, Any]:
   '''최신 자가개선 분석 보고서를 반환한다.'''
   office: Office = request.app.state.office
   return office.improvement_engine.get_report()
 
 
-async def _recover_orphan_patches():
+async def _recover_orphan_patches() -> None:
   '''서버 기동 시 호출. 코드 패치 중단으로 남은 git/DB 불일치 정리.'''
   import subprocess as _sp
   import asyncio as _a
@@ -253,11 +255,11 @@ async def _recover_orphan_patches():
 
   root = _P(__file__).parent.parent
 
-  def g(args):
+  def g(args: list[str]) -> tuple[int, str]:
     r = _sp.run(['git'] + args, cwd=str(root), capture_output=True, text=True)
     return r.returncode, (r.stdout + r.stderr).strip()
 
-  recovered = []
+  recovered: list[str] = []
 
   # 1. 현재 HEAD가 improvement/* 위에 있으면 main으로 강제 복귀
   _, cur = g(['rev-parse', '--abbrev-ref', 'HEAD'])
@@ -321,7 +323,7 @@ if DIST_DIR.exists():
 
   # SPA fallback — API/WS가 아닌 모든 경로는 index.html 반환
   @app.get('/{path:path}')
-  async def spa_fallback(path: str):
+  async def spa_fallback(path: str) -> FileResponse:
     file_path = DIST_DIR / path
     if file_path.exists() and file_path.is_file():
       return FileResponse(str(file_path))

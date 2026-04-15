@@ -111,6 +111,7 @@ class Office:
     # 프로젝트 세션
     self._active_project_id: str | None = None
     self._active_project_title: str = ''
+    self._current_task_id: str = ''
     self._user_mid_feedback: list[str] = []  # 작업 중 사용자 피드백 축적
     self._phase_feedback: list[dict] = []   # 팀원 리액션/인수인계 피드백
     self._current_project_type: str = ''    # 현재 프로젝트 유형 (phase_registry)
@@ -369,8 +370,8 @@ class Office:
           task_id=self._active_project_id,
           workspace_root=str(paths.WORKSPACE_ROOT),
         )
-        if hasattr(self, '_current_task_id'):
-          update_task_project(self._current_task_id, self._active_project_id)
+        if self._current_task_id:
+          update_task_project(self._current_task_id,self._active_project_id)
         await self._emit('system', f'📂 프로젝트 이어가기: {self._active_project_title}', 'project_update')
       else:
         # 새 프로젝트 시작 — 이전 프로젝트 컨텍스트 초기화 (다른 프로젝트 대화 오염 방지)
@@ -388,8 +389,8 @@ class Office:
         self._active_project_id = new_pid
         self._active_project_title = title
         self.workspace = WorkspaceManager(task_id=new_pid, workspace_root=ws_root)
-        if hasattr(self, '_current_task_id'):
-          update_task_project(self._current_task_id, new_pid)
+        if self._current_task_id:
+          update_task_project(self._current_task_id,new_pid)
         await self._emit('system', f'📂 새 프로젝트: {title}', 'project_update')
 
     # 3. 의도별 분기
@@ -438,17 +439,49 @@ class Office:
     self._state = OfficeState.COMPLETED
     return {'state': self._state.value, 'response': '처리할 수 없는 입력입니다.', 'artifacts': []}
 
-  async def _handle_quick_task(self, *args, **kwargs): return await project_runner._handle_quick_task(self, *args, **kwargs)
+  async def _handle_quick_task(
+    self,
+    user_input: str,
+    agent_name: str,
+    analysis: str,
+    reference_context: str,
+  ) -> dict[str, Any]:
+    return await project_runner._handle_quick_task(
+      self, user_input, agent_name, analysis, reference_context,
+    )
 
-  async def _handle_project(self, *args, **kwargs): return await project_runner._handle_project(self, *args, **kwargs)
+  async def _handle_project(
+    self,
+    user_input: str,
+    analysis: str,
+    reference_context: str,
+  ) -> dict[str, Any]:
+    return await project_runner._handle_project(self, user_input, analysis, reference_context)
 
   async def _continue_project(self, user_answer: str) -> dict[str, Any]: return await project_runner._continue_project(self, user_answer)
 
-  async def _plan_project_phases(self, *args, **kwargs): return await project_runner._plan_project_phases(self, *args, **kwargs)
+  async def _plan_project_phases(
+    self,
+    user_input: str,
+    analysis: str,
+    meeting_summary: str,
+  ) -> list[dict] | None:
+    return await project_runner._plan_project_phases(self, user_input, analysis, meeting_summary)
 
   def _default_phases(self, user_input: str) -> tuple[list[dict], str]: return project_runner._default_phases(self, user_input)
 
-  async def _execute_project(self, *args, **kwargs): return await project_runner._execute_project(self, *args, **kwargs)
+  async def _execute_project(
+    self,
+    user_input: str,
+    analysis: str,
+    meeting_summary: str,
+    reference_context: str,
+    briefing: str,
+    phases: list[dict] | None = None,
+  ) -> dict[str, Any]:
+    return await project_runner._execute_project(
+      self, user_input, analysis, meeting_summary, reference_context, briefing, phases,
+    )
 
   async def _auto_export(self, phase_artifacts: list[str]) -> None: return await project_runner._auto_export(self, phase_artifacts)
 
@@ -460,7 +493,14 @@ class Office:
 
   async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None: return await agent_interactions._team_reaction(self, worker, phase_name, content_summary)
 
-  async def _consult_peers(self, *args, **kwargs): return await agent_interactions._consult_peers(self, *args, **kwargs)
+  async def _consult_peers(
+    self,
+    worker_name: str,
+    content: str,
+    phase: dict,
+    all_results: dict[str, str],
+  ) -> str:
+    return await agent_interactions._consult_peers(self, worker_name, content, phase, all_results)
 
   def _record_dynamic(
     self,
@@ -506,7 +546,17 @@ class Office:
 
   def _resolve_reviewer(self, worker: str, prompt: str) -> tuple[str, str] | None: return agent_interactions._resolve_reviewer(self, worker, prompt)
 
-  async def _quick_task_second_opinion(self, *args, **kwargs): return await project_runner._quick_task_second_opinion(self, *args, **kwargs)
+  async def _quick_task_second_opinion(
+    self,
+    worker: str,
+    prompt: str,
+    result: str,
+    worker_agent: Agent | None = None,
+    ctx_parts: list[str] | None = None,
+  ) -> str:
+    return await project_runner._quick_task_second_opinion(
+      self, worker, prompt, result, worker_agent, ctx_parts,
+    )
 
   async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None: return await agent_interactions._work_commentary(self, worker, phase_name, result_preview)
 
@@ -523,7 +573,15 @@ class Office:
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool: return await project_runner._run_qa_check(self, qa_agent, node, content)
 
-  async def _run_planner_synthesize(self, *args, **kwargs): return await project_runner._run_planner_synthesize(self, *args, **kwargs)
+  async def _run_planner_synthesize(
+    self,
+    user_input: str,
+    worker_results: dict[str, str],
+    revision_feedback: str = '',
+  ) -> None:
+    return await project_runner._run_planner_synthesize(
+      self, user_input, worker_results, revision_feedback,
+    )
 
   async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool: return await project_runner._teamlead_final_review(self, user_input, task_graph)
 

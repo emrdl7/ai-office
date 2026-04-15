@@ -1,6 +1,7 @@
 # 로그 및 WebSocket 엔드포인트
 import logging
 from dataclasses import asdict
+from typing import Any
 
 from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
 
@@ -17,7 +18,7 @@ NEGATIVE_THRESHOLD = 1
 
 
 @router.delete('/api/logs')
-async def clear_logs_api():
+async def clear_logs_api() -> dict[str, int]:
   '''채팅 로그를 모두 삭제한다.'''
   from db.log_store import clear_logs
   count = clear_logs()
@@ -25,7 +26,7 @@ async def clear_logs_api():
 
 
 @router.get('/api/logs/history')
-async def get_log_history(request: Request, limit: int = 100):
+async def get_log_history(request: Request, limit: int = 100) -> list[dict[str, Any]]:
   '''최근 로그 기록을 반환한다 (DASH-03 새로고침 복구용).
 
   limit: 반환할 최대 건수 (기본 100, 최대 500)
@@ -36,7 +37,7 @@ async def get_log_history(request: Request, limit: int = 100):
 
 
 @router.post('/api/logs/{log_id}/react')
-async def react_to_log(log_id: str, request: Request):
+async def react_to_log(log_id: str, request: Request) -> Any:
   '''메시지에 이모지 리액션을 추가/토글한다.'''
   from db.log_store import update_log_reactions
   body = await request.json()
@@ -129,13 +130,13 @@ def _mark_learning_logged(log_id: str, kind: str) -> None:
 
 
 @router.get('/api/ws-token')
-async def get_ws_token(request: Request):
+async def get_ws_token(request: Request) -> dict[str, str]:
   '''프론트엔드에서 WebSocket 연결 시 사용할 인증 토큰 반환.'''
   return {'token': request.app.state.ws_token}
 
 
 @router.websocket('/ws/logs')
-async def log_stream(ws: WebSocket, token: str = Query(default='')):
+async def log_stream(ws: WebSocket, token: str = Query(default='')) -> None:
   '''실시간 에이전트 로그 스트림 (저장은 EventBus에서 처리)'''
   if token != ws.app.state.ws_token:
     await ws.close(code=4003, reason='Unauthorized')

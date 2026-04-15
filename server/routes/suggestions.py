@@ -1,6 +1,7 @@
 # 건의 CRUD + 감사 이벤트 + auto_triage + auto_merge 파이프라인
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post('/api/suggestions')
-async def create_suggestion_api(request: Request):
+async def create_suggestion_api(request: Request) -> dict[str, Any]:
   '''건의를 등록한다.'''
   from db.suggestion_store import create_suggestion
   body = await request.json()
@@ -25,7 +26,7 @@ async def create_suggestion_api(request: Request):
 
 
 @router.post('/api/suggestions/{suggestion_id}/promote')
-async def promote_suggestion_api(suggestion_id: str):
+async def promote_suggestion_api(suggestion_id: str) -> dict[str, Any] | None:
   '''draft 건의를 pending으로 수동 승격하고 auto_triage를 돌린다.'''
   from db.suggestion_store import promote_draft, get_suggestion
   if not promote_draft(suggestion_id):
@@ -41,7 +42,7 @@ async def promote_suggestion_api(suggestion_id: str):
 
 
 @router.patch('/api/suggestions/{suggestion_id}')
-async def update_suggestion_api(suggestion_id: str, request: Request):
+async def update_suggestion_api(suggestion_id: str, request: Request) -> dict[str, Any]:
   '''건의 상태/답변을 업데이트한다.
 
   status 값:
@@ -73,7 +74,7 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
     stype = suggestion.get('suggestion_type') or 'prompt'
     auto_merge_req = bool(body.get('auto_merge', True))
     if stype == 'code':
-      async def _run_patch():
+      async def _run_patch() -> None:
         from improvement.code_patcher import apply_suggestion
         from db.suggestion_store import update_suggestion as _upd
         ok = await apply_suggestion(suggestion)
@@ -115,7 +116,7 @@ async def update_suggestion_api(suggestion_id: str, request: Request):
   return {'success': True}
 
 
-async def auto_triage_new_suggestion(suggestion_id: str):
+async def auto_triage_new_suggestion(suggestion_id: str) -> None:
   '''새 건의가 등록되면 LLM이 실행 가치를 판정해 자동 accept/reject/hold.
 
   - accept: code → 자동 패치 + 자동 병합 파이프라인 / prompt|rule → 즉시 auto_apply
@@ -232,7 +233,7 @@ async def auto_triage_new_suggestion(suggestion_id: str):
   else:
     update_suggestion(suggestion_id, status='accepted')
     log_event(suggestion_id, 'approved', {'via': 'triage'})
-    async def _run():
+    async def _run() -> None:
       from improvement.code_patcher import apply_suggestion
       from db.suggestion_store import update_suggestion as _upd
       ok = await apply_suggestion(s)
@@ -244,7 +245,7 @@ async def auto_triage_new_suggestion(suggestion_id: str):
     _a.create_task(_run())
 
 
-async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3):
+async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3) -> None:
   '''승인 후 Claude 패치가 끝난 상태에서 호출.
 
   AI 리뷰 → merge/needs_fix/discard 판정에 따라 자동 분기:
@@ -522,21 +523,21 @@ async def _apply_suggestion_to_prompts(suggestion: dict) -> None:
 
 
 @router.get('/api/suggestions/{suggestion_id}/events')
-async def get_suggestion_events(suggestion_id: str):
+async def get_suggestion_events(suggestion_id: str) -> list[dict[str, Any]]:
   '''건의의 감사 이벤트 시계열.'''
   from db.suggestion_store import list_events
   return list_events(suggestion_id=suggestion_id, limit=200)
 
 
 @router.get('/api/suggestion-events')
-async def get_all_events(limit: int = 200):
+async def get_all_events(limit: int = 200) -> list[dict[str, Any]]:
   '''전체 감사 이벤트 최신순 (분석용).'''
   from db.suggestion_store import list_events
   return list_events(limit=limit)
 
 
 @router.delete('/api/suggestions/{suggestion_id}')
-async def delete_suggestion_api(suggestion_id: str):
+async def delete_suggestion_api(suggestion_id: str) -> dict[str, str]:
   '''건의를 삭제한다.'''
   from db.suggestion_store import delete_suggestion
   if not delete_suggestion(suggestion_id):

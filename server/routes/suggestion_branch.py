@@ -1,5 +1,6 @@
 # 자가개선 브랜치 검토/병합/보완/폐기 엔드포인트
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -8,7 +9,7 @@ from log_bus.event_bus import LogEvent, event_bus
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_BRANCH_EXPLAIN_CACHE: dict[str, dict] = {}
+_BRANCH_EXPLAIN_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def _run_git(args: list[str]) -> tuple[int, str]:
@@ -20,7 +21,7 @@ def _run_git(args: list[str]) -> tuple[int, str]:
 
 
 @router.get('/api/suggestions/{suggestion_id}/branch')
-async def get_suggestion_branch_diff(suggestion_id: str):
+async def get_suggestion_branch_diff(suggestion_id: str) -> dict[str, Any]:
   '''improvement/{id} 브랜치의 diff + 파일 목록을 반환.'''
   branch = f'improvement/{suggestion_id}'
   code, _ = _run_git(['rev-parse', '--verify', branch])
@@ -38,7 +39,7 @@ async def get_suggestion_branch_diff(suggestion_id: str):
 
 
 @router.get('/api/suggestions/{suggestion_id}/branch/explain')
-async def explain_suggestion_branch(suggestion_id: str):
+async def explain_suggestion_branch(suggestion_id: str) -> dict[str, Any]:
   '''변경사항의 의도·효과·위험을 AI로 분석해 반환 (커밋 해시 기준 캐시).'''
   from db.suggestion_store import get_suggestion
   branch = f'improvement/{suggestion_id}'
@@ -132,7 +133,7 @@ async def explain_suggestion_branch(suggestion_id: str):
 
 
 @router.post('/api/suggestions/{suggestion_id}/branch/merge')
-async def merge_suggestion_branch(suggestion_id: str, request: Request):
+async def merge_suggestion_branch(suggestion_id: str, request: Request) -> dict[str, Any]:
   '''improvement/{id}를 현재 브랜치(main)로 병합 + 상태 done + 위험 follow-up 자동 등록.
 
   게이트:
@@ -263,7 +264,7 @@ async def merge_suggestion_branch(suggestion_id: str, request: Request):
 
 
 @router.post('/api/suggestions/{suggestion_id}/rollback')
-async def rollback_auto_applied(suggestion_id: str):
+async def rollback_auto_applied(suggestion_id: str) -> dict[str, Any]:
   '''자동 반영된 건의를 되돌린다 — 24시간 유예 내에서만 가능.'''
   from db.suggestion_store import get_suggestion, update_suggestion, _conn as _sconn
   from improvement.auto_apply import rollback_prompt_or_rule
@@ -307,7 +308,7 @@ async def rollback_auto_applied(suggestion_id: str):
 
 
 @router.post('/api/suggestions/{suggestion_id}/branch/supplement')
-async def supplement_suggestion_branch(suggestion_id: str, request: Request):
+async def supplement_suggestion_branch(suggestion_id: str, request: Request) -> dict[str, Any]:
   '''improvement/{id} 브랜치에 Claude를 최대 max_iterations 반복 실행해 보완.'''
   import asyncio
   from db.suggestion_store import get_suggestion, log_event, update_suggestion
@@ -329,7 +330,7 @@ async def supplement_suggestion_branch(suggestion_id: str, request: Request):
   if _PATCH_LOCK.locked():
     raise HTTPException(status_code=409, detail='다른 코드 패치 진행 중 — 완료 후 재시도')
 
-  async def _run():
+  async def _run() -> None:
     from pathlib import Path as _P
     root = _P(__file__).resolve().parent.parent.parent
     async with _PATCH_LOCK:
@@ -458,7 +459,7 @@ async def supplement_suggestion_branch(suggestion_id: str, request: Request):
   return {'queued': True, 'max_iterations': max_iters, 'message': f'최대 {max_iters}회 반복 보완 대기열 투입'}
 
 
-async def _compute_branch_explain(suggestion_id: str, branch: str) -> dict:
+async def _compute_branch_explain(suggestion_id: str, branch: str) -> dict[str, Any]:
   '''보완 루프 내부에서 explain 로직 재사용 — 캐시에 저장하고 반환.'''
   from db.suggestion_store import get_suggestion
   from runners.gemini_runner import run_gemini
@@ -592,7 +593,7 @@ async def _run_one_supplement_iter(suggestion_id: str, branch: str, it: int, max
 
 
 @router.post('/api/suggestions/{suggestion_id}/branch/discard')
-async def discard_suggestion_branch(suggestion_id: str):
+async def discard_suggestion_branch(suggestion_id: str) -> dict[str, bool]:
   '''improvement/{id} 브랜치를 폐기하고 건의를 rejected로.'''
   from db.suggestion_store import update_suggestion, log_event
   branch = f'improvement/{suggestion_id}'

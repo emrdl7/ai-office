@@ -7,33 +7,14 @@
 >   `_finalize_project` 추출. phase 루프 본체는 중간 return 다발로 유지.
 > - 학습 루프 3종 + 말·행동 일치(P2.5 6종) + 사용자 개입 점검(P2.5-α 3종) 가동.
 > - 관측: `/api/project/status` · 통합 검색 + errors preset · placeholder 오염 감지.
-> - 테스트: **179 pass / 0 fail / 0 skip**. CI = pytest + ruff + **mypy(strict 18모듈)** + vitest(dashboard) + `data/` 오염 가드.
+> - 테스트: **179 pass(서버) + 19 pass(dashboard)**. CI = pytest + ruff + **mypy(strict 48모듈 — 앱 코드 전수)** + vitest(MetricsPanel/ProjectStatusBar/SearchPanel/TaskInput) + `data/` 오염 가드.
 > - 경로: `core/paths.py` 단일 출처(WORKSPACE_ROOT/MEMORY_ROOT, env 주입).
 
 ---
 
-## 🚧 남은 작업 (2건)
+## 🚧 남은 작업 (없음)
 
-### mypy strict 승격 (18모듈 완료 / orchestration 잔여 1 + routes + 기타)
-- 통과(18): `core/paths` · `db/*` · `log_bus/*` · `bus/*` +
-  `orchestration/{state,phase_registry,task_graph,intent,expertise,router,
-  meeting,agent,user_input,agent_interactions,teamlead_review,autonomous_loop,
-  project_runner,suggestion_filer}`.
-- 다음 세션 시작점:
-  1. **orchestration 잔여** — `office.py` (클래스 내부 메서드 전수 힌트).
-     `office: Any` 파서 스크립트 이미 검증됨 — def-경계만 터치.
-  2. **routes/*** 8종 — Request/Response 경계라 직관적. 주로 `Request`/`Any`
-     return 힌트.
-  3. **기타** — `improvement/*`, `harness/*`, `runners/*`, `memory/*`, `main.py`.
-
-### React 컴포넌트 테스트 확대
-- 인프라 부트스트랩 완료 — vitest 2 + RTL 16 + jest-dom + jsdom,
-  `vitest.config.ts`(vite config과 분리), `src/test/setup.ts` autouse cleanup,
-  `npm test` 스크립트, `.github/workflows/dashboard-tests.yml`.
-- 첫 테스트: `MetricsPanel.test.tsx` — `formatDuration` 3종 + 빈 상태 렌더 1종
-  (4 pass).
-- 다음 세션 시작점: `ProjectStatusBar`(폴링 주기 전환) / `SearchPanel`(errors
-  preset 토글) / `TaskInput` 상호작용 테스트.
+> 모든 진행 항목 졸업. 새로운 작업은 아래 "완료 누적" 위에 추가.
 
 ---
 
