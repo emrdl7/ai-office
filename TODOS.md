@@ -1,26 +1,29 @@
 # TODOS
 
-> **현재 상태 (2026-04-15)**: office.py **706 LOC** (시작 4,144 대비 −83%).
+> **현재 상태 (2026-04-15)**: office.py **669 LOC** (시작 4,144 대비 −84%).
 > 도메인별 분할 완료 — teamlead_review / autonomous_loop / agent_interactions /
 > project_runner / suggestion_filer. 상호작용·학습·관찰 루프 3종 가동 중.
+> P2 약한 엣지 4종 보강 완료 (phase_intro 맥락 주입, task_ack 우려 재고지,
+> peer_concern 임계치 자동 건의, DYNAMIC_TYPES 표준 어휘).
 
 ---
 
 ## P1 — office.py 본체 최종 정리 (목표 ≤500 LOC)
 
-현재 706 LOC. 잔존 약 200 LOC가 목표 초과분. 대부분 forwarder 37개 (~110 LOC)와
-핵심 로직(`__init__`, `receive()` 디스패치, `_emit` 등)이다.
+현재 669 LOC. 잔존 ~170 LOC가 목표 초과. 대부분 forwarder 35개와 핵심 로직
+(`__init__`, `receive()` 디스패치, `_emit`, `handle_mid_work_input` 등).
 
 ### 잔존 대표 메서드
-- [x] `_route_agent_mentions` → `agent_interactions`로 이동 (2026-04-15).
-- [x] `_create_handoff_guide` + `_generate_stitch_mockup` → `project_runner`로 이동 (2026-04-15).
-- [x] `_extract_user_questions` + `_check_user_directive` → `project_runner`로 이동 (2026-04-15).
+- [x] `_route_agent_mentions` → `agent_interactions` (2026-04-15).
+- [x] `_create_handoff_guide` + `_generate_stitch_mockup` → `project_runner` (2026-04-15).
+- [x] `_extract_user_questions` + `_check_user_directive` → `project_runner` (2026-04-15).
 - [x] forwarder `from orchestration import X` → 모듈 상수로 캐싱 (2026-04-15).
-- [ ] 37개 forwarder를 `__getattr__` 기반 동적 위임으로 압축 → ~70 LOC 추가 절감
-      예상. 단, IDE 자동완성 손해 있음 — 트레이드오프 검토 필요.
-- [ ] **선결 버그**: `project_runner.py`가 `OfficeState`를 import 없이 참조
-      (16곳). `test_quick_task_routes_to_single_agent` 실패. OfficeState를
-      별도 모듈(`orchestration/state.py`)로 추출하면 해결.
+- [x] 35개 forwarder를 1라인으로 압축 (2026-04-15).
+- [x] `OfficeState`를 `orchestration/state.py`로 추출 (NameError 16곳 해결).
+- [ ] forwarder를 `__getattr__` 기반 동적 위임으로 추가 압축 → ~50 LOC 절감
+      가능하나 타입 힌트/IDE 자동완성 손해. 트레이드오프 보류.
+- [ ] `handle_mid_work_input` (~80 LOC) 도메인 검토 — agent_interactions 또는
+      신규 `user_input.py`로 이관 검토.
 
 ### 유지 (Office 본체 핵심)
 - `__init__`, `receive()` 디스패치, `_emit`, `_compress_history`,
@@ -39,21 +42,17 @@
 고리가 미약.
 
 ### 약한 엣지 보강
-- [ ] `_phase_intro`에 해당 담당자의 **과거 실패 규칙 상위 1개** + **관련 팀원
-      한 줄 조언** 삽입. 현재는 착수 인사만 나감.
-- [ ] `_task_acknowledgment`에 **직전 피어 리뷰 피드백 재고지**. 수령 확인이
-      컨텍스트와 분리되어 있음.
+- [x] `_phase_intro`에 과거 교훈 + 직전 동료 의견 주입 (2026-04-15).
+- [x] `_task_acknowledgment`에 직전 피어 우려 재고지 (2026-04-15).
 - [ ] `_work_commentary`가 `_route_agent_mentions` 트리거 경로와 연동되도록
       — 진행 중 코멘트에 `@팀원` 포함되면 즉시 라우팅.
 
 ### 관찰·메타 학습
 - [ ] 주간 배치 리뷰(`teamlead_review.run_loop`)에서 **TeamDynamic 집계**
       추가 — "누가 누구와 잘 맞는지 / stuck 패턴" 요약을 팀 맥락 텍스트에 주입.
-- [ ] `_peer_review`의 `peer_concern` 누적이 임계치(예: 같은 쌍 3회) 넘으면
-      **자동 건의 등록** (`관계 개선 필요: X↔Y`).
-- [ ] `TeamDynamic.dynamic_type` 어휘 표준화 문서 (team_memory.py) —
-      현재 자유 문자열 (peer_concern/peer_approved/consulted/committed_to_request
-      등)이 흩어져 있음.
+- [x] `_peer_review`의 `peer_concern` 누적 임계치(같은 쌍 3회) → 자동 건의
+      등록 + 24h 쿨다운 (2026-04-15).
+- [x] `TeamDynamic.dynamic_type` 어휘 표준화 (`DYNAMIC_TYPES`, 2026-04-15).
 
 ### Draft 건의 상태 (자기 다짐 과잉 등록 완충)
 - [ ] `suggestion_store`에 `status='draft'` 추가. 현재 `_file_commitment_suggestion`
