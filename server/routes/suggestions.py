@@ -173,13 +173,30 @@ async def auto_triage_new_suggestion(suggestion_id: str) -> None:
   stype = s.get('suggestion_type', 'prompt')
   target = s.get('target_agent', '') or '팀 전체'
 
+  # P4-1: 제안자의 triage overshoot 이력 확인 — 반복 overshoot 시 hold 가중
+  overshoot_warning = ''
+  try:
+    proposer = (s.get('agent_id') or '').strip()
+    if proposer and proposer not in ('teamlead', 'system'):
+      from memory.agent_memory import AgentMemory
+      recent = AgentMemory(proposer).load_relevant(task_type='suggestion', limit=10)
+      oc = sum(1 for r in recent if 'triage_overshoot' in r.tags)
+      if oc >= 1:
+        overshoot_warning = (
+          f'\n⚠️ [가중치 하향] 이 제안자는 최근 triage overshoot {oc}건 이력이 있습니다. '
+          f'accept는 근거가 매우 명확할 때만 — 애매하면 반드시 hold로 판정하세요.'
+        )
+  except Exception:
+    pass
+
   prompt = (
     f'건의가 접수됐습니다. 실행 가치를 보수적으로 판정하세요.\n\n'
     f'[타입] {stype}\n[대상] {target}\n[제목] {title}\n[내용]\n{content}\n\n'
     f'판정 기준:\n'
     f'- accept: 구체·실행 가능하고 범위 명확하며 이미 해결된 주제가 아닐 때\n'
     f'- reject: 추상 방법론만 언급, 이미 반영된 주제의 재탕, 범위 너무 큼, 아키텍처 의사결정 필요, 토론·질문 성격\n'
-    f'- hold: 판단이 애매하거나 사람의 추가 맥락이 필요할 때 (보수적 기본값)\n\n'
+    f'- hold: 판단이 애매하거나 사람의 추가 맥락이 필요할 때 (보수적 기본값)\n'
+    f'{overshoot_warning}\n'
     f'JSON만 출력: {{"decision":"accept|reject|hold","reason":"1문장"}}'
   )
   decision = 'hold'
@@ -325,6 +342,7 @@ async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3) -> None:
       return False
 
     _, files_out = _run_git(['diff', '--name-only', f'main...{branch}'])
+    modified_files = [f for f in files_out.splitlines() if f]
     _, stat_out = _run_git(['diff', '--stat', f'main...{branch}'])
     scope_ok, scope_reason = _check_scope(
       get_suggestion(suggestion_id) or {},
@@ -353,7 +371,13 @@ async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3) -> None:
         return False
       _run_git(['branch', '-d', branch])
       update_suggestion(suggestion_id, status='done')
-      log_event(suggestion_id, 'branch_merged', {'tip': tip, 'auto': True, 'verdict': verdict})
+      # P4-2: files를 payload에 포함 → 24h 중복 수정 감지용
+      log_event(suggestion_id, 'branch_merged', {
+        'tip': tip, 'auto': True, 'verdict': verdict,
+        'files': modified_files[:20],
+      })
+      # P4-2: 같은 파일 경로를 24h 내 2회 수정 시 rollback 후보 등록
+      asyncio.create_task(_check_file_repeat_rollback(suggestion_id, modified_files))
 
       risks = explain.get('risks') or []
       from db.suggestion_store import create_suggestion
@@ -424,6 +448,8 @@ async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3) -> None:
     s = get_suggestion(suggestion_id)
     if s and s.get('status') == 'supplementing':
       update_suggestion(suggestion_id, status='review_pending')
+      # P4-1: triage overshoot — accept 후 merge_safe를 받지 못한 경우 AgentMemory 기록
+      _record_triage_overshoot(suggestion_id, s)
       await event_bus.publish(LogEvent(
         agent_id='teamlead', event_type='system_notice',
         message=(
@@ -431,6 +457,89 @@ async def _auto_merge_pipeline(suggestion_id: str, max_iters: int = 3) -> None:
           f'"변경사항 보기"에서 수동 결정 바랍니다.'
         ),
       ))
+
+
+def _record_triage_overshoot(suggestion_id: str, s: dict) -> None:
+  '''auto_triage_accept가 났지만 자동 병합이 실패한 경우 제안자 AgentMemory에 기록.
+
+  P4 안전망: 다음 유사 건의의 auto_triage 프롬프트에 경고를 삽입해 가중치 하향.
+  '''
+  from db.suggestion_store import list_events
+  events = list_events(suggestion_id=suggestion_id, limit=60)
+  had_accept = any(e.get('kind') == 'auto_triage_accept' for e in events)
+  if not had_accept:
+    return
+  proposer = (s.get('agent_id') or '').strip()
+  if not proposer or proposer in ('teamlead', 'system'):
+    return
+  from memory.agent_memory import AgentMemory, MemoryRecord
+  from datetime import datetime, timezone
+  try:
+    AgentMemory(proposer).record(MemoryRecord(
+      task_id=suggestion_id,
+      task_type='suggestion',
+      success=False,
+      feedback=(
+        f'triage overshoot: 자동 승인(auto_triage_accept)을 받았으나 '
+        f'AI 리뷰에서 merge_safe를 받지 못함. '
+        f'제목: "{(s.get("title") or "")[:60]}"'
+      ),
+      tags=['triage_overshoot'],
+      timestamp=datetime.now(timezone.utc).isoformat(),
+    ))
+    from db.suggestion_store import log_event as _le
+    _le(suggestion_id, 'triage_overshoot', {
+      'proposer': proposer, 'title': (s.get('title') or '')[:60],
+    })
+    logger.info('triage overshoot 기록: %s | %s', proposer, suggestion_id)
+  except Exception:
+    logger.debug('triage overshoot 기록 실패', exc_info=True)
+
+
+async def _check_file_repeat_rollback(suggestion_id: str, current_files: list[str]) -> None:
+  '''24h 내 동일 파일 경로가 자동 개선에 의해 2회 이상 수정되면 rollback 후보로 표시.
+
+  P4 안전망: 파이프라인 폭주로 같은 파일을 계속 바꾸는 사태 방지.
+  '''
+  if not current_files:
+    return
+  from db.suggestion_store import list_events, log_event as _le
+  from datetime import datetime, timezone, timedelta
+  cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+  # 최근 200건 이벤트에서 24h 내 branch_merged 찾기
+  all_events = list_events(limit=200)
+  current_set = set(current_files)
+  repeat_files: set[str] = set()
+  for e in all_events:
+    if e.get('kind') != 'branch_merged':
+      continue
+    if (e.get('ts') or '') < cutoff:
+      continue
+    if e.get('suggestion_id') == suggestion_id:
+      continue
+    payload = e.get('payload', {})
+    prev_files = set(payload.get('files', []))
+    overlap = current_set & prev_files
+    if overlap:
+      repeat_files |= overlap
+  if not repeat_files:
+    return
+  try:
+    _le(suggestion_id, 'rollback_candidate', {
+      'reason': '24h 내 동일 파일 2회 이상 자동 수정',
+      'repeat_files': sorted(repeat_files)[:10],
+    })
+    await event_bus.publish(LogEvent(
+      agent_id='teamlead', event_type='system_notice',
+      message=(
+        f'⚠️ rollback 후보 #{suggestion_id}: '
+        f'{", ".join(sorted(repeat_files)[:3])} 등 {len(repeat_files)}개 파일이 '
+        f'24h 내 중복 수정됨 — 수동 검토 권장'
+      ),
+    ))
+    logger.warning('rollback 후보 등록: %s | files=%s', suggestion_id, sorted(repeat_files)[:5])
+  except Exception:
+    logger.debug('rollback 후보 등록 실패', exc_info=True)
 
 
 def _extract_rule_body(content: str) -> str:

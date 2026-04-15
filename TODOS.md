@@ -45,12 +45,15 @@
 - `AutonomousStatsPanel.tsx` — 사이드바 "자율 대화 관측" 버튼으로 열리는
   소형 패널 (6/24/48h/7일 선택, 30초 갱신).
 
-### P4. 건의 파이프라인 안전망 보강 (차기)
-- `auto_triage_accept`가 나왔지만 AI 리뷰가 `merge_safe`를 받지 못한
-  건의는 해당 제안자 `AgentMemory`에 "triage overshoot" 기록 →
-  다음 유사 건의의 auto_triage 가중치 하향.
-- 같은 파일 경로를 24h 내 2회 수정한 자가개선은 자동 rollback 후보
-  리스트에 추가 (파이프라인 폭주 방지).
+### P4. 건의 파이프라인 안전망 보강 ✅ (2026-04-16 완료)
+- **triage overshoot**: `_auto_merge_pipeline` finally 블록에서
+  `auto_triage_accept`는 있었지만 병합에 실패한 경우 제안자
+  `AgentMemory`에 `triage_overshoot` 태그로 기록.
+  `auto_triage_new_suggestion`이 프롬프트를 생성할 때 overshoot 이력이
+  있으면 hold 편향 경고문을 삽입 → 가중치 하향.
+- **rollback 후보 탐지**: `branch_merged` 이벤트 payload에 수정 파일 목록
+  포함. 병합 직후 24h 내 다른 병합에서 동일 파일 경로가 있으면
+  `rollback_candidate` 이벤트 + `system_notice` 발행.
 
 ### P5. 구성원 성격/능력 프롬프트 검증 체계
 
