@@ -73,7 +73,10 @@ class TeamMemory:
     MAX_DYNAMICS = 200  # 동일 (from,to,type) 누적 허용 → 임계치 기반 집계/경고 가능
     MAX_PROJECTS = 15
 
-    def __init__(self, memory_root: str | Path = 'data/memory'):
+    def __init__(self, memory_root: str | Path | None = None):
+        if memory_root is None:
+            from core import paths
+            memory_root = paths.MEMORY_ROOT
         self._file = Path(memory_root) / 'team_shared.json'
         self._file.parent.mkdir(parents=True, exist_ok=True)
 

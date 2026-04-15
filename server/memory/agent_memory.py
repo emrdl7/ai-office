@@ -51,14 +51,17 @@ class AgentMemory:
     def __init__(
         self,
         agent_name: str,
-        memory_root: str | Path = 'data/memory',
+        memory_root: str | Path | None = None,
     ) -> None:
         '''AgentMemory 초기화
 
         Args:
             agent_name: 에이전트 이름 (예: 'planner', 'designer')
-            memory_root: 메모리 파일 저장 루트 디렉토리 (테스트 격리용 주입 가능)
+            memory_root: 메모리 파일 저장 루트 디렉토리 (미지정 시 core.paths.MEMORY_ROOT)
         '''
+        if memory_root is None:
+            from core import paths
+            memory_root = paths.MEMORY_ROOT
         self._file = Path(memory_root) / f'{agent_name}_memory.json'
         self._file.parent.mkdir(parents=True, exist_ok=True)
 

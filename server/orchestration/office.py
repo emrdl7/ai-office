@@ -87,8 +87,10 @@ class Office:
     bus: MessageBus,
     event_bus: EventBus,
     workspace: WorkspaceManager,
-    memory_root: str | Path = 'data/memory',
+    memory_root: str | Path | None = None,
   ):
+    if memory_root is None:
+      memory_root = paths.MEMORY_ROOT
     self.bus = bus
     self.event_bus = event_bus
     self.workspace = workspace

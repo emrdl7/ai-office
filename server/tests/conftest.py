@@ -40,6 +40,9 @@ def _isolate_prod_dbs(tmp_path_factory, monkeypatch):
         ws = tmp_root / 'workspace'
         ws.mkdir(exist_ok=True)
         monkeypatch.setattr(_paths, 'WORKSPACE_ROOT', ws)
+        mem = tmp_root / 'memory'
+        mem.mkdir(exist_ok=True)
+        monkeypatch.setattr(_paths, 'MEMORY_ROOT', mem)
     except Exception:
         pass
     yield

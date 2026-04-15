@@ -13,4 +13,12 @@ def _resolve_workspace_root() -> Path:
   return _PROJECT_ROOT / 'workspace'
 
 
+def _resolve_memory_root() -> Path:
+  env = os.environ.get('AI_OFFICE_MEMORY', '').strip()
+  if env:
+    return Path(env)
+  return _PROJECT_ROOT / 'data' / 'memory'
+
+
 WORKSPACE_ROOT: Path = _resolve_workspace_root()
+MEMORY_ROOT: Path = _resolve_memory_root()
