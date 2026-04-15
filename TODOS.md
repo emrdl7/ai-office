@@ -83,18 +83,20 @@
 > 현재 사용자는 (a) 자율 대화 중, (b) 프로젝트 진행 중, (c) DM 3가지 상황에서
 > 언제든 개입 가능. 구조는 갖춰져 있으나 세부 개선 여지.
 
-- [ ] **⑦ 중단 키워드 단어 경계 체크** —
-      `user_input.py:28` `'중단' in msg.lower()` 부분 문자열 매칭이라
-      "중단하지마/중단 아님/취소하지 마" 같은 부정형도 매칭될 가능성.
-      정규식 `\b중단\b` 또는 독립 토큰 체크로 전환. 영어 'stop'도 같은 문제.
-- [ ] **⑧ `_user_mid_feedback` 추적 검증** —
-      작업 중 사용자 의견 → 팀장이 "반영하겠습니다" 응답 → P2.5 다짐 시스템이
-      committer=teamlead로 `[다짐]` 등록하는지 실측. 등록되지 않으면
-      `handle_mid_work_input` 팀장 응답 경로에도 `_file_commitment_suggestion`
-      호출 연결 필요.
-- [ ] **⑨ receive()와 handle_mid_work_input 중복 로직 정리** —
-      `office.receive():308` "작업 중입니다" 응답은 사실상 도달 불가
-      (tasks.py에서 state 체크 후 분기). 방어 코드로 남길지 제거할지 판단.
+- [x] **⑦ 중단 키워드 단어 경계 체크** —
+      `user_input._is_stop_command` 도입. 부정형 패턴(`중단하지|멈추지|그만하지|
+      취소하지|...|아님|don't stop`)을 선제 제외한 뒤 기존 키워드 매칭.
+      회귀 테스트 `test_user_input_stop.py` 3종.
+- [x] **⑧ `_user_mid_feedback` 추적 검증** —
+      실측 결과 미연결 확인. `handle_mid_work_input`의 팀장/에이전트 멘션
+      응답 3개 지점 + 기본 ack에 `_record_commitment` 헬퍼 도입으로
+      `_file_commitment_suggestion` 호출 연결. 회귀 테스트
+      `test_user_input_commitment.py` 3종.
+- [x] **⑨ receive()와 handle_mid_work_input 중복 로직 정리** —
+      판단: 방어 코드 유지. `receive()`는 `/api/chat`(tasks.py:107, state 선체크) /
+      `/api/tasks`(tasks.py:208, 선체크 없음) / `office.py:300` 재실행 / 테스트
+      등 다중 엔트리포인트이므로 내부 state 가드는 필수. 호출자 한 곳만 체크한다
+      해서 제거하면 다른 경로에서 실시간 동시 실행 가능.
 
 ---
 

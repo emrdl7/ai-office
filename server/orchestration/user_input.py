@@ -11,6 +11,23 @@ from runners.claude_runner import run_claude_isolated
 
 logger = logging.getLogger(__name__)
 
+# 중단 키워드 + 부정형 가드.
+# "중단하지마/취소 아님/don't stop" 같은 부정 표현은 중단 명령으로 오인 금지.
+_STOP_NEGATION_RE = re.compile(
+  r"(중단|멈추|멈춰|그만|취소|스탑|stop)\s*"
+  r"(하지|말|마|안|않|아니|아님|no\b|n[’']?t)",
+  re.IGNORECASE,
+)
+_STOP_DONT_RE = re.compile(r"do\s*n[’']?t\s+stop", re.IGNORECASE)
+_STOP_KEYWORDS = ('중단', '멈춰', '멈춰라', '그만', '스탑', 'stop', '취소')
+
+
+def _is_stop_command(msg: str) -> bool:
+  lowered = msg.lower()
+  if _STOP_NEGATION_RE.search(lowered) or _STOP_DONT_RE.search(lowered):
+    return False
+  return any(kw in lowered for kw in _STOP_KEYWORDS)
+
 
 async def handle_mid_work_input(office, user_input: str) -> None:
   '''작업 진행 중 사용자가 보낸 메시지를 처리한다.
@@ -24,8 +41,7 @@ async def handle_mid_work_input(office, user_input: str) -> None:
 
   msg = user_input.strip()
 
-  stop_keywords = ('중단', '멈춰', '그만', '스탑', 'stop', '취소')
-  if any(kw in msg.lower() for kw in stop_keywords):
+  if _is_stop_command(msg):
     await office._emit('teamlead', '작업을 중단하겠습니다.', 'response')
     office._state = OfficeState.IDLE
     office._active_agent = ''
@@ -50,10 +66,12 @@ async def handle_mid_work_input(office, user_input: str) -> None:
             model='claude-haiku-4-5-20251001',
             timeout=15.0,
           )
-          await office._emit('teamlead', response.strip(), 'response')
+          response_text = response.strip()
         except Exception:
           logger.debug("팀장 멘션 응답 생성 실패", exc_info=True)
-          await office._emit('teamlead', '네, 확인했습니다. 반영하겠습니다.', 'response')
+          response_text = '네, 확인했습니다. 반영하겠습니다.'
+        await office._emit('teamlead', response_text, 'response')
+        await _record_commitment(office, 'teamlead', response_text, msg)
       else:
         agent = office.agents.get(target_id)
         if agent:
@@ -66,13 +84,31 @@ async def handle_mid_work_input(office, user_input: str) -> None:
               model='claude-haiku-4-5-20251001',
               timeout=15.0,
             )
-            await office._emit(target_id, response.strip(), 'response')
+            response_text = response.strip()
           except Exception:
             logger.debug("에이전트 멘션 응답 생성 실패: %s", target_id, exc_info=True)
-            await office._emit(target_id, '네, 확인했습니다. 반영하겠습니다.', 'response')
+            response_text = '네, 확인했습니다. 반영하겠습니다.'
+          await office._emit(target_id, response_text, 'response')
+          await _record_commitment(office, target_id, response_text, msg)
 
     office._user_mid_feedback.append(msg)
     return
 
   office._user_mid_feedback.append(msg)
-  await office._emit('teamlead', f'말씀 확인했습니다. 작업에 반영하겠습니다.', 'response')
+  default_ack = '말씀 확인했습니다. 작업에 반영하겠습니다.'
+  await office._emit('teamlead', default_ack, 'response')
+  await _record_commitment(office, 'teamlead', default_ack, msg)
+
+
+async def _record_commitment(office, committer_id: str, response_text: str, user_msg: str) -> None:
+  # 팀장/에이전트 응답에 다짐 마커("반영하겠" 등)가 있으면 다짐 게시판 등록.
+  # _file_commitment_suggestion 내부에서 마커 매칭·중복 가드 처리.
+  try:
+    await office._file_commitment_suggestion(
+      committer_id=committer_id,
+      message=response_text,
+      source_speaker='user',
+      source_message=user_msg,
+    )
+  except Exception:
+    logger.debug("사용자 개입 응답 다짐 등록 실패: %s", committer_id, exc_info=True)
