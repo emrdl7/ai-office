@@ -1,5 +1,6 @@
 # 자가개선 코드 패처 — 건의 승인 시 Claude CLI로 코드 반영
 import asyncio
+import re
 import subprocess
 from pathlib import Path
 
@@ -46,31 +47,72 @@ MAX_CHANGED_FILES = 15
 MAX_CHANGED_LINES = 500
 
 
+_DECLARED_FILES_RE = re.compile(
+  r'(?im)^\s*(?:files|수정\s*파일|대상\s*파일)\s*:\s*$((?:\s*[-*]\s*\S.*$)+)',
+  re.MULTILINE,
+)
+
+
+def _parse_declared_files(content: str) -> set[str]:
+  '''건의 본문의 `FILES:` 블록에서 명시된 파일 경로 목록을 추출한다.
+
+  지원 형식 (대소문자·공백 무관):
+    FILES:
+      - server/main.py
+      - dashboard/src/App.tsx
+    수정 파일:
+      * path/to/file
+
+  LLM 생성 텍스트의 substring 매칭 대신, 구조화된 블록만 허용해 위양성/우회를 차단.
+  '''
+  if not content:
+    return set()
+  declared: set[str] = set()
+  for m in _DECLARED_FILES_RE.finditer(content):
+    block = m.group(1)
+    for line in block.splitlines():
+      stripped = line.strip()
+      if not stripped or stripped[0] not in '-*':
+        continue
+      # 첫 글머리 기호 제거 후 공백·백틱·따옴표 정리
+      path = stripped[1:].strip().strip('`\'"')
+      # 공백이나 설명 뒤에 이어지는 텍스트는 첫 토큰만 (예: "- server/main.py # 이유")
+      path = path.split()[0] if path.split() else ''
+      if path:
+        declared.add(path)
+  return declared
+
+
 def _check_scope(suggestion: dict, changed_files: list[str], diff_stat: str) -> tuple[bool, str]:
-  '''변경이 스코프 제약을 위반하는지 검사. (ok, 위반 사유).'''
-  content_lower = (suggestion.get('content', '') + ' ' + suggestion.get('title', '')).lower()
+  '''변경이 스코프 제약을 위반하는지 검사. (ok, 위반 사유).
+
+  금지 경로(FORBIDDEN_PATHS)는 건의 본문의 구조화된 `FILES:` 블록에
+  **정확히** 등장해야만 수정 허용. substring 매칭 금지.
+  '''
+  declared = _parse_declared_files(suggestion.get('content', ''))
   # 파일 수 체크
   if len(changed_files) > MAX_CHANGED_FILES:
     return (False, f'변경 파일 {len(changed_files)}개 > 한도 {MAX_CHANGED_FILES}개')
   # 줄 수 체크 (diff --stat의 마지막 줄에 합계)
-  import re as _re
-  m = _re.search(r'(\d+)\s+insertion.*?(\d+)\s+deletion', diff_stat)
+  m = re.search(r'(\d+)\s+insertion.*?(\d+)\s+deletion', diff_stat)
   if m:
     total = int(m.group(1)) + int(m.group(2))
     if total > MAX_CHANGED_LINES:
       return (False, f'변경 {total}줄 > 한도 {MAX_CHANGED_LINES}줄')
-  # 금지 파일 체크 — 건의 본문에 언급되지 않았는데 수정된 경우
+  # 금지 파일 체크 — FILES 블록에 정확 경로로 명시된 경우만 허용
   violations = []
   for f in changed_files:
     for fp in FORBIDDEN_PATHS:
       if fp in f:
-        # 건의에 해당 경로가 언급됐는지 간단 검사 (파일명 또는 핵심 토큰)
-        fname = fp.split('/')[-1].lower()
-        if fp.lower() not in content_lower and fname not in content_lower:
-          violations.append(f'{f} (금지 경로 - 건의에 언급 없음)')
+        if f not in declared and fp not in declared:
+          violations.append(f'{f} (금지 경로 - FILES 블록에 미선언)')
         break
   if violations:
-    return (False, '금지 파일 무단 수정: ' + ', '.join(violations[:5]))
+    return (
+      False,
+      '금지 파일 무단 수정: ' + ', '.join(violations[:5])
+      + ' — 건의 본문에 "FILES:\\n- <경로>" 블록으로 명시해야 수정 가능',
+    )
   return (True, '')
 
 
