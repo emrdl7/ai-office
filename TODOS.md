@@ -37,10 +37,13 @@
 - 기존 dedup 이벤트명 `dedup_skipped` → `suggestion_deduplicated` 통일.
 - 테스트 7종 신규 추가 (gate2/gate3/tech_token 패턴 검증). 206 pass.
 
-### P3. 반복 경향 관측 (차기)
-- `/api/autonomous/stats` — 최근 N시간 autonomous 발화 수, 모드별 분포,
-  [PASS] 드롭율, 중복 skip 건수, 반복 키워드 top5, stuck 감지 빈도.
-- 대시보드에 소형 패널 노출 → 블록리스트 효과 수치로 관측.
+### P3. 반복 경향 관측 ✅ (2026-04-16 완료)
+- `/api/autonomous/stats?hours=N` — 발화 수·모드 분포·PASS 드롭율·
+  중복 skip·반복 키워드 top5·stuck 빈도 반환.
+- `autonomous_loop.py` — PASS 드롭 시 `autonomous_pass` 이벤트,
+  stuck 감지 시 `autonomous_stuck` 이벤트 발행.
+- `AutonomousStatsPanel.tsx` — 사이드바 "자율 대화 관측" 버튼으로 열리는
+  소형 패널 (6/24/48h/7일 선택, 30초 갱신).
 
 ### P4. 건의 파이프라인 안전망 보강 (차기)
 - `auto_triage_accept`가 나왔지만 AI 리뷰가 `merge_safe`를 받지 못한

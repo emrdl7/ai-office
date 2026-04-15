@@ -361,6 +361,14 @@ async def _run_speaker_chain(
   mode = 'joke' if random.random() < 0.3 else 'improvement'
   message = await agent.reflect(topic, own_recent=own_recent, mode=mode, code_context=code_ctx)
   if not message:
+    # PASS 드롭 추적 — stats 집계용
+    try:
+      await office.event_bus.publish(LogEvent(
+        agent_id=speaker_name, event_type='autonomous_pass',
+        message='', data={'mode': mode},
+      ))
+    except Exception:
+      pass
     return ''
 
   # autonomous_mode를 LogEvent.data에 표기 — 건의 등록/검색/UI에서 모드 필터 가능
@@ -552,6 +560,15 @@ async def run_loop(office: Any) -> None:
         pass
 
       stuck, repeated = _detect_topic_stuck(recent_context)
+      if stuck:
+        # stuck 감지 빈도 추적 — stats 집계용
+        try:
+          await office.event_bus.publish(LogEvent(
+            agent_id='system', event_type='autonomous_stuck',
+            message='', data={'repeated': repeated[:5]},
+          ))
+        except Exception:
+          pass
       concrete_seed = _gather_real_seeds(office, recent_context)
       topic_blocklist = _gather_recent_topic_blocklist(office)
       topic = _choose_topic(
