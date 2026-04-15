@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { SearchPanel } from './SearchPanel'
 
 afterEach(() => {
@@ -60,5 +61,40 @@ describe('<SearchPanel>', () => {
     render(<SearchPanel onClose={() => {}} />)
     fireEvent.change(screen.getByPlaceholderText(/검색어/), { target: { value: 'zzz' } })
     expect(await screen.findByText('결과 없음', {}, { timeout: 1500 })).toBeInTheDocument()
+  })
+
+  // 접근성 검증 — 건의 #259fa9aa (designer 다짐) 반영
+  describe('접근성', () => {
+    it('닫기 버튼에 aria-label="닫기"가 부여되어 있다', () => {
+      render(<SearchPanel onClose={() => {}} />)
+      const close = screen.getByRole('button', { name: '닫기' })
+      expect(close).toHaveAttribute('aria-label', '닫기')
+    })
+
+    it('검색 입력은 autofocus로 포커스를 받는다', () => {
+      render(<SearchPanel onClose={() => {}} />)
+      const input = screen.getByPlaceholderText(/검색어/)
+      expect(document.activeElement).toBe(input)
+    })
+
+    it('Tab 키로 검색 입력 → 닫기 버튼 순서로 포커스가 이동한다', async () => {
+      const user = userEvent.setup()
+      render(<SearchPanel onClose={() => {}} />)
+      const input = screen.getByPlaceholderText(/검색어/)
+      const close = screen.getByRole('button', { name: '닫기' })
+      expect(document.activeElement).toBe(input)
+      await user.tab()
+      expect(document.activeElement).toBe(close)
+    })
+
+    it('배경 클릭으로 onClose 호출된다 (모달 해제 경로)', () => {
+      const onClose = vi.fn()
+      // SearchPanel은 createPortal로 document.body에 붙음
+      render(<SearchPanel onClose={onClose} />)
+      const backdrop = document.body.querySelector('div.bg-black\\/60') as HTMLElement
+      expect(backdrop).not.toBeNull()
+      fireEvent.click(backdrop)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
   })
 })
