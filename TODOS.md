@@ -32,8 +32,10 @@
 
 - [x] 팀원 간 **상호 회고 코멘트** — 회고 후 라운드로빈으로 다른 팀원이
       "↳ X 교훈 반영: ..." 한 문장 연결. `lesson_applied` dynamic 기록.
-- [ ] autonomous 시간대 **사이드 프로젝트** 자율성 — 팀원이 자발적으로
-      소규모 개선을 건의 + 수행. 현재 건의 등록은 되지만 수행은 사용자 승인 후.
+- [x] autonomous 시간대 **사이드 프로젝트** 자율성 — `auto_triage_new_suggestion`이
+      자발 건의를 LLM 보수 판정으로 자동 승인하고, prompt/rule은 즉시 auto_apply,
+      code는 auto_merge_pipeline으로 패치→테스트→커밋 수행. 24h 롤백 가드 + 15건/24h
+      예산 + [다짐]/[능력] 접두 가드로 폭주 방지. (P2.5 완료 시점 재확인: 2026-04-15)
 - [x] **dynamics 임계치 선제 중재** — peer_concern 3회 누적 시 팀장이
       채팅에 중재 메시지 즉시 발화 (기존 suggestion 등록 + 발화 추가).
       24h 쿨다운 공유.
@@ -87,15 +89,14 @@
       신규 흐름(`test_qa_pushback_loop`, `test_retrospective`)으로 커버되지만
       정식 재작성 가치 있음.
 - [ ] **frontend 타입 정리** — dashboard 4.3K. 빠진 타입/any 잔존 점검.
-- [ ] **placeholder 검사 중복 제거** — `db/log_store._check_placeholder_contamination`
-      과 `log_bus/event_bus._build_placeholder_notice`가 동일 패턴 목록 보유.
-      log_store 쪽은 `logger.warning`만, event_bus 쪽은 `system_notice` 발행.
-      log_store 쪽 제거하고 event_bus 단일 경로로 통합.
-- [ ] **dashboard/dist git 트래킹 제거** — 빌드 산출물인데 .DS_Store/avatars까지
-      커밋 대상. `.gitignore`에 `dashboard/dist/`로 정리 + 서버 serve 전에
-      빌드 단계로 전환 고려.
-- [ ] **ProjectStatusBar 적응형 폴링** — 현재 idle 여부 무관하게 2초 폴링.
-      state='idle'면 10초로, 탭 visibility=hidden일 땐 일시정지.
+- [x] **placeholder 검사 중복 제거** — `log_store._check_placeholder_contamination`
+      제거, event_bus `_build_placeholder_notice` 단일 경로로 통합.
+      system_notice 이벤트 발행만 유지 (logger.warning 경로 폐기).
+- [x] **dashboard/dist git 트래킹 확인** — `.gitignore`에 이미 등록,
+      `git ls-files dashboard/dist` 결과 0건. 실제 오염 없음. (재검토 완료)
+- [x] **ProjectStatusBar 적응형 폴링** —
+      visibilitychange 훅 + refetchInterval 동적 계산. 활성 2초, idle 10초,
+      탭 숨김 시 일시정지. `refetchIntervalInBackground=false`로 이중 방어.
 
 ---
 

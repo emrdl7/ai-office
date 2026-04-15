@@ -82,35 +82,12 @@ def maybe_archive_logs(days: int = 30) -> int:
   return 0
 
 
-# placeholder 오염 감지 — 테스트용 mock 문자열이 프로덕션에 유입되면 warning
-_PLACEHOLDER_PATTERNS = (
-  '초안 내용입니다',
-  '샘플 응답입니다',
-  'lorem ipsum',
-  'Lorem ipsum',
-  'TODO: fill',
-  'PLACEHOLDER',
-)
-
-
-def _check_placeholder_contamination(log_dict: dict) -> None:
-  msg = log_dict.get('message', '') or ''
-  agent = log_dict.get('agent_id', '')
-  # 테스트/mock 에이전트 이벤트는 예상된 placeholder — 제외
-  if agent in ('system', 'user'):
-    return
-  for pat in _PLACEHOLDER_PATTERNS:
-    if pat in msg:
-      logger.warning(
-        'placeholder 오염 감지 — agent=%s event=%s pattern=%r msg_preview=%r',
-        agent, log_dict.get('event_type', ''), pat, msg[:120],
-      )
-      return
-
-
 def save_log(log_dict: dict) -> None:
-  '''로그를 저장한다.'''
-  _check_placeholder_contamination(log_dict)
+  '''로그를 저장한다.
+
+  placeholder 오염 감지는 `log_bus.event_bus._build_placeholder_notice`
+  단일 경로로 통합됨 — system_notice 이벤트로 발행되어 검색/대시보드에 노출.
+  '''
   c = _conn()
   c.execute(
     'INSERT OR IGNORE INTO chat_logs (id, agent_id, event_type, message, data, timestamp) '

@@ -1,4 +1,8 @@
-// 프로젝트 실시간 상태 바 — /api/project/status 2초 폴링
+// 프로젝트 실시간 상태 바 — /api/project/status 적응형 폴링
+// - working/meeting/qa_review 등 활성: 2초
+// - idle: 10초
+// - 탭 visibility=hidden: 일시정지
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 interface ProjectStatus {
@@ -32,14 +36,33 @@ const STATE_LABEL: Record<string, string> = {
   teamlead_review: '팀장 리뷰',
 }
 
+function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(
+    typeof document !== 'undefined' ? !document.hidden : true,
+  )
+  useEffect(() => {
+    const onChange = () => setVisible(!document.hidden)
+    document.addEventListener('visibilitychange', onChange)
+    return () => document.removeEventListener('visibilitychange', onChange)
+  }, [])
+  return visible
+}
+
 export function ProjectStatusBar() {
+  const visible = useDocumentVisible()
   const { data } = useQuery<ProjectStatus>({
     queryKey: ['project-status'],
     queryFn: async () => {
       const r = await fetch('/api/project/status')
       return r.json()
     },
-    refetchInterval: 2000,
+    // 적응형: 탭 숨김 시 정지, idle 10초, 활성 2초
+    refetchInterval: (query) => {
+      if (!visible) return false
+      const state = query.state.data?.state
+      return state && state !== 'idle' ? 2000 : 10000
+    },
+    refetchIntervalInBackground: false,
   })
 
   if (!data || data.state === 'idle') return null
