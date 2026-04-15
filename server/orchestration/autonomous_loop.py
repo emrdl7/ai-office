@@ -41,358 +41,400 @@ def stop_loop(office) -> None:
   office._autonomous_running = False
 
 
-async def run_loop(office) -> None:
-  '''에이전트 자발적 활동 백그라운드 루프를 시작한다.
+# 자율 대화 결정 트리 (한눈에 보는 흐름)
+# ─────────────────────────────────────────────────────────────
+# 1. run_loop iteration: 작업 중(state != IDLE/COMPLETED)이면 60s sleep 후 재시도
+# 2. react_to_received_reactions: user 긍정 리액션에 감사 한마디 (10%, 쿨다운)
+# 3. agents_react_to_peers: LLM 없이 키워드 매핑 이모지 자동 리액션
+# 4. _gather_conversation_context: 팀장 요약 + 최근 로그 → recent_context + recent
+# 5. _detect_topic_stuck: 3회 반복 키워드 2개 이상 → stuck=True (강제 전환)
+# 6. _gather_real_seeds: 미처리 건의 / 축적 교훈 / 최근 프로젝트 조합
+# 7. _choose_topic: stuck ? 신선 토픽 / seed 있으면 의논 주제 / 아니면 맥락 유지
+# 8. _pick_speakers: 최근 2회 이상 말한 사람 제외, 1~2명 (75% 1명)
+# 9. _load_code_context: 최근 커밋 + diff stat → 개선 모드 시드용
+# 10. 각 speaker: agent.reflect → 자동 건의 등록 + 다짐 감지 + 1단/2단 체인
+# 11. _maybe_teamlead_closing: 체인 있음 50% / 없음 10% 팀장 관찰
+# 12. 5~15분 sleep 후 iteration 반복
+#
+# 재시도 정책
+# - Gemini/Claude 오류는 run_gemini / run_claude_isolated 내부에서 2회 자동 재시도.
+# - 그 후에도 실패하면 빈 문자열 반환 → 이 루프는 해당 단계를 조용히 건너뛰고
+#   다음 iteration(5~15분 후)에 복귀. 사용자 관측성이 낮아 향후 관측 이벤트 추가 여지.
 
-  idle 상태에서만 동작하며, 5~15분 간격으로 에이전트가 자발적으로 발언한다.
+
+async def _gather_conversation_context(office) -> tuple[str, list[dict]]:
+  '''최근 대화 맥락 문자열 + raw log 리스트.
+
+  팀장 요약(digest)이 있으면 압축본 + 직전 5건, 없으면 raw 10건.
   '''
+  digest = getattr(office, 'latest_digest_summary', '') or load_digest_state(office).get('last_summary', '')
+  recent: list[dict] = []
+  recent_context = ''
+  try:
+    from db.log_store import load_logs
+    recent = load_logs(limit=15)
+    chat_lines = [
+      f'[{l["agent_id"]}] {l["message"][:100]}'
+      for l in recent
+      if l['event_type'] in ('response', 'message', 'autonomous')
+      and l['agent_id'] != 'system'
+    ]
+    last_raw = '\n'.join(chat_lines[-5:]) if chat_lines else ''
+    if digest:
+      recent_context = (
+        f'[팀장 요약 — 이전 대화 압축본]\n{digest}\n\n'
+        f'[직전 대화 5건]\n{last_raw}' if last_raw else
+        f'[팀장 요약 — 이전 대화 압축본]\n{digest}'
+      )
+    else:
+      recent_context = '\n'.join(chat_lines[-10:]) if chat_lines else '(조용한 사무실)'
+  except Exception:
+    recent_context = '(조용한 사무실)'
+  return recent_context, recent
+
+
+def _detect_topic_stuck(recent_context: str) -> tuple[bool, list[str]]:
+  '''같은 키워드가 3회 이상 반복되며 2개 이상이면 고착으로 판정.'''
   from orchestration.office import _extract_keywords
+  if not recent_context:
+    return False, []
+  from collections import Counter
+  ctx_counter: Counter = Counter()
+  for line in recent_context.split('\n'):
+    for kw in _extract_keywords(line):
+      if len(kw) >= 3:
+        ctx_counter[kw] += 1
+  repeated = [k for k, n in ctx_counter.items() if n >= 3]
+  stuck = len(repeated) >= 2
+  if stuck:
+    logger.info('자율 대화 주제 고착 감지 — 강제 전환. 반복 키워드: %s', repeated[:5])
+  return stuck, repeated
+
+
+def _gather_real_seeds(office, recent_context: str) -> str:
+  '''미처리 건의 + 축적 교훈 + 최근 프로젝트에서 구체 시드 조합.'''
+  from orchestration.office import _extract_keywords
+  seed_parts: list[str] = []
+  try:
+    from db.suggestion_store import list_suggestions as _list_sugg
+    pendings_all = _list_sugg(status='pending')
+    recent_blob = (recent_context or '').lower()
+    filtered: list[dict] = []
+    for s in pendings_all:
+      title = (s.get('title') or '')
+      tokens = [t for t in _extract_keywords(title) if len(t) >= 3]
+      if tokens and any(t.lower() in recent_blob for t in tokens):
+        continue
+      filtered.append(s)
+      if len(filtered) >= 3:
+        break
+    if filtered:
+      seed_parts.append(
+        '[아직 미해결 건의]\n'
+        + '\n'.join(f'- ({s["category"]}) {s["title"]}' for s in filtered)
+      )
+  except Exception:
+    pass
+  try:
+    lessons = office.team_memory.get_all_lessons(limit=3)
+    if lessons:
+      seed_parts.append(
+        '[팀 축적 교훈]\n' + '\n'.join(f'- {l.lesson}' for l in lessons)
+      )
+  except Exception:
+    pass
+  try:
+    recents_mem = office.team_memory.get_recent_projects(limit=2)
+    if recents_mem:
+      seed_parts.append(
+        '[최근 프로젝트]\n'
+        + '\n'.join(f'- {p.title} ({p.outcome})' for p in recents_mem)
+      )
+  except Exception:
+    pass
+  return '\n\n'.join(seed_parts)
+
+
+def _choose_topic(
+  stuck: bool,
+  repeated: list[str],
+  concrete_seed: str,
+  recent_context: str,
+  project_context: str,
+) -> str:
+  '''주제 선택 — stuck/seed 존재/신선도에 따라 분기.'''
+  fresh_topics = [
+    '본인 전문 영역의 구체적 기법/도구 공유 (버전, 수치 포함)',
+    '현재 진행 중인 업무 흐름에서 발견한 병목이나 낭비',
+    '다른 팀원 전문 영역에 던지는 열린 질문',
+    '과거 프로젝트 교훈 중 재적용 가능한 것',
+    '본인이 최근 학습한 새 기법/라이브러리',
+    '팀 내 역할 경계에서 오해 소지가 있는 지점',
+  ]
+  banned_kws = ''
+  if stuck:
+    banned_kws = (
+      f'\n\n[절대 금지: 최근에 반복된 다음 주제/키워드는 더 이상 언급 금지]\n'
+      f'- {", ".join(repeated[:8])}\n'
+      f'(같은 키워드 한 번만 더 나와도 [PASS] 처리)'
+    )
+
+  use_fresh = stuck or random.random() < 0.3
+  if concrete_seed and (stuck or random.random() < 0.5):
+    return (
+      f'[의논 주제 — 아래 중 하나를 골라 한 사람에게 구체 질문/반론/제안하라]\n'
+      f'(건의 내용을 업무에 즉시 반영하지 말고, 찬반·보완·반론으로만 토론하라)\n\n'
+      f'{concrete_seed}\n{banned_kws}'
+    )
+  if use_fresh:
+    seed = random.choice(fresh_topics)
+    return (
+      f'[완전히 새 주제] {seed}\n'
+      f'(이전 대화에 이어가지 말고 새 이야기를 꺼내세요){banned_kws}'
+    )
+  return f'{recent_context}\n{project_context}' if project_context else recent_context
+
+
+def _pick_speakers(recent: list[dict]) -> tuple[list[str], list[str]]:
+  '''(speakers, candidates) 반환. 최근 2회 이상 말한 에이전트 제외, 1~2명 선택.'''
+  recent_speaker_count: dict[str, int] = {}
+  for l in recent[-8:]:
+    if l.get('agent_id') in ('planner', 'designer', 'developer', 'qa'):
+      recent_speaker_count[l['agent_id']] = recent_speaker_count.get(l['agent_id'], 0) + 1
+
+  all_candidates = ['planner', 'designer', 'developer', 'qa']
+  candidates = [c for c in all_candidates if recent_speaker_count.get(c, 0) < 2]
+  if not candidates:
+    candidates = all_candidates
+  num_speakers = random.choice([1, 1, 1, 2])
+  speakers = random.sample(candidates, min(num_speakers, len(candidates)))
+  return speakers, candidates
+
+
+def _load_code_context() -> str:
+  '''최근 커밋 로그 + diff stat (개선 모드 시드용, 한 iteration당 1회).'''
+  try:
+    import subprocess as _sp
+    from pathlib import Path as _P
+    root = _P(__file__).parent.parent.parent
+    log_out = _sp.run(
+      ['git', 'log', '--oneline', '-n', '8'],
+      cwd=str(root), capture_output=True, text=True, timeout=3,
+    ).stdout.strip()
+    diff_out = _sp.run(
+      ['git', 'diff', '--stat', 'HEAD~5..HEAD'],
+      cwd=str(root), capture_output=True, text=True, timeout=3,
+    ).stdout.strip()
+    if log_out or diff_out:
+      return f'[최근 커밋]\n{log_out}\n\n[최근 5커밋 변경 파일]\n{diff_out[:2000]}'
+  except Exception:
+    pass
+  return ''
+
+
+async def _run_speaker_chain(
+  office, speaker_name: str, topic: str, candidates: list[str], code_ctx: str,
+) -> str:
+  '''한 speaker의 발화 → 1단 반응 → 2단 결론 체인 실행.
+
+  반환: first_reactor 이름 (체인이 돌았으면). 못 돌면 빈 문자열.
+  '''
+  agent = office.agents.get(speaker_name)
+  if not agent:
+    return ''
+
+  # 본인 최근 자발적 발언 5개 — 같은 주제 반복 방지용
+  own_recent: list[str] = []
+  try:
+    from db.log_store import load_logs as _load_logs
+    recent_all = _load_logs(limit=60)
+    own_recent = [
+      l['message'] for l in recent_all
+      if l.get('agent_id') == speaker_name
+      and l.get('event_type') in ('autonomous', 'response')
+    ][:5]
+  except Exception:
+    pass
+
+  mode = 'joke' if random.random() < 0.3 else 'improvement'
+  message = await agent.reflect(topic, own_recent=own_recent, mode=mode, code_context=code_ctx)
+  if not message:
+    return ''
+
+  speaker_event = LogEvent(agent_id=speaker_name, event_type='autonomous', message=message)
+  await office.event_bus.publish(speaker_event)
+
+  try:
+    await office._auto_file_suggestion(speaker_name, message, source_log_id=speaker_event.id)
+  except Exception:
+    logger.debug('자동 건의 등록 실패', exc_info=True)
+  try:
+    await office._file_commitment_suggestion(
+      committer_id=speaker_name, message=message, source_log_id=speaker_event.id,
+    )
+  except Exception:
+    logger.debug('자발 다짐 등록 실패', exc_info=True)
+
+  # 1단 반응 (50%)
+  first_reactor = ''
+  if random.random() < 0.5:
+    reactors = [n for n in candidates if n != speaker_name]
+    if reactors:
+      first_reactor = random.choice(reactors)
+      first_reply = await autonomous_react(
+        reactor_name=first_reactor, prior_speaker=speaker_name, prior_message=message,
+      )
+      if first_reply:
+        reactor_event = LogEvent(
+          agent_id=first_reactor, event_type='autonomous', message=first_reply,
+        )
+        await office.event_bus.publish(reactor_event)
+        try:
+          await office._file_commitment_suggestion(
+            committer_id=first_reactor, message=first_reply,
+            source_speaker=speaker_name, source_message=message,
+            source_log_id=reactor_event.id,
+          )
+        except Exception:
+          logger.debug('리액터 다짐 등록 실패', exc_info=True)
+        # 2단 결론 (30%)
+        if random.random() < 0.3:
+          closing = await autonomous_closing(
+            original_speaker=speaker_name, original_message=message,
+            challenger=first_reactor, challenge=first_reply,
+          )
+          if closing:
+            closing_event = LogEvent(
+              agent_id=speaker_name, event_type='autonomous', message=closing,
+            )
+            await office.event_bus.publish(closing_event)
+            try:
+              await office._file_commitment_suggestion(
+                committer_id=speaker_name, message=closing,
+                source_speaker=first_reactor, source_message=first_reply,
+                source_log_id=closing_event.id,
+              )
+            except Exception:
+              logger.debug('클로징 다짐 등록 실패', exc_info=True)
+      else:
+        first_reactor = ''
+  return first_reactor
+
+
+async def _maybe_teamlead_closing(
+  office, recent_context: str, speaker_name: str, first_reactor: str,
+) -> None:
+  '''체인이 돌았으면 50%, 아니면 10% 확률로 팀장 관찰 한 문장.'''
+  teamlead_chance = 0.5 if first_reactor else 0.1
+  if random.random() >= teamlead_chance:
+    return
+
+  try:
+    chain_hint = ''
+    if first_reactor:
+      chain_hint = (
+        f'\n[방금 돈 의논]\n{display_name(speaker_name)} → {display_name(first_reactor)} 순으로 '
+        f'반박·보완이 오갔다.\n'
+        f'논의 내용에 대한 관찰·관점 한 문장. 결론이 모호하면 [PASS].\n'
+      )
+    teamlead_msg = await run_gemini(
+      prompt=(
+        f'당신은 팀장 잡스입니다. AI 에이전트로 물리 경험 없음.\n'
+        f'최근 팀 상황:\n{recent_context}\n{chain_hint}\n'
+        f'[절대 금지 — 어기면 [PASS]]\n'
+        f'- 선언형 명령 금지: "~진행합니다", "~적용합니다", "~결정합니다", "~최우선 과제로", '
+        f'"~을 지시합니다", "~체계를 수립합니다"\n'
+        f'  (실제 프로젝트/태스크는 사용자가 지시할 때만 시작된다. 자발적 대화에서는 작업을 개시할 권한이 없다.)\n'
+        f'- 빈 응원/감탄/맞장구 금지 ("시너지 최고", "기대된다", "굿굿" 등)\n'
+        f'- 커피/점심/날씨 등 물리 소재 금지\n'
+        f'[허용]\n'
+        f'- 관찰 공유: "~점이 흥미롭다", "~경향이 보인다"\n'
+        f'- 의견 제시: "~이 더 효과적일 것 같다", "~을 검토해볼 가치가 있다"\n'
+        f'- 우려 표명: "~부분이 걱정된다", "~리스크가 있어 보인다"\n'
+        f'- 질문/토론 유도: "~에 대해 어떻게 생각하는가?"\n'
+        f'[출력]\n'
+        f'- 30자 이상, 구체 근거 포함. 없거나 선언형이면 [PASS]. 90%는 [PASS]가 정답.'
+      ),
+    )
+    text = teamlead_msg.strip()
+    first_line = text.split('\n')[0].strip()
+    declarative_patterns = (
+      '진행합니다', '적용합니다', '결정합니다', '지시합니다', '수립합니다',
+      '최우선 과제', '최우선과제', '즉시 도입', '즉시도입',
+      '반영하겠습니다', '시행합니다', '착수합니다',
+    )
+    is_declarative = any(p in text for p in declarative_patterns)
+    if (
+      text and '[PASS]' not in text.upper()
+      and len(first_line) >= 30
+      and not is_declarative
+      and not any(p in text for p in (
+        '굿굿', '맞아요', '기대된', '즐겁게', '시너지', '커피', '점심', '날씨',
+      ))
+    ):
+      await office.event_bus.publish(LogEvent(
+        agent_id='teamlead', event_type='autonomous', message=text,
+      ))
+    elif is_declarative:
+      logger.info('팀장 선언형 발언 드랍: %s', first_line[:80])
+  except Exception:
+    logger.debug("팀장 자발적 활동 실패", exc_info=True)
+
+
+async def run_loop(office) -> None:
+  '''에이전트 자발적 활동 백그라운드 루프. idle 상태에서만 5~15분 간격.
+
+  단계: react_to_received_reactions → agents_react_to_peers →
+  gather_context → detect_stuck → gather_seeds → choose_topic →
+  pick_speakers → load_code_context → speaker_chain(들) → teamlead_closing.
+  상세 결정 트리는 모듈 상단 주석 참고.
+  '''
   from orchestration.state import OfficeState
 
   office._autonomous_running = True
-  # 서버 시작 후 첫 자발적 활동은 2~5분 뒤
   await asyncio.sleep(random.randint(120, 300))
 
   while office._autonomous_running:
     try:
-      # 작업 중이면 건너뛰기
       if office._state not in (OfficeState.IDLE, OfficeState.COMPLETED):
         await asyncio.sleep(60)
         continue
 
-      # Task #9: 내 최근 메시지에 리액션이 달렸는지 체크 → 감사 한마디
       await react_to_received_reactions(office)
-
-      # Task #10: 동료 최근 메시지에 이모지 자동 리액션 (LLM 없이 간단 heuristic)
       await agents_react_to_peers(office)
 
-      # 최근 대화 맥락 — 팀장 리뷰 요약이 있으면 우선 사용 (반복 차단)
-      recent_context = ''
-      digest = getattr(office, 'latest_digest_summary', '') or load_digest_state(office).get('last_summary', '')
-      try:
-        from db.log_store import load_logs
-        recent = load_logs(limit=15)
-        chat_lines = [
-          f'[{l["agent_id"]}] {l["message"][:100]}'
-          for l in recent
-          if l['event_type'] in ('response', 'message', 'autonomous')
-          and l['agent_id'] != 'system'
-        ]
-        last_raw = '\n'.join(chat_lines[-5:]) if chat_lines else ''
-        if digest:
-          recent_context = (
-            f'[팀장 요약 — 이전 대화 압축본]\n{digest}\n\n'
-            f'[직전 대화 5건]\n{last_raw}' if last_raw else
-            f'[팀장 요약 — 이전 대화 압축본]\n{digest}'
-          )
-        else:
-          recent_context = '\n'.join(chat_lines[-10:]) if chat_lines else '(조용한 사무실)'
-      except Exception:
-        recent_context = '(조용한 사무실)'
+      recent_context, recent = await _gather_conversation_context(office)
 
-      # 최근 프로젝트 경험
+      # 최근 프로젝트 경험 — topic fallback용
       project_context = ''
       try:
         projects = office.team_memory.get_recent_projects(limit=2)
         if projects:
-          project_context = '\n'.join(f'- 최근 프로젝트: {p.title} ({p.outcome})' for p in projects)
-      except Exception:
-        pass
-
-      # 주제 고착 감지 — 최근 대화에서 같은 키워드가 3번 이상 반복되면 강제 전환
-      stuck = False
-      if recent_context:
-        from collections import Counter
-        ctx_keywords = _extract_keywords(recent_context)
-        ctx_counter = Counter()
-        for line in recent_context.split('\n'):
-          for kw in _extract_keywords(line):
-            if len(kw) >= 3:  # 3자 이상만
-              ctx_counter[kw] += 1
-        # 3번 이상 반복된 키워드가 2개 이상이면 고착
-        repeated = [k for k, n in ctx_counter.items() if n >= 3]
-        if len(repeated) >= 2:
-          stuck = True
-          logger.info('자율 대화 주제 고착 감지 — 강제 전환. 반복 키워드: %s', repeated[:5])
-
-      # 주제 시드 — 30% 확률 또는 고착 감지 시 100%로 새 주제
-      fresh_topics = [
-        '본인 전문 영역의 구체적 기법/도구 공유 (버전, 수치 포함)',
-        '현재 진행 중인 업무 흐름에서 발견한 병목이나 낭비',
-        '다른 팀원 전문 영역에 던지는 열린 질문',
-        '과거 프로젝트 교훈 중 재적용 가능한 것',
-        '본인이 최근 학습한 새 기법/라이브러리',
-        '팀 내 역할 경계에서 오해 소지가 있는 지점',
-      ]
-      banned_kws = ''
-      if stuck:
-        banned_kws = (
-          f'\n\n[절대 금지: 최근에 반복된 다음 주제/키워드는 더 이상 언급 금지]\n'
-          f'- {", ".join(repeated[:8])}\n'
-          f'(같은 키워드 한 번만 더 나와도 [PASS] 처리)'
-        )
-
-      # 실데이터 시드 수급 — 미처리 건의 / 축적 교훈 / 최근 프로젝트
-      seed_parts: list[str] = []
-      try:
-        from db.suggestion_store import list_suggestions as _list_sugg
-        pendings_all = _list_sugg(status='pending')
-        # 최근 대화에서 이미 언급된 건의는 시드에서 제외 (제목 키워드 기반)
-        recent_blob = (recent_context or '').lower()
-        filtered: list[dict] = []
-        for s in pendings_all:
-          title = (s.get('title') or '')
-          # 제목 핵심 토큰 하나라도 최근 대화에 이미 등장했으면 제외
-          tokens = [t for t in _extract_keywords(title) if len(t) >= 3]
-          if tokens and any(t.lower() in recent_blob for t in tokens):
-            continue
-          filtered.append(s)
-          if len(filtered) >= 3:
-            break
-        if filtered:
-          seed_parts.append(
-            '[아직 미해결 건의]\n'
-            + '\n'.join(f'- ({s["category"]}) {s["title"]}' for s in filtered)
+          project_context = '\n'.join(
+            f'- 최근 프로젝트: {p.title} ({p.outcome})' for p in projects
           )
       except Exception:
         pass
-      try:
-        lessons = office.team_memory.get_all_lessons(limit=3)
-        if lessons:
-          seed_parts.append(
-            '[팀 축적 교훈]\n' + '\n'.join(f'- {l.lesson}' for l in lessons)
-          )
-      except Exception:
-        pass
-      try:
-        recents_mem = office.team_memory.get_recent_projects(limit=2)
-        if recents_mem:
-          seed_parts.append(
-            '[최근 프로젝트]\n'
-            + '\n'.join(f'- {p.title} ({p.outcome})' for p in recents_mem)
-          )
-      except Exception:
-        pass
-      concrete_seed = '\n\n'.join(seed_parts)
 
-      use_fresh = stuck or random.random() < 0.3
-      if concrete_seed and (stuck or random.random() < 0.5):
-        topic = (
-          f'[의논 주제 — 아래 중 하나를 골라 한 사람에게 구체 질문/반론/제안하라]\n'
-          f'(건의 내용을 업무에 즉시 반영하지 말고, 찬반·보완·반론으로만 토론하라)\n\n'
-          f'{concrete_seed}\n{banned_kws}'
-        )
-      elif use_fresh:
-        seed = random.choice(fresh_topics)
-        topic = (
-          f'[완전히 새 주제] {seed}\n'
-          f'(이전 대화에 이어가지 말고 새 이야기를 꺼내세요){banned_kws}'
-        )
-      else:
-        topic = f'{recent_context}\n{project_context}' if project_context else recent_context
+      stuck, repeated = _detect_topic_stuck(recent_context)
+      concrete_seed = _gather_real_seeds(office, recent_context)
+      topic = _choose_topic(stuck, repeated, concrete_seed, recent_context, project_context)
 
-      # 최근 발언 빈도 — 너무 자주 말한 에이전트는 후보에서 제외
-      recent_speaker_count: dict[str, int] = {}
-      for l in recent[-8:]:
-        if l.get('agent_id') in ('planner', 'designer', 'developer', 'qa'):
-          recent_speaker_count[l['agent_id']] = recent_speaker_count.get(l['agent_id'], 0) + 1
-
-      # 랜덤 에이전트 1~2명 선택 (최근 2회 이상 말한 사람 제외)
-      all_candidates = ['planner', 'designer', 'developer', 'qa']
-      candidates = [c for c in all_candidates if recent_speaker_count.get(c, 0) < 2]
-      if not candidates:
-        candidates = all_candidates  # 전부 자주 말했으면 원복
-      num_speakers = random.choice([1, 1, 1, 2])  # 75% 확률로 1명
-      speakers = random.sample(candidates, min(num_speakers, len(candidates)))
-
-      # 최근 코드 맥락 로드 — 개선 모드 시드용 (한 루프당 한 번만 계산)
-      code_ctx = ''
-      try:
-        import subprocess as _sp
-        from pathlib import Path as _P
-        root = _P(__file__).parent.parent.parent
-        log_out = _sp.run(
-          ['git', 'log', '--oneline', '-n', '8'],
-          cwd=str(root), capture_output=True, text=True, timeout=3,
-        ).stdout.strip()
-        diff_out = _sp.run(
-          ['git', 'diff', '--stat', 'HEAD~5..HEAD'],
-          cwd=str(root), capture_output=True, text=True, timeout=3,
-        ).stdout.strip()
-        if log_out or diff_out:
-          code_ctx = f'[최근 커밋]\n{log_out}\n\n[최근 5커밋 변경 파일]\n{diff_out[:2000]}'
-      except Exception:
-        pass
+      speakers, candidates = _pick_speakers(recent)
+      code_ctx = _load_code_context()
 
       first_reactor = ''
+      speaker_name = ''
       for speaker_name in speakers:
-        agent = office.agents.get(speaker_name)
-        if not agent:
-          continue
-
-        # 본인 최근 자발적 발언 5개 로드 — 같은 주제 반복 방지
-        own_recent: list[str] = []
-        try:
-          from db.log_store import load_logs as _load_logs
-          recent_all = _load_logs(limit=60)
-          own_recent = [
-            l['message'] for l in recent_all
-            if l.get('agent_id') == speaker_name
-            and l.get('event_type') in ('autonomous', 'response')
-          ][:5]
-        except Exception:
-          pass
-
-        # 70% 개선 모드, 30% 농담 모드
-        mode = 'joke' if random.random() < 0.3 else 'improvement'
-        message = await agent.reflect(
-          topic, own_recent=own_recent, mode=mode, code_context=code_ctx,
+        first_reactor = await _run_speaker_chain(
+          office, speaker_name, topic, candidates, code_ctx,
         )
-        if message:
-          speaker_event = LogEvent(
-            agent_id=speaker_name,
-            event_type='autonomous',
-            message=message,
-          )
-          speaker_log_id = speaker_event.id
-          await office.event_bus.publish(speaker_event)
 
-          # 건의게시판 자동 등록 — 개선 제안/도구 요구 감지
-          try:
-            await office._auto_file_suggestion(speaker_name, message, source_log_id=speaker_log_id)
-          except Exception:
-            logger.debug('자동 건의 등록 실패', exc_info=True)
-
-          # 자기 다짐 감지 — 자발 발화 중 "~하겠습니다"
-          try:
-            await office._file_commitment_suggestion(
-              committer_id=speaker_name,
-              message=message,
-              source_log_id=speaker_log_id,
-            )
-          except Exception:
-            logger.debug('자발 다짐 등록 실패', exc_info=True)
-
-          # 1단 반응 — 50% 확률로 다른 에이전트가 구체 보완/반론
-          first_reactor = ''
-          first_reply = ''
-          if random.random() < 0.5:
-            reactors = [n for n in candidates if n != speaker_name]
-            if reactors:
-              first_reactor = random.choice(reactors)
-              first_reply = await autonomous_react(
-                reactor_name=first_reactor,
-                prior_speaker=speaker_name,
-                prior_message=message,
-              )
-              if first_reply:
-                reactor_event = LogEvent(
-                  agent_id=first_reactor,
-                  event_type='autonomous',
-                  message=first_reply,
-                )
-                await office.event_bus.publish(reactor_event)
-                # 리액터의 다짐 감지 (원 발화에 대한 반응 중 "~하겠습니다")
-                try:
-                  await office._file_commitment_suggestion(
-                    committer_id=first_reactor,
-                    message=first_reply,
-                    source_speaker=speaker_name,
-                    source_message=message,
-                    source_log_id=reactor_event.id,
-                  )
-                except Exception:
-                  logger.debug('리액터 다짐 등록 실패', exc_info=True)
-                # 2단 — 원 발언자가 재반론/수용 결론 (30%)
-                if random.random() < 0.3:
-                  closing = await autonomous_closing(
-                    original_speaker=speaker_name,
-                    original_message=message,
-                    challenger=first_reactor,
-                    challenge=first_reply,
-                  )
-                  if closing:
-                    closing_event = LogEvent(
-                      agent_id=speaker_name,
-                      event_type='autonomous',
-                      message=closing,
-                    )
-                    await office.event_bus.publish(closing_event)
-                    # 원 발언자의 수용 결론에서 다짐 감지
-                    try:
-                      await office._file_commitment_suggestion(
-                        committer_id=speaker_name,
-                        message=closing,
-                        source_speaker=first_reactor,
-                        source_message=first_reply,
-                        source_log_id=closing_event.id,
-                      )
-                    except Exception:
-                      logger.debug('클로징 다짐 등록 실패', exc_info=True)
-              else:
-                first_reactor = ''  # 반응 실패 시 체인 종결
-
-      # 팀장 결론 — 체인이 돌았으면 50%, 아니면 10%
-      teamlead_chance = 0.5 if first_reactor else 0.1
-      if random.random() < teamlead_chance:
-        try:
-          chain_hint = ''
-          if first_reactor:
-            chain_hint = (
-              f'\n[방금 돈 의논]\n{display_name(speaker_name)} → {display_name(first_reactor)} 순으로 '
-              f'반박·보완이 오갔다.\n'
-              f'논의 내용에 대한 관찰·관점 한 문장. 결론이 모호하면 [PASS].\n'
-            )
-          teamlead_msg = await run_gemini(
-            prompt=(
-              f'당신은 팀장 잡스입니다. AI 에이전트로 물리 경험 없음.\n'
-              f'최근 팀 상황:\n{recent_context}\n{chain_hint}\n'
-              f'[절대 금지 — 어기면 [PASS]]\n'
-              f'- 선언형 명령 금지: "~진행합니다", "~적용합니다", "~결정합니다", "~최우선 과제로", '
-              f'"~을 지시합니다", "~체계를 수립합니다"\n'
-              f'  (실제 프로젝트/태스크는 사용자가 지시할 때만 시작된다. 자발적 대화에서는 작업을 개시할 권한이 없다.)\n'
-              f'- 빈 응원/감탄/맞장구 금지 ("시너지 최고", "기대된다", "굿굿" 등)\n'
-              f'- 커피/점심/날씨 등 물리 소재 금지\n'
-              f'[허용]\n'
-              f'- 관찰 공유: "~점이 흥미롭다", "~경향이 보인다"\n'
-              f'- 의견 제시: "~이 더 효과적일 것 같다", "~을 검토해볼 가치가 있다"\n'
-              f'- 우려 표명: "~부분이 걱정된다", "~리스크가 있어 보인다"\n'
-              f'- 질문/토론 유도: "~에 대해 어떻게 생각하는가?"\n'
-              f'[출력]\n'
-              f'- 30자 이상, 구체 근거 포함. 없거나 선언형이면 [PASS]. 90%는 [PASS]가 정답.'
-            ),
-          )
-          text = teamlead_msg.strip()
-          first_line = text.split('\n')[0].strip()
-          # 선언형 명령 패턴 감지 — 발견 시 드랍
-          declarative_patterns = (
-            '진행합니다', '적용합니다', '결정합니다', '지시합니다', '수립합니다',
-            '최우선 과제', '최우선과제', '즉시 도입', '즉시도입',
-            '반영하겠습니다', '시행합니다', '착수합니다',
-          )
-          is_declarative = any(p in text for p in declarative_patterns)
-          if (
-            text and '[PASS]' not in text.upper()
-            and len(first_line) >= 30
-            and not is_declarative
-            and not any(p in text for p in (
-              '굿굿', '맞아요', '기대된', '즐겁게', '시너지', '커피', '점심', '날씨',
-            ))
-          ):
-            await office.event_bus.publish(LogEvent(
-              agent_id='teamlead',
-              event_type='autonomous',
-              message=text,
-            ))
-          elif is_declarative:
-            logger.info('팀장 선언형 발언 드랍: %s', first_line[:80])
-        except Exception:
-          logger.debug("팀장 자발적 활동 실패", exc_info=True)
+      await _maybe_teamlead_closing(office, recent_context, speaker_name, first_reactor)
 
     except Exception:
       logger.debug("자발적 활동 루프 에러", exc_info=True)
 
-    # 다음 활동까지 5~15분 대기
     await asyncio.sleep(random.randint(300, 900))
 
 
