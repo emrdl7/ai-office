@@ -665,5 +665,5 @@ class Office:
 
   async def _auto_file_suggestion(self, agent_id: str, message: str) -> None: return await suggestion_filer._auto_file_suggestion(self, agent_id, message)
 
-  async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '') -> None:
-    return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message)
+  async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '', source_log_id: str = '') -> None:
+    return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message, source_log_id)

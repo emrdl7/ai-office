@@ -227,6 +227,7 @@ async def _file_commitment_suggestion(
   message: str,
   source_speaker: str = '',
   source_message: str = '',
+  source_log_id: str = '',
 ) -> None:
   '''에이전트가 "~하겠습니다" 류 자기 다짐을 하면 건의게시판에 등록.
 
@@ -276,6 +277,21 @@ async def _file_commitment_suggestion(
     logger.info('다짐 건의 중복 skip: %s | reason=%s', title[:30], reason)
     return
 
+  # 같은 committer가 같은 주제를 반복하면 즉시 pending (draft 승격 조건 c)
+  from db.suggestion_store import list_suggestions
+  repeat_hit = False
+  try:
+    topic_key = first_line[:30]
+    for prev in list_suggestions(status=''):
+      if prev.get('agent_id') != committer_id:
+        continue
+      if topic_key in (prev.get('title') or ''):
+        repeat_hit = True
+        break
+  except Exception:
+    logger.debug('다짐 반복 감지 실패', exc_info=True)
+  initial_status = 'pending' if repeat_hit else 'draft'
+
   try:
     created = create_suggestion(
       agent_id=committer_id,
@@ -283,18 +299,23 @@ async def _file_commitment_suggestion(
       content=content,
       category='프로세스 개선',
       target_agent=committer_id,
+      status=initial_status,
+      source_log_id=source_log_id,
     )
     log_event(created['id'], 'auto_filed', {
       'speaker': committer_id, 'target_agent': committer_id,
       'kind': 'self_commitment',
       'source_speaker': source_speaker,
+      'initial_status': initial_status,
+      'source_log_id': source_log_id,
     })
+    status_label = '다짐(draft)' if initial_status == 'draft' else '다짐'
     await office._emit(
       'teamlead',
-      f'📌 {display_name(committer_id)}의 다짐을 건의게시판에 등록했습니다: "{first_line[:40]}..."',
+      f'📌 {display_name(committer_id)}의 {status_label}를 건의게시판에 등록했습니다: "{first_line[:40]}..."',
       'system_notice',
     )
-    logger.info('다짐 건의 등록: %s | %s', committer_id, first_line[:60])
+    logger.info('다짐 건의 등록: %s | status=%s | %s', committer_id, initial_status, first_line[:60])
     # 협업 관찰 기록 — committer가 source_speaker 요청에 약속 이행
     if source_speaker:
       office._record_dynamic(
@@ -303,10 +324,12 @@ async def _file_commitment_suggestion(
         dynamic_type='committed_to_request',
         description=first_line[:80],
       )
-    try:
-      from main import auto_triage_new_suggestion
-      asyncio.create_task(auto_triage_new_suggestion(created['id']))
-    except Exception:
-      logger.debug('auto_triage 호출 실패', exc_info=True)
+    # draft는 auto_triage 대상 아님 — 승격 후 호출됨
+    if initial_status == 'pending':
+      try:
+        from main import auto_triage_new_suggestion
+        asyncio.create_task(auto_triage_new_suggestion(created['id']))
+      except Exception:
+        logger.debug('auto_triage 호출 실패', exc_info=True)
   except Exception:
     logger.debug('다짐 create_suggestion 실패', exc_info=True)

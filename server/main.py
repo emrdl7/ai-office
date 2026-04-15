@@ -80,8 +80,11 @@ async def lifespan(app: FastAPI):
   office._teamlead_review_task = asyncio.create_task(office.start_teamlead_review_loop())
   # 메시지 버스 아카이브 루프 — 시작 시 1회 + 24h 주기 (완료 메시지 30일 이상 이관)
   archive_task = asyncio.create_task(_archive_loop())
+  # draft 건의 자동 승격 루프 — 24h 경과 draft를 pending으로
+  draft_promotion_task = asyncio.create_task(_draft_promotion_loop())
   yield
   archive_task.cancel()
+  draft_promotion_task.cancel()
   office.stop_autonomous_loop()
   await office.groq_runner.stop()
   message_bus.close()
@@ -102,6 +105,33 @@ async def _archive_loop():
       await asyncio.sleep(24 * 60 * 60)
     except asyncio.CancelledError:
       break
+
+
+async def _draft_promotion_loop():
+  '''1시간 주기로 24h 경과 draft 건의를 pending으로 자동 승격.
+
+  draft → pending 승격 후 auto_triage_new_suggestion을 호출해 정상 흐름 진입.
+  '''
+  from db.suggestion_store import auto_promote_drafts, list_suggestions
+  while True:
+    try:
+      await asyncio.sleep(60 * 60)
+    except asyncio.CancelledError:
+      break
+    try:
+      before = {s['id'] for s in list_suggestions(status='pending')}
+      promoted = await asyncio.to_thread(auto_promote_drafts, 24)
+      if promoted:
+        logger.info('draft 자동 승격: %d건', promoted)
+        after = list_suggestions(status='pending')
+        for s in after:
+          if s['id'] not in before:
+            try:
+              asyncio.create_task(auto_triage_new_suggestion(s['id']))
+            except Exception:
+              logger.debug('auto_triage 호출 실패: %s', s['id'], exc_info=True)
+    except Exception:
+      logger.exception('draft 자동 승격 실패')
 
 
 app = FastAPI(title='AI Office', lifespan=lifespan)

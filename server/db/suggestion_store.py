@@ -1,7 +1,7 @@
 # 건의게시판 저장소 — SQLite 기반
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / 'data' / 'suggestions.db'
@@ -45,6 +45,12 @@ def _conn() -> sqlite3.Connection:
     pass
   try:
     conn.execute('ALTER TABLE suggestions ADD COLUMN auto_applied_at TEXT DEFAULT ""')
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass
+  # source_log_id — 건의를 트리거한 원본 message 로그 ID (대시보드에서 발화 추적용)
+  try:
+    conn.execute('ALTER TABLE suggestions ADD COLUMN source_log_id TEXT DEFAULT ""')
     conn.commit()
   except sqlite3.OperationalError:
     pass
@@ -336,27 +342,61 @@ def create_suggestion(
   category: str = 'general',
   suggestion_type: str | None = None,
   target_agent: str = '',
+  status: str = 'pending',
+  source_log_id: str = '',
 ) -> dict:
   '''건의를 등록한다. suggestion_type 미지정 시 자동 분류.
-  target_agent가 지정되면 승인 시 해당 에이전트의 PromptEvolver 규칙으로 반영.'''
+  target_agent가 지정되면 승인 시 해당 에이전트의 PromptEvolver 규칙으로 반영.
+
+  status='draft'면 auto_triage 대상에서 제외 (말로만 한 다짐 완충용).
+  source_log_id는 트리거 발화 추적용 (선택).
+  '''
   c = _conn()
   suggestion_id = str(uuid.uuid4())[:8]
   now = datetime.now(timezone.utc).isoformat()
   if not suggestion_type:
     suggestion_type = classify_suggestion_type(title, content, category)
   c.execute(
-    'INSERT INTO suggestions (id, agent_id, category, title, content, status, created_at, updated_at, suggestion_type, target_agent) '
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    (suggestion_id, agent_id, category, title, content, 'pending', now, now, suggestion_type, target_agent),
+    'INSERT INTO suggestions (id, agent_id, category, title, content, status, created_at, updated_at, suggestion_type, target_agent, source_log_id) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    (suggestion_id, agent_id, category, title, content, status, now, now, suggestion_type, target_agent, source_log_id),
   )
   c.commit()
   c.close()
   return {
     'id': suggestion_id, 'agent_id': agent_id, 'category': category,
-    'title': title, 'content': content, 'status': 'pending',
+    'title': title, 'content': content, 'status': status,
     'response': '', 'created_at': now, 'updated_at': now,
     'suggestion_type': suggestion_type, 'target_agent': target_agent,
+    'source_log_id': source_log_id,
   }
+
+
+def promote_draft(suggestion_id: str) -> bool:
+  '''draft 상태 건의를 pending으로 승격. 이미 pending이거나 없으면 False.'''
+  c = _conn()
+  cur = c.execute(
+    'UPDATE suggestions SET status="pending", updated_at=? WHERE id=? AND status="draft"',
+    (datetime.now(timezone.utc).isoformat(), suggestion_id),
+  )
+  c.commit()
+  ok = cur.rowcount > 0
+  c.close()
+  return ok
+
+
+def auto_promote_drafts(stale_hours: int = 24) -> int:
+  '''24h 경과한 draft를 pending으로 자동 승격. 승격 건수 반환.'''
+  cutoff = (datetime.now(timezone.utc) - timedelta(hours=stale_hours)).isoformat()
+  c = _conn()
+  cur = c.execute(
+    'UPDATE suggestions SET status="pending", updated_at=? WHERE status="draft" AND created_at < ?',
+    (datetime.now(timezone.utc).isoformat(), cutoff),
+  )
+  c.commit()
+  n = cur.rowcount
+  c.close()
+  return n
 
 
 def get_suggestion(suggestion_id: str) -> dict | None:
