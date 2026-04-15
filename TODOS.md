@@ -14,19 +14,15 @@
 
 ---
 
-## 🎨 P1 — 관측성 UI 노출 (백엔드 준비됨, 프론트 연결)
+## 🎨 P1 — 관측성 UI 노출 ✅ 완료
 
-실시간 상태와 자가개선 지표가 API로는 나오지만 대시보드에 미노출.
-사용자가 진행 상태를 대시보드에서 눈으로 확인할 수 없음.
-
-- [ ] `/api/project/status` 폴링 패널 — 현재 phase / elapsed / nodes(완료/진행) 표시.
-      ChatRoom 상단 또는 사이드바. 1~3초 폴링.
-- [ ] `improvement_engine.get_metrics_summary` 대시보드 패널 노출 —
-      기존 "자가개선 분석" 탭 재활성화. 누적 QA 합격률 / 평균 revision /
-      phase별 평균 시간.
-- [ ] SearchPanel에 `preset=errors` 원클릭 버튼 — 최근 실패/system_notice만.
-- [ ] placeholder 오염 warning을 EventBus로도 공개 — 현재 logger.warning만,
-      대시보드에서 실시간 확인 불가.
+- [x] `ProjectStatusBar` — `/api/project/status` 2초 폴링, ChatRoom 상단에
+      state/phase/agent/elapsed/rev/nodes 배너.
+- [x] `MetricsPanel` — 사이드바 "자가개선 분석" 버튼 복귀. 누적 QA 합격률 /
+      평균 revision / 평균 phase / 평균 소요 + 최근 8건.
+- [x] SearchPanel `⚠ 에러만` 토글 — `preset=errors` 원클릭.
+- [x] placeholder 오염 `system_notice` 2차 이벤트로 EventBus 공개 —
+      원본 event id/pattern/preview 포함, 검색 에러 프리셋에서 즉시 확인.
 
 ---
 

@@ -5,7 +5,8 @@ import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
 import { AGENT_IDS } from '../config/team'
 import { IconFolder } from './icons'
-import type { Agent, LogEntry, Task, ChannelId } from '../types'
+import { ProjectStatusBar } from './ProjectStatusBar'
+import type { Agent, LogEntry, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
 // 아바타 이미지 — config/team.ts 중앙 관리
@@ -437,6 +438,8 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           <span className="font-medium">{activeProject.title}</span>
         </div>
       )}
+
+      <ProjectStatusBar />
 
       {/* 검색 바 */}
       {showSearch && (

@@ -54,19 +54,21 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState('')
   const [type, setType] = useState<SearchType>('all')
   const [includeArchive, setIncludeArchive] = useState(false)
+  const [errorsPreset, setErrorsPreset] = useState(false)
   const [data, setData] = useState<SearchResponse | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // q 디바운스 — 400ms
+  // q 디바운스 — 400ms. errors preset은 q가 비어도 동작.
   const qTrim = q.trim()
   useEffect(() => {
-    if (qTrim.length < 2) { setData(null); return }
+    if (!errorsPreset && qTrim.length < 2) { setData(null); return }
     const timer = setTimeout(async () => {
       setLoading(true)
       try {
         const params = new URLSearchParams({
           q: qTrim, type, include_archive: String(includeArchive), limit: '30',
         })
+        if (errorsPreset) params.set('preset', 'errors')
         const res = await fetch(`/api/search?${params.toString()}`)
         setData(await res.json())
       } finally {
@@ -74,7 +76,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
       }
     }, 400)
     return () => clearTimeout(timer)
-  }, [qTrim, type, includeArchive])
+  }, [qTrim, type, includeArchive, errorsPreset])
 
   const totals = useMemo(() => ({
     logs: data?.logs?.length ?? 0,
@@ -112,6 +114,17 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
             </button>
           </div>
           <div className="flex items-center gap-2 text-xs">
+            <button
+              onClick={() => setErrorsPreset((v) => !v)}
+              className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors ${
+                errorsPreset
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              title="error / system_notice 이벤트만"
+            >
+              ⚠ 에러만
+            </button>
             {(['all', 'logs', 'suggestions', 'dynamics'] as SearchType[]).map((t) => (
               <button
                 key={t}
@@ -138,15 +151,15 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {qTrim.length < 2 && (
+          {!errorsPreset && qTrim.length < 2 && (
             <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">
               2글자 이상 입력하세요
             </p>
           )}
-          {qTrim.length >= 2 && loading && (
+          {(errorsPreset || qTrim.length >= 2) && loading && (
             <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">검색 중...</p>
           )}
-          {qTrim.length >= 2 && !loading && data && totals.logs + totals.suggestions + totals.dynamics === 0 && (
+          {(errorsPreset || qTrim.length >= 2) && !loading && data && totals.logs + totals.suggestions + totals.dynamics === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">결과 없음</p>
           )}
 

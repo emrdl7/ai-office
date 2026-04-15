@@ -88,6 +88,19 @@ class EventBus:
             except Exception:
                 logger.debug("이벤트 SQLite 저장 실패", exc_info=True)
 
+        self._broadcast(event)
+
+        # placeholder 오염 감지 — system_notice로 2차 이벤트 발행
+        notice = _build_placeholder_notice(event)
+        if notice is not None:
+            try:
+                from db.log_store import save_log
+                save_log(asdict(notice))
+            except Exception:
+                logger.debug("placeholder notice 저장 실패", exc_info=True)
+            self._broadcast(notice)
+
+    def _broadcast(self, event: 'LogEvent') -> None:
         for q in list(self._subscribers):  # 복사본으로 순회 (동시 수정 안전)
             try:
                 q.put_nowait(event)
@@ -98,6 +111,45 @@ class EventBus:
     def subscriber_count(self) -> int:
         '''현재 구독자 수 (모니터링용)'''
         return len(self._subscribers)
+
+
+_PLACEHOLDER_PATTERNS = (
+    '초안 내용입니다',
+    '샘플 응답입니다',
+    'lorem ipsum',
+    'Lorem ipsum',
+    'TODO: fill',
+    'PLACEHOLDER',
+)
+
+
+def _build_placeholder_notice(event: LogEvent) -> 'LogEvent | None':
+    '''이벤트 메시지가 placeholder 오염을 포함하면 system_notice 이벤트 반환.
+
+    system/user 에이전트와 system_notice/error 자기자신은 제외.
+    '''
+    if event.agent_id in ('system', 'user'):
+        return None
+    if event.event_type in ('system_notice', 'error'):
+        return None
+    msg = event.message or ''
+    for pat in _PLACEHOLDER_PATTERNS:
+        if pat in msg:
+            preview = msg[:80]
+            return LogEvent(
+                agent_id='system',
+                event_type='system_notice',
+                message=f'⚠ placeholder 오염 감지 — {event.agent_id}/{event.event_type}: {pat!r}',
+                data={
+                    'source_agent': event.agent_id,
+                    'source_event_type': event.event_type,
+                    'source_log_id': event.id,
+                    'pattern': pat,
+                    'preview': preview,
+                    'kind': 'placeholder_contamination',
+                },
+            )
+    return None
 
 
 # FastAPI 앱에서 사용할 싱글턴 인스턴스

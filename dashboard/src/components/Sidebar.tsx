@@ -7,6 +7,7 @@ import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '.
 import { IconClipboard, IconChart, IconRefresh, IconSearch } from './icons'
 import { ReactionStatsPanel } from './ReactionStats'
 import { SearchPanel } from './SearchPanel'
+import { MetricsPanel } from './MetricsPanel'
 
 export { AGENT_PROFILE }
 
@@ -220,6 +221,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { activeChannel, setActiveChannel, toggleTheme, theme, toggleArtifacts, showArtifacts, logs } = useStore()
   const prevLogsLen = useRef(0)
   const [showReactions, setShowReactions] = useState(false)
+  const [showMetrics, setShowMetrics] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
 
   function selectChannel(channel: ChannelId) {
@@ -380,6 +382,16 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <span>리액션 통계</span>
         </button>
         <button
+          onClick={() => setShowMetrics(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
+            text-sm text-gray-600 dark:text-gray-400
+            hover:bg-gray-100 dark:hover:bg-gray-800
+            cursor-pointer transition-colors"
+        >
+          <IconChart className="w-4 h-4" />
+          <span>자가개선 분석</span>
+        </button>
+        <button
           onClick={async () => {
             if (!confirm('백엔드 서버를 재시작합니다. 5초 내 자동 재연결됩니다. 계속할까요?')) return
             try {
@@ -403,6 +415,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         </button>
       </div>
       {showReactions && <ReactionStatsPanel onClose={() => setShowReactions(false)} />}
+      {showMetrics && <MetricsPanel onClose={() => setShowMetrics(false)} />}
       {showSearch && <SearchPanel onClose={() => setShowSearch(false)} />}
     </aside>
   )
