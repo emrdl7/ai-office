@@ -49,6 +49,15 @@
       신규 흐름(`test_qa_pushback_loop`, `test_retrospective`)으로 커버되지만
       정식 재작성 가치 있음.
 - [ ] **frontend 타입 정리** — dashboard 4.3K. 빠진 타입/any 잔존 점검.
+- [ ] **placeholder 검사 중복 제거** — `db/log_store._check_placeholder_contamination`
+      과 `log_bus/event_bus._build_placeholder_notice`가 동일 패턴 목록 보유.
+      log_store 쪽은 `logger.warning`만, event_bus 쪽은 `system_notice` 발행.
+      log_store 쪽 제거하고 event_bus 단일 경로로 통합.
+- [ ] **dashboard/dist git 트래킹 제거** — 빌드 산출물인데 .DS_Store/avatars까지
+      커밋 대상. `.gitignore`에 `dashboard/dist/`로 정리 + 서버 serve 전에
+      빌드 단계로 전환 고려.
+- [ ] **ProjectStatusBar 적응형 폴링** — 현재 idle 여부 무관하게 2초 폴링.
+      state='idle'면 10초로, 탭 visibility=hidden일 땐 일시정지.
 
 ---
 
