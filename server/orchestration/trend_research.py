@@ -244,8 +244,11 @@ async def maybe_research(office: Any, speaker_name: str) -> bool:
     f'→ {target_label} 프롬프트 규칙으로 등록 (rule {rule_id}).'
   )
   try:
+    # autonomous_mode='trend_research' 태깅 — suggestion_filer 3종 모두 skip.
+    # 이 발화는 이미 PromptEvolver에 규칙을 등록했으므로 다시 건의로 올릴 필요 없음.
     await office.event_bus.publish(LogEvent(
       agent_id=speaker_name, event_type='autonomous', message=message,
+      data={'autonomous_mode': 'trend_research', 'rule_id': rule_id, 'target': target},
     ))
   except Exception:
     logger.debug('트렌드 발화 publish 실패', exc_info=True)

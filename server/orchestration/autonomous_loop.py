@@ -363,27 +363,36 @@ async def _run_speaker_chain(
   if not message:
     return ''
 
-  speaker_event = LogEvent(agent_id=speaker_name, event_type='autonomous', message=message)
+  # autonomous_mode를 LogEvent.data에 표기 — 건의 등록/검색/UI에서 모드 필터 가능
+  speaker_event = LogEvent(
+    agent_id=speaker_name, event_type='autonomous', message=message,
+    data={'autonomous_mode': mode},
+  )
   await office.event_bus.publish(speaker_event)
 
+  # mode=joke 발화는 filer 3종 모두 조기 return — 오탐 구조적 차단
   try:
-    await office._auto_file_suggestion(speaker_name, message, source_log_id=speaker_event.id)
+    await office._auto_file_suggestion(
+      speaker_name, message, source_log_id=speaker_event.id, mode=mode,
+    )
   except Exception:
     logger.debug('자동 건의 등록 실패', exc_info=True)
   try:
     await office._file_commitment_suggestion(
-      committer_id=speaker_name, message=message, source_log_id=speaker_event.id,
+      committer_id=speaker_name, message=message, source_log_id=speaker_event.id, mode=mode,
     )
   except Exception:
     logger.debug('자발 다짐 등록 실패', exc_info=True)
   try:
     await office._file_capability_gap_suggestion(
-      speaker_id=speaker_name, message=message, source_log_id=speaker_event.id,
+      speaker_id=speaker_name, message=message, source_log_id=speaker_event.id, mode=mode,
     )
   except Exception:
     logger.debug('능력 부족 등록 실패', exc_info=True)
 
-  # 1단 반응 (50%)
+  # 1단 반응 (50%) — 반응은 구조상 "상대 발언에 대한 동의/보완"이므로
+  # 새로운 실행 요구로 보기 어렵다. mode='reaction' 태깅으로 filer 중
+  # auto_file/capability_gap은 skip, commitment만 통과시켜 다짐은 포착.
   first_reactor = ''
   if random.random() < 0.5:
     reactors = [n for n in candidates if n != speaker_name]
@@ -395,9 +404,12 @@ async def _run_speaker_chain(
       if first_reply:
         reactor_event = LogEvent(
           agent_id=first_reactor, event_type='autonomous', message=first_reply,
+          data={'autonomous_mode': 'reaction'},
         )
         await office.event_bus.publish(reactor_event)
         try:
+          # 다짐은 reaction에서도 포착 (commitment는 mode 무관 — 아이브의
+          # "~하겠습니다" 같은 실행 추적이 필요하기 때문)
           await office._file_commitment_suggestion(
             committer_id=first_reactor, message=first_reply,
             source_speaker=speaker_name, source_message=message,
@@ -407,11 +419,12 @@ async def _run_speaker_chain(
           logger.debug('리액터 다짐 등록 실패', exc_info=True)
         try:
           await office._file_capability_gap_suggestion(
-            speaker_id=first_reactor, message=first_reply, source_log_id=reactor_event.id,
+            speaker_id=first_reactor, message=first_reply,
+            source_log_id=reactor_event.id, mode='reaction',
           )
         except Exception:
           logger.debug('리액터 능력 부족 등록 실패', exc_info=True)
-        # 2단 결론 (30%)
+        # 2단 결론 (30%) — 원 발언자의 재반론/수용. mode='closing'.
         if random.random() < 0.3:
           closing = await autonomous_closing(
             original_speaker=speaker_name, original_message=message,
@@ -420,6 +433,7 @@ async def _run_speaker_chain(
           if closing:
             closing_event = LogEvent(
               agent_id=speaker_name, event_type='autonomous', message=closing,
+              data={'autonomous_mode': 'closing'},
             )
             await office.event_bus.publish(closing_event)
             try:
@@ -432,7 +446,8 @@ async def _run_speaker_chain(
               logger.debug('클로징 다짐 등록 실패', exc_info=True)
             try:
               await office._file_capability_gap_suggestion(
-                speaker_id=speaker_name, message=closing, source_log_id=closing_event.id,
+                speaker_id=speaker_name, message=closing,
+                source_log_id=closing_event.id, mode='closing',
               )
             except Exception:
               logger.debug('클로징 능력 부족 등록 실패', exc_info=True)

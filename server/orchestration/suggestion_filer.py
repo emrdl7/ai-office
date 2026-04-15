@@ -98,12 +98,20 @@ async def _file_reaction_suggestion(office: Any, agent_id: str, phase_name: str,
 
 
 
-async def _auto_file_suggestion(office: Any, agent_id: str, message: str, source_log_id: str = '') -> None:
+async def _auto_file_suggestion(
+  office: Any, agent_id: str, message: str, source_log_id: str = '',
+  mode: str = '',
+) -> None:
   '''자발적 대화 중 개선 제안/도구 요구가 감지되면 건의게시판에 자동 등록.
 
   키워드 기반 heuristic (LLM 호출 없음 → 비용 0).
   같은 에이전트+카테고리 조합이 최근 10건 내 pending 상태면 중복 방지.
+
+  mode가 joke/reaction/trend_research이면 즉시 return — 농담·리액션·
+  트렌드 공유 발언을 실행 요구로 오등록하지 않는다.
   '''
+  if mode in ('joke', 'reaction', 'trend_research'):
+    return
   from db.suggestion_store import create_suggestion, list_suggestions
 
   # 토론/질문/제안 회상 시그널 — 하나라도 있으면 건의 아님 (우선순위)
@@ -297,13 +305,19 @@ async def _file_commitment_suggestion(
   source_speaker: str = '',
   source_message: str = '',
   source_log_id: str = '',
+  mode: str = '',
 ) -> None:
   '''에이전트가 "~하겠습니다" 류 자기 다짐을 하면 건의게시판에 등록.
 
   멘션 응답이든 자발적 발언이든, committer 본인이 수행하기로 약속한 경우
   target_agent=committer로 pending 등록하여 실제 실행 궤적을 남긴다.
+
+  mode가 joke/trend_research면 즉시 return (농담 속 "~하겠다" 드립, 트렌드
+  공유의 형식적 관용어를 다짐으로 오탐하지 않는다).
   말로만 "반영하겠습니다" 하고 끝나는 것을 방지.
   '''
+  if mode in ('joke', 'trend_research'):
+    return
   if not message or len(message.strip()) < 15:
     return
 
@@ -426,6 +440,7 @@ async def _file_capability_gap_suggestion(
   speaker_id: str,
   message: str,
   source_log_id: str = '',
+  mode: str = '',
 ) -> None:
   '''"도구가 없어서/템플릿이 없어서/할 수 없어서" 류 능력 부족 발화를 자동 건의.
 
@@ -433,7 +448,13 @@ async def _file_capability_gap_suggestion(
   정확히 보고하는 것 자체가 책임이다. 그게 팀이 성장하는 방식이다."
 
   category는 발화 문구에 따라 `도구 부족` 또는 `정보 부족`으로 분기.
+
+  mode가 joke/reaction/trend_research면 즉시 return — "kill -9 하고 싶은데
+  권한이 없네요 ㅎㅎ" 같은 농담 속 관용어를 실제 능력 부족으로 오탐하지
+  않는다 (2026-04-16 #2da347a6 폐기 건 기반).
   '''
+  if mode in ('joke', 'reaction', 'trend_research'):
+    return
   if not message or len(message.strip()) < 15:
     return
 

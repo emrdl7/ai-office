@@ -12,9 +12,37 @@
 
 ---
 
-## 🚧 남은 작업 (없음)
+## 🚧 남은 작업 — 채팅/건의 고도화 로드맵
 
-> 모든 진행 항목 졸업. 새로운 작업은 아래 "완료 누적" 위에 추가.
+### P1. 모드 메타 표기 + 오탐 차단 (이번 세션 구현)
+- `_run_speaker_chain`이 발행하는 `LogEvent.data`에
+  `{'autonomous_mode': 'joke'|'improvement'|'reaction'|'closing'|'trend_research'}` 추가.
+- `_auto_file_suggestion` / `_file_commitment_suggestion` /
+  `_file_capability_gap_suggestion`에 `mode` 파라미터 전달.
+  `mode in {'joke','trend_research','reaction'}` 이면 즉시 return.
+- **효과**: "kill -9 ㅎㅎ" 같은 농담이 능력부족 건의로 둔갑하는 오탐
+  구조적 차단. 리액션성 발화가 다짐으로 오등록되던 사례도 함께 해결.
+
+### P2. 건의 등록 3-gate (차기 세션)
+건의 등록 전 게이트 3종을 `_register_suggestion` 파이프라인에 삽입:
+1. **모드 gate** — P1에서 처리됨 (joke/reaction/trend_research skip)
+2. **중복 gate** — 제목 토큰이 최근 48h pending/accepted 제목과
+   70%+ 겹치면 skip + `suggestion_deduplicated` 이벤트 기록. 오늘
+   폐기한 #425896e6와 나란히 존재했던 #d563da5c 같은 사고 방지.
+3. **구체성 gate** — 메시지 40자 미만 또는 기술 토큰(파일명/함수명/
+   커밋해시/에러코드 패턴) 0개면 skip. 추상 관찰을 건의로 올리지 말 것.
+
+### P3. 반복 경향 관측 (차기)
+- `/api/autonomous/stats` — 최근 N시간 autonomous 발화 수, 모드별 분포,
+  [PASS] 드롭율, 중복 skip 건수, 반복 키워드 top5, stuck 감지 빈도.
+- 대시보드에 소형 패널 노출 → 블록리스트 효과 수치로 관측.
+
+### P4. 건의 파이프라인 안전망 보강 (차기)
+- `auto_triage_accept`가 나왔지만 AI 리뷰가 `merge_safe`를 받지 못한
+  건의는 해당 제안자 `AgentMemory`에 "triage overshoot" 기록 →
+  다음 유사 건의의 auto_triage 가중치 하향.
+- 같은 파일 경로를 24h 내 2회 수정한 자가개선은 자동 rollback 후보
+  리스트에 추가 (파이프라인 폭주 방지).
 
 ---
 
