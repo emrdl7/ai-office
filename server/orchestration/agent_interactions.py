@@ -724,3 +724,73 @@ async def _phase_intro(office, agent_name: str, phase_name: str) -> None:
   # 폴백
   await office._emit(agent_name, fallback_intros.get(agent_name, '시작하겠습니다 🚀'), 'response')
 
+
+
+async def _route_agent_mentions(office, speaker: str, content: str) -> None:
+  '''에이전트 산출물/발언에서 @멘션을 감지하고 대상 에이전트가 응답하게 한다.
+
+  작업 중 에이전트끼리 자연스럽게 질문/토론하는 효과.
+  '''
+  from orchestration.meeting import MENTION_MAP
+  from runners.claude_runner import run_claude_isolated as _run_claude_isolated
+  mentions = re.findall(
+    r'@([가-힣A-Za-z]+(?:님)?)[,.]?\s*([^@\n]{5,150})',
+    content,
+  )
+  if not mentions:
+    return
+
+  seen_targets = set()
+  for raw_target, question_text in mentions[:3]:
+    target_id = MENTION_MAP.get(raw_target) or MENTION_MAP.get(raw_target.rstrip('님'))
+    if not target_id or target_id == speaker or target_id == 'user':
+      continue
+    if target_id in seen_targets:
+      continue
+    seen_targets.add(target_id)
+
+    question = question_text.strip()
+    if not question:
+      continue
+
+    if target_id == 'teamlead':
+      try:
+        response = await _run_claude_isolated(
+          f'당신은 팀장입니다. {display_name(speaker)}이(가) 작업 중 질문했습니다:\n'
+          f'"{question}"\n짧게 1~2문장으로 답변하세요 (메신저 톤, 마크다운 금지).',
+          model='claude-haiku-4-5-20251001', timeout=20.0,
+        )
+        await office._emit('teamlead', response.strip()[:150], 'response')
+      except Exception:
+        logger.debug("에이전트→팀장 질문 라우팅 실패", exc_info=True)
+    else:
+      agent = office.agents.get(target_id)
+      if agent:
+        try:
+          await office._emit(target_id, '', 'typing')
+          answer = await agent.respond_to(display_name(speaker), question)
+          if answer:
+            await office._emit(target_id, answer[:200], 'response')
+
+            try:
+              await office._file_commitment_suggestion(
+                committer_id=target_id,
+                message=answer,
+                source_speaker=speaker,
+                source_message=question,
+              )
+            except Exception:
+              logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)
+
+            try:
+              office.team_memory.add_dynamic(TeamDynamic(
+                from_agent=speaker,
+                to_agent=target_id,
+                dynamic_type='needs_clarification',
+                description=question[:80],
+                timestamp=datetime.now(timezone.utc).isoformat(),
+              ))
+            except Exception:
+              logger.debug("팀 다이나믹 기록 실패", exc_info=True)
+        except Exception:
+          logger.debug("에이전트 간 질문 라우팅 실패: %s→%s", speaker, target_id, exc_info=True)

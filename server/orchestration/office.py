@@ -677,91 +677,12 @@ class Office:
     await self._emit('teamlead', f'말씀 확인했습니다. 작업에 반영하겠습니다.', 'response')
 
   async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
-    '''이전 그룹의 산출물에서 다음 단계에 필요한 참조 가이드를 생성한다.
-
-    요약이 아니라 "어느 작업 시 어느 문서의 어느 부분을 참고하라"는 지시서.
-    '''
-    # 각 문서의 섹션 목차를 추출
-    doc_sections = []
-    for doc_name, content in group_results.items():
-      # 마크다운 헤더를 추출하여 목차 구성
-      headers = [line.strip() for line in content.split('\n') if line.strip().startswith('#')]
-      doc_sections.append(f'[{doc_name}] 섹션 목록:\n' + '\n'.join(headers[:20]))
-
-    sections_text = '\n\n'.join(doc_sections)
-
-    try:
-      guide = await run_claude_isolated(
-        f'당신은 팀장입니다. "{target_phase}" 담당자에게 작업 지시를 내려야 합니다.\n\n'
-        f'아래는 "{group_name}" 단계에서 완료된 문서들의 섹션 목록입니다:\n\n'
-        f'{sections_text}\n\n'
-        f'"{target_phase}" 작업을 수행할 때 어떤 문서의 어떤 섹션을 참고해야 하는지 '
-        f'구체적으로 지시하세요.\n\n'
-        f'형식:\n'
-        f'- [작업 항목] → [문서명]의 [섹션명] 참고\n'
-        f'- 해당 섹션에서 꼭 확인해야 할 핵심 스펙(수치, 구조 등)을 한 줄로 명시\n\n'
-        f'예시:\n'
-        f'- 네비게이션 마크업 → 기획-IA설계의 "GNB 구조" 참고 (1뎁스 6개: 기관소개/사업안내/...)\n'
-        f'- CSS 변수 정의 → 디자인-시스템의 "컬러 팔레트" 참고 (Primary: #1B4F72, Secondary: #2ECC71)\n',
-        model='claude-haiku-4-5-20251001',
-        timeout=60.0,
-      )
-      return guide
-    except Exception:
-      logger.warning("인수인계 가이드 생성 실패, 목차로 대체", exc_info=True)
-      # 실패 시 목차라도 전달
-      return sections_text
+    from orchestration import project_runner
+    return await project_runner._create_handoff_guide(self, group_name, group_results, target_phase)
 
   async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
-    '''디자인 산출물을 바탕으로 Stitch 시안을 생성하고, 개발 단계에 전달한다.'''
-    try:
-      await self._emit('designer', '디자인 시안을 생성하고 있습니다... 🎨', 'response')
-      self._state = OfficeState.WORKING
-      self._active_agent = 'designer'
-      self._work_started_at = datetime.now(timezone.utc).isoformat()
-
-      # 디자인 관련 산출물 취합
-      design_context_parts = []
-      for key in sorted(all_results.keys()):
-        if '디자인' in key or '기획' in key:
-          design_context_parts.append(f'[{key}]\n{all_results[key]}')
-
-      design_context = '\n\n'.join(design_context_parts)
-
-      # 사용자 요청에서 첨부 제외한 핵심만
-      project_brief = user_input.split('[첨부된 참조 자료]')[0].strip() if '[첨부된 참조 자료]' in user_input else user_input
-
-      stitch_result = await designer_generate_with_context(
-        design_context=f'[프로젝트]\n{project_brief}\n\n{design_context}',
-        task_id=self.workspace.task_id,
-        workspace_root=str(self.workspace.task_dir.parent),
-      )
-
-      if stitch_result.get('success'):
-        stitch_artifacts = []
-        if stitch_result.get('html_path'):
-          stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.html')
-          # 시안 HTML을 all_results에 추가 → 개발 단계에서 참조
-          try:
-            html_content = Path(stitch_result['html_path']).read_text(encoding='utf-8')
-            all_results['디자인-시안HTML'] = html_content
-          except Exception:
-            logger.debug("Stitch 시안 HTML 읽기 실패", exc_info=True)
-        if stitch_result.get('image_path'):
-          stitch_artifacts.append(f'{self.workspace.task_id}/stitch/design.png')
-        await self.event_bus.publish(LogEvent(
-          agent_id='designer',
-          event_type='response',
-          message='디자인 시안이 생성되었습니다! 개발자에게 전달합니다. 🎉',
-          data={'artifacts': stitch_artifacts},
-        ))
-        await self._team_reaction('designer', '시안 생성')
-      else:
-        error = stitch_result.get('error', '알 수 없는 오류')[:200]
-        await self._emit('designer', f'시안 생성을 건너뜁니다 (Stitch: {error})', 'response')
-    except Exception as e:
-      logger.warning("Stitch 시안 생성 실패", exc_info=True)
-      await self._emit('designer', f'시안 생성을 건너뜁니다 ({str(e)[:100]})', 'response')
+    from orchestration import project_runner
+    return await project_runner._generate_stitch_mockup(self, all_results, user_input)
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
     from orchestration import project_runner
@@ -776,77 +697,8 @@ class Office:
     return await project_runner._teamlead_final_review(self, user_input, task_graph)
 
   async def _route_agent_mentions(self, speaker: str, content: str) -> None:
-    '''에이전트 산출물/발언에서 @멘션을 감지하고 대상 에이전트가 응답하게 한다.
-
-    작업 중 에이전트끼리 자연스럽게 질문/토론하는 효과.
-    '''
-    import re
-    from orchestration.meeting import MENTION_MAP
-    # @멘션 + 뒤따르는 내용 추출
-    mentions = re.findall(
-      r'@([가-힣A-Za-z]+(?:님)?)[,.]?\s*([^@\n]{5,150})',
-      content,
-    )
-    if not mentions:
-      return
-
-    seen_targets = set()
-    for raw_target, question_text in mentions[:3]:  # 최대 3개 멘션 처리
-      target_id = MENTION_MAP.get(raw_target) or MENTION_MAP.get(raw_target.rstrip('님'))
-      if not target_id or target_id == speaker or target_id == 'user':
-        continue
-      if target_id in seen_targets:
-        continue
-      seen_targets.add(target_id)
-
-      question = question_text.strip()
-      if not question:
-        continue
-
-      if target_id == 'teamlead':
-        # 팀장에게 질문 → Claude 응답
-        try:
-          response = await run_claude_isolated(
-            f'당신은 팀장입니다. {display_name(speaker)}이(가) 작업 중 질문했습니다:\n'
-            f'"{question}"\n짧게 1~2문장으로 답변하세요 (메신저 톤, 마크다운 금지).',
-            model='claude-haiku-4-5-20251001', timeout=20.0,
-          )
-          await self._emit('teamlead', response.strip()[:150], 'response')
-        except Exception:
-          logger.debug("에이전트→팀장 질문 라우팅 실패", exc_info=True)
-      else:
-        agent = self.agents.get(target_id)
-        if agent:
-          try:
-            await self._emit(target_id, '', 'typing')
-            answer = await agent.respond_to(display_name(speaker), question)
-            if answer:
-              await self._emit(target_id, answer[:200], 'response')
-
-              # 다짐 감지 — 멘션 응답 중 "~하겠습니다" 발화면 건의 등록
-              try:
-                await self._file_commitment_suggestion(
-                  committer_id=target_id,
-                  message=answer,
-                  source_speaker=speaker,
-                  source_message=question,
-                )
-              except Exception:
-                logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)
-
-              # 팀 다이나믹 기록 — 에이전트 간 소통 패턴 학습
-              try:
-                self.team_memory.add_dynamic(TeamDynamic(
-                  from_agent=speaker,
-                  to_agent=target_id,
-                  dynamic_type='needs_clarification',
-                  description=question[:80],
-                  timestamp=datetime.now(timezone.utc).isoformat(),
-                ))
-              except Exception:
-                logger.debug("팀 다이나믹 기록 실패", exc_info=True)
-          except Exception:
-            logger.debug("에이전트 간 질문 라우팅 실패: %s→%s", speaker, target_id, exc_info=True)
+    from orchestration import agent_interactions
+    return await agent_interactions._route_agent_mentions(self, speaker, content)
 
   # ──────────────────────────────────────────────────────────────
   # 자발적 활동 시스템 (Phase 2)

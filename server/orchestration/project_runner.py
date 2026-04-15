@@ -1446,7 +1446,85 @@ async def _teamlead_final_review(office, user_input: str, task_graph: TaskGraph)
   record_rejection(office._last_review_feedback, 'final_review', str(office._memory_root))
   return False
 
-# ──────────────────────────────────────────────────────────────
-# 에이전트 간 자율 대화 라우팅 (Phase 1)
-# ──────────────────────────────────────────────────────────────
+async def _create_handoff_guide(office, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
+  '''이전 그룹의 산출물에서 다음 단계에 필요한 참조 가이드를 생성한다.
 
+  요약이 아니라 "어느 작업 시 어느 문서의 어느 부분을 참고하라"는 지시서.
+  '''
+  doc_sections = []
+  for doc_name, content in group_results.items():
+    headers = [line.strip() for line in content.split('\n') if line.strip().startswith('#')]
+    doc_sections.append(f'[{doc_name}] 섹션 목록:\n' + '\n'.join(headers[:20]))
+
+  sections_text = '\n\n'.join(doc_sections)
+
+  try:
+    guide = await run_claude_isolated(
+      f'당신은 팀장입니다. "{target_phase}" 담당자에게 작업 지시를 내려야 합니다.\n\n'
+      f'아래는 "{group_name}" 단계에서 완료된 문서들의 섹션 목록입니다:\n\n'
+      f'{sections_text}\n\n'
+      f'"{target_phase}" 작업을 수행할 때 어떤 문서의 어떤 섹션을 참고해야 하는지 '
+      f'구체적으로 지시하세요.\n\n'
+      f'형식:\n'
+      f'- [작업 항목] → [문서명]의 [섹션명] 참고\n'
+      f'- 해당 섹션에서 꼭 확인해야 할 핵심 스펙(수치, 구조 등)을 한 줄로 명시\n\n'
+      f'예시:\n'
+      f'- 네비게이션 마크업 → 기획-IA설계의 "GNB 구조" 참고 (1뎁스 6개: 기관소개/사업안내/...)\n'
+      f'- CSS 변수 정의 → 디자인-시스템의 "컬러 팔레트" 참고 (Primary: #1B4F72, Secondary: #2ECC71)\n',
+      model='claude-haiku-4-5-20251001',
+      timeout=60.0,
+    )
+    return guide
+  except Exception:
+    logger.warning("인수인계 가이드 생성 실패, 목차로 대체", exc_info=True)
+    return sections_text
+
+
+async def _generate_stitch_mockup(office, all_results: dict, user_input: str) -> None:
+  '''디자인 산출물을 바탕으로 Stitch 시안을 생성하고, 개발 단계에 전달한다.'''
+  from orchestration.office import OfficeState
+  try:
+    await office._emit('designer', '디자인 시안을 생성하고 있습니다... 🎨', 'response')
+    office._state = OfficeState.WORKING
+    office._active_agent = 'designer'
+    office._work_started_at = datetime.now(timezone.utc).isoformat()
+
+    design_context_parts = []
+    for key in sorted(all_results.keys()):
+      if '디자인' in key or '기획' in key:
+        design_context_parts.append(f'[{key}]\n{all_results[key]}')
+
+    design_context = '\n\n'.join(design_context_parts)
+
+    project_brief = user_input.split('[첨부된 참조 자료]')[0].strip() if '[첨부된 참조 자료]' in user_input else user_input
+
+    stitch_result = await designer_generate_with_context(
+      design_context=f'[프로젝트]\n{project_brief}\n\n{design_context}',
+      task_id=office.workspace.task_id,
+      workspace_root=str(office.workspace.task_dir.parent),
+    )
+
+    if stitch_result.get('success'):
+      stitch_artifacts = []
+      if stitch_result.get('html_path'):
+        stitch_artifacts.append(f'{office.workspace.task_id}/stitch/design.html')
+        try:
+          html_content = Path(stitch_result['html_path']).read_text(encoding='utf-8')
+          all_results['디자인-시안HTML'] = html_content
+        except Exception:
+          logger.debug("Stitch 시안 HTML 읽기 실패", exc_info=True)
+      if stitch_result.get('image_path'):
+        stitch_artifacts.append(f'{office.workspace.task_id}/stitch/design.png')
+      await office.event_bus.publish(LogEvent(
+        agent_id='designer',
+        event_type='response',
+        message='디자인 시안이 생성되었습니다! 개발자에게 전달합니다. 🎉',
+        data={'artifacts': stitch_artifacts},
+      ))
+      await office._team_reaction('designer', '시안 생성')
+    else:
+      error = stitch_result.get('error', '알 수 없는 오류')[:200]
+      await office._emit('designer', f'시안 생성을 건너뜁니다 (Stitch: {error})', 'response')
+  except Exception as e:
+    logger.warning("Stitch 시안 생성 실패", exc_info=True)
+    await office._emit('designer', f'시안 생성을 건너뜁니다 ({str(e)[:100]})', 'response')
