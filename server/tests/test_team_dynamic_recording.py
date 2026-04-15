@@ -122,6 +122,37 @@ async def test_relationship_suggestion_at_threshold(office_stub, team_memory):
 
 
 @pytest.mark.asyncio
+async def test_relationship_mediation_emitted_on_threshold(office_stub, team_memory):
+  '''임계치 도달 시 팀장이 선제 중재 메시지를 채팅에 발화한다.'''
+  from orchestration import agent_interactions
+
+  _seed_peer_concerns(team_memory, 'designer', 'developer', 3)
+  await agent_interactions._maybe_file_relationship_suggestion(
+    office_stub, reviewer_id='designer', worker_id='developer',
+  )
+  # teamlead가 emit한 중재 메시지 확인
+  teamlead_calls = [
+    c for c in office_stub._emit.await_args_list
+    if c.args and c.args[0] == 'teamlead'
+  ]
+  assert len(teamlead_calls) == 1
+  message = teamlead_calls[0].args[1]
+  assert '@' in message and '누적' in message
+
+
+@pytest.mark.asyncio
+async def test_relationship_mediation_skipped_below_threshold(office_stub, team_memory):
+  '''임계치 미달이면 중재 메시지도 발화되지 않는다.'''
+  from orchestration import agent_interactions
+
+  _seed_peer_concerns(team_memory, 'designer', 'developer', 2)
+  await agent_interactions._maybe_file_relationship_suggestion(
+    office_stub, reviewer_id='designer', worker_id='developer',
+  )
+  assert office_stub._emit.await_count == 0
+
+
+@pytest.mark.asyncio
 async def test_relationship_suggestion_cooldown(office_stub, team_memory):
   '''24h 내 동일 쌍 건의 존재 시 중복 등록되지 않는다.'''
   from orchestration import agent_interactions

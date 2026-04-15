@@ -501,8 +501,10 @@ async def _maybe_file_relationship_suggestion(office, reviewer_id: str, worker_i
     logger.debug('관계 건의 중복 검사 실패', exc_info=True)
 
   recent_descriptions = [d.description[:60] for d in pair_concerns[-3:]]
+  reviewer_kr = display_name(reviewer_id)
+  worker_kr = display_name(worker_id)
   body = (
-    f'{display_name(reviewer_id)}이(가) {display_name(worker_id)}의 작업에 대해 '
+    f'{reviewer_kr}이(가) {worker_kr}의 작업에 대해 '
     f'반복적으로 우려를 제기했습니다 ({len(pair_concerns)}회).\n\n'
     f'최근 사례:\n' + '\n'.join(f'- {d}' for d in recent_descriptions)
   )
@@ -517,6 +519,20 @@ async def _maybe_file_relationship_suggestion(office, reviewer_id: str, worker_i
     logger.info('관계 개선 건의 자동 등록: %s↔%s', reviewer_id, worker_id)
   except Exception:
     logger.debug('관계 건의 등록 실패', exc_info=True)
+
+  # 선제 중재 — 회고를 기다리지 않고 팀장이 즉시 채팅에 중재 메시지 발화.
+  # 24h 쿨다운 안에서 1회만. suggestion과 동일 topic_marker가 이미 있으면 위에서 return됨.
+  try:
+    recent_summary = '; '.join(recent_descriptions[:2]) or '반복 우려'
+    mediation = (
+      f'@{worker_kr} @{reviewer_kr} — {reviewer_kr}의 우려가 {len(pair_concerns)}회 누적돼 '
+      f'잠깐 짚고 갑시다. 핵심: {recent_summary[:140]}. '
+      f'서로 합의점 한 줄씩 공유해 주세요.'
+    )
+    await office._emit('teamlead', mediation, 'response')
+    logger.info('관계 개선 선제 중재 발화: %s↔%s', reviewer_id, worker_id)
+  except Exception:
+    logger.debug('선제 중재 발화 실패', exc_info=True)
 
 
 def _select_peer_reviewers(office, worker_id: str, limit: int = 2) -> list[str]:
