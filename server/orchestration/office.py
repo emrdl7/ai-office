@@ -427,41 +427,29 @@ class Office:
     self._state = OfficeState.COMPLETED
     return {'state': self._state.value, 'response': '처리할 수 없는 입력입니다.', 'artifacts': []}
 
-  async def _handle_quick_task(self, *args, **kwargs):
-    return await project_runner._handle_quick_task(self, *args, **kwargs)
+  async def _handle_quick_task(self, *args, **kwargs): return await project_runner._handle_quick_task(self, *args, **kwargs)
 
-  async def _handle_project(self, *args, **kwargs):
-    return await project_runner._handle_project(self, *args, **kwargs)
+  async def _handle_project(self, *args, **kwargs): return await project_runner._handle_project(self, *args, **kwargs)
 
-  async def _continue_project(self, user_answer: str) -> dict[str, Any]:
-    return await project_runner._continue_project(self, user_answer)
+  async def _continue_project(self, user_answer: str) -> dict[str, Any]: return await project_runner._continue_project(self, user_answer)
 
-  async def _plan_project_phases(self, *args, **kwargs):
-    return await project_runner._plan_project_phases(self, *args, **kwargs)
+  async def _plan_project_phases(self, *args, **kwargs): return await project_runner._plan_project_phases(self, *args, **kwargs)
 
-  def _default_phases(self, user_input: str) -> tuple[list[dict], str]:
-    return project_runner._default_phases(self, user_input)
+  def _default_phases(self, user_input: str) -> tuple[list[dict], str]: return project_runner._default_phases(self, user_input)
 
-  async def _execute_project(self, *args, **kwargs):
-    return await project_runner._execute_project(self, *args, **kwargs)
+  async def _execute_project(self, *args, **kwargs): return await project_runner._execute_project(self, *args, **kwargs)
 
-  async def _auto_export(self, phase_artifacts: list[str]) -> None:
-    return await project_runner._auto_export(self, phase_artifacts)
+  async def _auto_export(self, phase_artifacts: list[str]) -> None: return await project_runner._auto_export(self, phase_artifacts)
 
-  async def _cross_review(self, group_name: str, all_results: dict[str, str]) -> None:
-    return await project_runner._cross_review(self, group_name, all_results)
+  async def _cross_review(self, group_name: str, all_results: dict[str, str]) -> None: return await project_runner._cross_review(self, group_name, all_results)
 
-  async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str:
-    return await project_runner._extract_user_questions(self, user_input, meeting_summary)
+  async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str: return await project_runner._extract_user_questions(self, user_input, meeting_summary)
 
-  async def _check_user_directive(self) -> dict | None:
-    return await project_runner._check_user_directive(self)
+  async def _check_user_directive(self) -> dict | None: return await project_runner._check_user_directive(self)
 
-  async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None:
-    return await agent_interactions._team_reaction(self, worker, phase_name, content_summary)
+  async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None: return await agent_interactions._team_reaction(self, worker, phase_name, content_summary)
 
-  async def _consult_peers(self, *args, **kwargs):
-    return await agent_interactions._consult_peers(self, *args, **kwargs)
+  async def _consult_peers(self, *args, **kwargs): return await agent_interactions._consult_peers(self, *args, **kwargs)
 
   def _record_dynamic(
     self,
@@ -499,26 +487,19 @@ class Office:
   async def _peer_review(self, worker_name: str, phase_name: str, content: str, user_input: str) -> list[dict]:
     return await agent_interactions._peer_review(self, worker_name, phase_name, content, user_input)
 
-  async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None:
-    return await agent_interactions._handoff_comment(self, from_agent, to_agent, phase_name)
+  async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None: return await agent_interactions._handoff_comment(self, from_agent, to_agent, phase_name)
 
-  async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None:
-    return await agent_interactions._task_acknowledgment(self, agent_name, phase_name)
+  async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None: return await agent_interactions._task_acknowledgment(self, agent_name, phase_name)
 
-  async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
-    return await agent_interactions._contextual_reaction(self, reactor, phase_name, worker)
+  async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str: return await agent_interactions._contextual_reaction(self, reactor, phase_name, worker)
 
-  def _resolve_reviewer(self, worker: str, prompt: str) -> tuple[str, str] | None:
-    return agent_interactions._resolve_reviewer(self, worker, prompt)
+  def _resolve_reviewer(self, worker: str, prompt: str) -> tuple[str, str] | None: return agent_interactions._resolve_reviewer(self, worker, prompt)
 
-  async def _quick_task_second_opinion(self, *args, **kwargs):
-    return await project_runner._quick_task_second_opinion(self, *args, **kwargs)
+  async def _quick_task_second_opinion(self, *args, **kwargs): return await project_runner._quick_task_second_opinion(self, *args, **kwargs)
 
-  async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None:
-    return await agent_interactions._work_commentary(self, worker, phase_name, result_preview)
+  async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None: return await agent_interactions._work_commentary(self, worker, phase_name, result_preview)
 
-  async def _phase_intro(self, agent_name: str, phase_name: str) -> None:
-    return await agent_interactions._phase_intro(self, agent_name, phase_name)
+  async def _phase_intro(self, agent_name: str, phase_name: str) -> None: return await agent_interactions._phase_intro(self, agent_name, phase_name)
 
   async def handle_mid_work_input(self, user_input: str) -> None:
     '''작업 진행 중 사용자가 보낸 메시지를 처리한다.
@@ -596,20 +577,15 @@ class Office:
   async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
     return await project_runner._create_handoff_guide(self, group_name, group_results, target_phase)
 
-  async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
-    return await project_runner._generate_stitch_mockup(self, all_results, user_input)
+  async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None: return await project_runner._generate_stitch_mockup(self, all_results, user_input)
 
-  async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
-    return await project_runner._run_qa_check(self, qa_agent, node, content)
+  async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool: return await project_runner._run_qa_check(self, qa_agent, node, content)
 
-  async def _run_planner_synthesize(self, *args, **kwargs):
-    return await project_runner._run_planner_synthesize(self, *args, **kwargs)
+  async def _run_planner_synthesize(self, *args, **kwargs): return await project_runner._run_planner_synthesize(self, *args, **kwargs)
 
-  async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool:
-    return await project_runner._teamlead_final_review(self, user_input, task_graph)
+  async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool: return await project_runner._teamlead_final_review(self, user_input, task_graph)
 
-  async def _route_agent_mentions(self, speaker: str, content: str) -> None:
-    return await agent_interactions._route_agent_mentions(self, speaker, content)
+  async def _route_agent_mentions(self, speaker: str, content: str) -> None: return await agent_interactions._route_agent_mentions(self, speaker, content)
 
   # ──────────────────────────────────────────────────────────────
   # 자발적 활동 시스템 (Phase 2)
@@ -625,8 +601,7 @@ class Office:
     '''자발적 활동 루프를 중단한다.'''
     autonomous_loop.stop_loop(self)
 
-  def _load_digest_state(self) -> dict:
-    return autonomous_loop.load_digest_state(self)
+  def _load_digest_state(self) -> dict: return autonomous_loop.load_digest_state(self)
 
   def _save_digest_state(self, state: dict) -> None:
     autonomous_loop.save_digest_state(self, state)
@@ -686,11 +661,9 @@ class Office:
     return await autonomous_loop.autonomous_closing(original_speaker, original_message, challenger, challenge)
 
 
-  async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str) -> None:
-    return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message)
+  async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str) -> None: return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message)
 
-  async def _auto_file_suggestion(self, agent_id: str, message: str) -> None:
-    return await suggestion_filer._auto_file_suggestion(self, agent_id, message)
+  async def _auto_file_suggestion(self, agent_id: str, message: str) -> None: return await suggestion_filer._auto_file_suggestion(self, agent_id, message)
 
   async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '') -> None:
     return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message)
