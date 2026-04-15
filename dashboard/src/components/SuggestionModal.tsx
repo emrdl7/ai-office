@@ -107,12 +107,34 @@ export function SuggestionModal() {
     } catch { alert('네트워크 오류') }
   }
 
-  async function mergeBranch(id: string) {
-    if (!confirm(`improvement/${id} 브랜치를 main으로 병합합니다. 계속할까요?\n(병합 후 서버 재시작이 필요합니다)`)) return
-    const r = await fetch(`/api/suggestions/${id}/branch/merge`, { method: 'POST' })
+  async function mergeBranch(id: string, opts: { confirmRisky?: boolean; skipTests?: boolean; silent?: boolean } = {}) {
+    if (!opts.silent && !confirm(`improvement/${id} 브랜치를 main으로 병합합니다. 계속할까요?\n(병합 후 서버 재시작이 필요합니다)`)) return
+    const qs = new URLSearchParams()
+    if (opts.confirmRisky) qs.set('confirm_risky', 'true')
+    if (opts.skipTests) qs.set('skip_tests', 'true')
+    const url = `/api/suggestions/${id}/branch/merge${qs.toString() ? '?' + qs.toString() : ''}`
+    const r = await fetch(url, { method: 'POST' })
     if (!r.ok) {
       const err = await r.json().catch(() => ({ detail: '알 수 없는 오류' }))
-      alert('병합 실패: ' + (err.detail || ''))
+      const detail: string = err.detail || ''
+      // 게이트 실패 — 재시도 가능한 종류면 확인 다이얼로그로 우회 옵션 제공
+      if (r.status === 409) {
+        if (detail.startsWith('SCOPE_VIOLATION') || detail.startsWith('RISKY_UNCONFIRMED')) {
+          if (confirm(`⚠️ 안전 게이트가 병합을 막았습니다.\n\n${detail}\n\n내용을 확인했고 그대로 강제 병합하시겠습니까?`)) {
+            return mergeBranch(id, { ...opts, confirmRisky: true, silent: true })
+          }
+          return
+        }
+        if (detail.startsWith('TEST_FAILED')) {
+          alert(`❌ 테스트/린트 실패로 병합이 막혔습니다.\n\n${detail}\n\n실패 원인을 확인 후 수정하거나, 꼭 필요하면 터미널에서 skip_tests=true로 재시도하세요.`)
+          return
+        }
+        if (detail.includes('main이 아니고 작업트리가 dirty')) {
+          alert('병합 실패: ' + detail + '\n\n터미널에서 변경사항을 커밋하거나 stash한 뒤 재시도하세요.')
+          return
+        }
+      }
+      alert('병합 실패: ' + detail)
       return
     }
     setBranchDiff(null)
