@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re as _re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,6 +15,25 @@ from config.team import display_name
 from log_bus.event_bus import LogEvent
 
 logger = logging.getLogger(__name__)
+
+# P2 구체성 gate — 파일명/함수명/커밋해시/에러코드 패턴
+_TECH_TOKEN_RE = _re.compile(
+  r'(?:'
+  r'\w+\.(?:py|ts|tsx|js|mjs|md|yml|yaml|json|css|html|sh)'  # 파일명
+  r'|[a-z][a-z0-9]*_[a-z][a-z0-9_]+'                         # snake_case 함수명
+  r'|[a-z][a-z0-9]+[A-Z][a-zA-Z0-9]+'                        # camelCase 함수명
+  r'|[0-9a-f]{7,12}(?=\s|$|[,;])'                            # 커밋해시
+  r'|[45][0-9]{2}(?=\s|$|[,;])'                               # HTTP 에러코드
+  r'|[A-Z][a-zA-Z]+(?:Error|Exception|Warning)'               # Python 예외
+  r'|/[a-z][a-z0-9_/\-]{2,}'                                  # URL 경로
+  r'|`[^`\n]+`'                                                # 백틱 코드
+  r')'
+)
+
+
+def _has_tech_token(text: str) -> bool:
+  '''파일명/함수명/커밋해시/에러코드 등 기술 토큰이 1개 이상 있으면 True.'''
+  return bool(_TECH_TOKEN_RE.search(text))
 
 
 async def _file_reaction_suggestion(office: Any, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None:
@@ -112,6 +132,9 @@ async def _auto_file_suggestion(
   '''
   if mode in ('joke', 'reaction', 'trend_research'):
     return
+  # gate 3: 구체성 — 40자 미만이거나 기술 토큰 없으면 추상 관찰로 간주, skip
+  if len(message.strip()) < 40 or not _has_tech_token(message):
+    return
   from db.suggestion_store import create_suggestion, list_suggestions
 
   # 토론/질문/제안 회상 시그널 — 하나라도 있으면 건의 아님 (우선순위)
@@ -176,7 +199,7 @@ async def _auto_file_suggestion(
     return
 
   # 대상 에이전트 감지 (맥락 가드 적용) + 제목/내용 조립
-  from db.suggestion_store import detect_target_agent, is_duplicate, log_event
+  from db.suggestion_store import detect_target_agent, is_duplicate, is_title_duplicate_48h, log_event
   target = detect_target_agent(message, speaker=agent_id)
   title = message[:40].replace('\n', ' ').strip()
   target_line = f'대상 에이전트: {display_name(target)}\n' if target else ''
@@ -189,14 +212,25 @@ async def _auto_file_suggestion(
     f'\n(자동 등록된 건의입니다. 실제 조치가 필요한지 검토 바랍니다.)'
   )
 
+  # gate 2: 제목 기반 48h 중복 — 최근 pending/accepted와 70%+ 겹치면 skip
+  dup_48h, reason_48h = is_title_duplicate_48h(title)
+  if dup_48h:
+    logger.info('자동 건의 48h 중복 skip: %s | reason=%s', title[:30], reason_48h)
+    try:
+      log_event('(skipped)', 'suggestion_deduplicated', {
+        'gate': 'title_48h', 'reason': reason_48h, 'title': title, 'speaker': agent_id,
+      })
+    except Exception:
+      pass
+    return
+
   # 통합 의미 기반 dedup
   dup, reason = is_duplicate(title, content)
   if dup:
     logger.info('자동 건의 중복 skip: %s | reason=%s', title[:30], reason)
-    # dedup 스킵 이벤트는 대상 없이 기록 (분석/튜닝용)
     try:
-      log_event('(skipped)', 'dedup_skipped', {
-        'reason': reason, 'title': title, 'speaker': agent_id,
+      log_event('(skipped)', 'suggestion_deduplicated', {
+        'gate': 'keyword', 'reason': reason, 'title': title, 'speaker': agent_id,
       })
     except Exception:
       pass
@@ -342,7 +376,7 @@ async def _file_commitment_suggestion(
   if any(m in message for m in uncertain_markers):
     return
 
-  from db.suggestion_store import create_suggestion, is_duplicate, log_event
+  from db.suggestion_store import create_suggestion, is_duplicate, is_title_duplicate_48h, log_event
 
   first_line = message.strip().split('\n')[0][:80]
   title = f'[다짐] {display_name(committer_id)}: {first_line[:50]}'
@@ -388,9 +422,27 @@ async def _file_commitment_suggestion(
       logger.info('재다짐 감지 — 기존 draft 승격: %s / %s', committer_id, topic_key)
     return
 
+  # gate 2: 제목 기반 48h 중복
+  dup_48h, reason_48h = is_title_duplicate_48h(title)
+  if dup_48h:
+    logger.info('다짐 건의 48h 중복 skip: %s | reason=%s', title[:30], reason_48h)
+    try:
+      log_event('(skipped)', 'suggestion_deduplicated', {
+        'gate': 'title_48h', 'reason': reason_48h, 'title': title, 'speaker': committer_id,
+      })
+    except Exception:
+      pass
+    return
+
   dup, reason = is_duplicate(title, content)
   if dup:
     logger.info('다짐 건의 중복 skip: %s | reason=%s', title[:30], reason)
+    try:
+      log_event('(skipped)', 'suggestion_deduplicated', {
+        'gate': 'keyword', 'reason': reason, 'title': title, 'speaker': committer_id,
+      })
+    except Exception:
+      pass
     return
   # 다짐은 pending으로 등록해 게시판 전면에 바로 노출되지만,
   # auto_triage는 건너뛴다 — 다짐은 실행 추적 대상이지 자동 반영 대상이 아님.
@@ -457,6 +509,9 @@ async def _file_capability_gap_suggestion(
     return
   if not message or len(message.strip()) < 15:
     return
+  # gate 3: 구체성 — 40자 미만이거나 기술 토큰 없으면 추상 관찰로 간주, skip
+  if len(message.strip()) < 40 or not _has_tech_token(message):
+    return
 
   tool_gap_markers = (
     '도구가 없', '도구가 부족', '스크립트가 없', '스크립트 없',
@@ -488,7 +543,7 @@ async def _file_capability_gap_suggestion(
 
   category = '도구 부족' if tool_hit else '정보 부족'
 
-  from db.suggestion_store import create_suggestion, is_duplicate, log_event
+  from db.suggestion_store import create_suggestion, is_duplicate, is_title_duplicate_48h, log_event
 
   first_line = message.strip().split('\n')[0][:80]
   title = f'[능력] {display_name(speaker_id)}: {first_line[:45]}'
@@ -500,9 +555,27 @@ async def _file_capability_gap_suggestion(
     f'AI 팀원이 실행할 수 없는 일은 명확히 정의해 건의하는 것이 자가발전의 출발점입니다._'
   )
 
+  # gate 2: 제목 기반 48h 중복
+  dup_48h, reason_48h = is_title_duplicate_48h(title)
+  if dup_48h:
+    logger.info('능력 건의 48h 중복 skip: %s | reason=%s', title[:30], reason_48h)
+    try:
+      log_event('(skipped)', 'suggestion_deduplicated', {
+        'gate': 'title_48h', 'reason': reason_48h, 'title': title, 'speaker': speaker_id,
+      })
+    except Exception:
+      pass
+    return
+
   dup, reason = is_duplicate(title, content)
   if dup:
     logger.info('능력 건의 중복 skip: %s | reason=%s', title[:30], reason)
+    try:
+      log_event('(skipped)', 'suggestion_deduplicated', {
+        'gate': 'keyword', 'reason': reason, 'title': title, 'speaker': speaker_id,
+      })
+    except Exception:
+      pass
     return
 
   try:

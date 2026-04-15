@@ -23,14 +23,19 @@
 - **효과**: "kill -9 ㅎㅎ" 같은 농담이 능력부족 건의로 둔갑하는 오탐
   구조적 차단. 리액션성 발화가 다짐으로 오등록되던 사례도 함께 해결.
 
-### P2. 건의 등록 3-gate (차기 세션)
-건의 등록 전 게이트 3종을 `_register_suggestion` 파이프라인에 삽입:
+### P2. 건의 등록 3-gate ✅ (2026-04-16 완료)
+건의 등록 전 게이트 3종 구현 완료:
 1. **모드 gate** — P1에서 처리됨 (joke/reaction/trend_research skip)
-2. **중복 gate** — 제목 토큰이 최근 48h pending/accepted 제목과
-   70%+ 겹치면 skip + `suggestion_deduplicated` 이벤트 기록. 오늘
-   폐기한 #425896e6와 나란히 존재했던 #d563da5c 같은 사고 방지.
-3. **구체성 gate** — 메시지 40자 미만 또는 기술 토큰(파일명/함수명/
-   커밋해시/에러코드 패턴) 0개면 skip. 추상 관찰을 건의로 올리지 말 것.
+2. **중복 gate** — `is_title_duplicate_48h()` 신설. 최근 48h pending/accepted
+   제목 토큰 70%+ 겹치면 skip + `suggestion_deduplicated` 이벤트.
+   `_auto_file_suggestion` / `_file_commitment_suggestion` /
+   `_file_capability_gap_suggestion` 세 경로 모두 적용.
+3. **구체성 gate** — `_has_tech_token()` 신설 (파일명/함수명/커밋해시/에러코드).
+   메시지 40자 미만 OR 기술 토큰 0개면 skip.
+   `_auto_file_suggestion` / `_file_capability_gap_suggestion` 에 적용
+   (다짐 경로는 적용 안 함 — 약속 문장에 파일명 없어도 됨).
+- 기존 dedup 이벤트명 `dedup_skipped` → `suggestion_deduplicated` 통일.
+- 테스트 7종 신규 추가 (gate2/gate3/tech_token 패턴 검증). 206 pass.
 
 ### P3. 반복 경향 관측 (차기)
 - `/api/autonomous/stats` — 최근 N시간 autonomous 발화 수, 모드별 분포,

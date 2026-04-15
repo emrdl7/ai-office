@@ -167,6 +167,38 @@ def _kw_set(s: str) -> set[str]:
   return {t for t in toks if t.lower() not in {x.lower() for x in _DEDUP_STOPWORDS}}
 
 
+def is_title_duplicate_48h(title: str) -> tuple[bool, str]:
+  '''최근 48h 이내 pending/accepted 건의 중 제목 토큰이 70%+ 겹치면 중복 판정.
+
+  P2 중복 gate: 제목 기반 빠른 중복 체크.
+  반환: (중복여부, 매칭된 기존 건의 id 또는 빈 문자열).
+  '''
+  cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+  c = _conn()
+  rows = c.execute(
+    "SELECT id, title, status FROM suggestions "
+    "WHERE status IN ('pending', 'accepted') AND created_at >= ? "
+    "ORDER BY created_at DESC LIMIT 100",
+    (cutoff,),
+  ).fetchall()
+  c.close()
+  new_kws = _kw_set(title)
+  if not new_kws:
+    return (False, '')
+  for r in rows:
+    prev_kws = _kw_set(r['title'] or '')
+    if not prev_kws:
+      continue
+    overlap = new_kws & prev_kws
+    smaller = min(len(new_kws), len(prev_kws))
+    if smaller == 0:
+      continue
+    ratio = len(overlap) / smaller
+    if ratio >= 0.70:
+      return (True, f'{r["id"]}({r["status"]}) title_dedup_48h={ratio:.2f}')
+  return (False, '')
+
+
 def is_duplicate(title: str, content: str, scope: str = 'all') -> tuple[bool, str]:
   '''새 건의가 기존 건의와 의미상 중복인지 판정.
 
