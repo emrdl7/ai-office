@@ -172,7 +172,12 @@ class Office:
           'response',
         )
       elif state == 'running':
-        # running → interrupted 상태로 변경, 원래 instruction + workspace 보존
+        # 프로젝트 컨텍스트(context_json)가 있는 'running'만 실제 중단 복구 대상.
+        # 단순 채팅("어흥" 등)도 잠시 running으로 올라가므로, context 없으면
+        # 조용히 cancelled 처리하고 재개 프롬프트를 띄우지 않는다.
+        if not ctx:
+          update_task_state(task_id, 'cancelled')
+          continue
         update_task_state(task_id, 'interrupted')
         self._interrupted_instruction = instruction
         self._interrupted_task_id = task_id
