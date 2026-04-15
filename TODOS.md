@@ -24,9 +24,11 @@
        `stop_teamlead_review_loop`, `_team_retrospective` 분리 완료.
        office.py 4,144 → 3,772 LOC (−372). teamlead_review.py 395 LOC 신규.
        Office 메서드는 forwarder 4개로 축소 (public API 유지).
-2. [ ] **`autonomous_loop.py`** — `start_autonomous_loop`, `stop_autonomous_loop`,
+2. [x] **`autonomous_loop.py`** — `start_autonomous_loop`, `stop_autonomous_loop`,
        `_load_digest_state`, `_save_digest_state`, `_react_to_received_reactions`,
-       `_agents_react_to_peers`, `_autonomous_react`, `_autonomous_closing`.
+       `_agents_react_to_peers`, `_autonomous_react`, `_autonomous_closing` 분리 완료.
+       office.py 3,772 → 3,205 LOC (−567). autonomous_loop.py 634 LOC 신규.
+       Office는 8개 forwarder만 유지.
 3. [ ] **`agent_interactions.py`** — `_team_reaction`, `_consult_peers`, `_peer_review`,
        `_handoff_comment`, `_task_acknowledgment`, `_phase_intro`, `_work_commentary`,
        `_contextual_reaction`, `_team_chat`, `_resolve_reviewer`. **팀원 간 잡답/협의
