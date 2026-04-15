@@ -20,9 +20,10 @@
 
 ### 도메인 분할 목표 (순서 의미 있음)
 
-1. [ ] **`teamlead_review.py`** — `start_teamlead_review_loop`, `_run_single_review`,
-       `stop_teamlead_review_loop`, `_team_retrospective`. 독립 태스크라 가장 쉽고,
-       `Office` 상태 의존성이 적음. **먼저 분리해 패턴을 확립**.
+1. [x] **`teamlead_review.py`** — `start_teamlead_review_loop`, `_run_single_review`,
+       `stop_teamlead_review_loop`, `_team_retrospective` 분리 완료.
+       office.py 4,144 → 3,772 LOC (−372). teamlead_review.py 395 LOC 신규.
+       Office 메서드는 forwarder 4개로 축소 (public API 유지).
 2. [ ] **`autonomous_loop.py`** — `start_autonomous_loop`, `stop_autonomous_loop`,
        `_load_digest_state`, `_save_digest_state`, `_react_to_received_reactions`,
        `_agents_react_to_peers`, `_autonomous_react`, `_autonomous_closing`.
@@ -70,16 +71,14 @@
 `WS_AUTH_TOKEN`은 WebSocket만 보호. REST (`/api/chat`, `/api/suggestions/*`,
 `/api/workspace/*`)는 현재 로컬호스트 전제로 공개.
 
-- [ ] 배포 모드별 인증 정책 문서화 (README).
-- [ ] 외부 노출 시 동일 토큰 또는 세션 기반 보호 미들웨어 추가.
-- [ ] CORS 설정 재점검 (현재 전체 허용 여부 확인).
+- [x] 배포 모드별 인증 정책 문서화 (README, d388d1c).
+- [x] 외부 노출 시 동일 토큰 또는 세션 기반 보호 미들웨어 추가 (REST_AUTH_TOKEN).
+- [x] CORS 설정 재점검 — localhost:3100/127.0.0.1:3100만 허용 (main.py:139).
 
 ---
 
 ## P4 — 기타
 
-- [ ] `_patch_lock` 점유 중 다른 suggestion apply 시 현황 브로드캐스트
-      (`⏳ #X 패치 진행 중, 예상 N분 대기`).
-- [ ] `_RETRY_MAX=2`로 낮춰 최악 락 점유를 ~25분으로 축소 검토.
-- [ ] `code_patcher._build_patch_prompt`에 "FORBIDDEN 경로 수정 시 FILES 블록 필수"
-      안내를 자가개선 suggestion 작성자(PromptEvolver)에게 전달.
+- [x] `_patch_lock` 점유 중 다른 suggestion apply 시 현황 브로드캐스트 (8535015).
+- [x] `_RETRY_MAX=2`로 낮춰 최악 락 점유 축소 (8535015, code_patcher.py:16).
+- [x] `code_patcher._build_patch_prompt`에 "FORBIDDEN 경로 수정 시 FILES 블록 필수" 안내 (8535015).
