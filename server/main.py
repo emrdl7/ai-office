@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 # WebSocket 인증 토큰 (환경변수 또는 서버 시작 시 자동 생성)
 WS_AUTH_TOKEN = os.environ.get('WS_AUTH_TOKEN') or secrets.token_urlsafe(32)
 
+# REST API 인증 토큰 (선택) — 설정 시 /api/* 경로가 Bearer 또는 ?token=로 보호됨
+# 로컬 단독 실행 시 비워두면 현재 동작 유지(CORS로 외부 차단).
+# 외부 노출(원격/프록시 뒤) 시 반드시 설정할 것.
+REST_AUTH_TOKEN = os.environ.get('REST_AUTH_TOKEN', '').strip()
+
+# 인증 면제 경로 — 헬스체크만 (ws-token은 보호하여 token 탈취 방지)
+_AUTH_EXEMPT_PATHS = {'/health'}
+
 # 파일 업로드 제한
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_EXTENSIONS = {
@@ -77,6 +85,33 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title='AI Office', lifespan=lifespan)
+
+
+@app.middleware('http')
+async def _rest_auth_middleware(request: Request, call_next):
+  '''REST_AUTH_TOKEN이 설정된 경우 /api/* 경로를 Bearer 또는 ?token=으로 보호.
+
+  WS 엔드포인트는 기존 WS_AUTH_TOKEN 쿼리 파라미터로 별도 보호.
+  로컬 개발(토큰 미설정) 시 현재 동작 유지.
+  '''
+  if not REST_AUTH_TOKEN:
+    return await call_next(request)
+  path = request.url.path
+  if not path.startswith('/api/') or path in _AUTH_EXEMPT_PATHS:
+    return await call_next(request)
+  # Authorization: Bearer <token> 우선
+  auth = request.headers.get('authorization', '')
+  token = ''
+  if auth.lower().startswith('bearer '):
+    token = auth[7:].strip()
+  else:
+    token = request.query_params.get('token', '')
+  # 상수시간 비교
+  if not token or not secrets.compare_digest(token, REST_AUTH_TOKEN):
+    from fastapi.responses import JSONResponse
+    return JSONResponse({'detail': 'Unauthorized'}, status_code=401)
+  return await call_next(request)
+
 
 # CORS 설정 — Vite 개발 서버(localhost:3100) 허용
 app.add_middleware(
