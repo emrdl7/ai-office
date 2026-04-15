@@ -773,13 +773,20 @@ async def _work_commentary(office, worker: str, phase_name: str, result_preview:
       f'{display_name(worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
       f'결과물 미리보기:\n{result_preview[:300]}\n\n'
       f'전문가 관점에서 짧게 한마디 의견을 주세요 (30자 이내, 메신저 톤, 마크다운 금지).\n'
-      f'예: "이 레이아웃 구현 문제없어 보입니다 👍", "접근성도 잘 잡혔네요 ✅"',
+      f'질문/제안이 있으면 자연스럽게 "@담당자명" 멘션을 포함하세요 (해당 팀원이 즉시 응답).\n'
+      f'예: "이 레이아웃 구현 문제없어 보입니다 👍", "@드러커 우선순위 재확인 가능할까요?"',
       model='claude-haiku-4-5-20251001',
       timeout=15.0,
     )
     text = response.strip().split('\n')[0][:50]
     if text:
       await office._emit(commenter, text, 'response')
+      # 코멘트에 @멘션 있으면 해당 팀원이 즉시 응답 — P2 work_commentary↔mention 연동
+      if '@' in text:
+        try:
+          await _route_agent_mentions(office, commenter, text)
+        except Exception:
+          logger.debug('work_commentary 멘션 라우팅 실패', exc_info=True)
   except Exception:
     logger.debug("작업 코멘터리 생성 실패", exc_info=True)
 

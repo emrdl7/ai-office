@@ -20,6 +20,42 @@ from runners.gemini_runner import run_gemini
 logger = logging.getLogger(__name__)
 
 
+def _summarize_team_dynamics(office, lookback: int = 100) -> str:
+  '''최근 TeamDynamic 기록을 (from→to, type) 카운트로 집계.
+
+  팀장 리뷰 프롬프트에 주입되어 "누가 누구와 잘 맞는지 / stuck 패턴"을
+  배치 리뷰가 인지하도록 한다 (P2 메타 학습).
+  '''
+  try:
+    data = office.team_memory._load()
+    dynamics = (data.get('dynamics') or [])[-lookback:]
+  except Exception:
+    return '(집계 데이터 없음)'
+
+  if not dynamics:
+    return '(집계 데이터 없음)'
+
+  pair_counts: dict[tuple[str, str, str], int] = {}
+  for d in dynamics:
+    key = (d.get('from_agent', ''), d.get('to_agent', ''), d.get('dynamic_type', ''))
+    pair_counts[key] = pair_counts.get(key, 0) + 1
+
+  ranked = sorted(pair_counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
+  lines = [f'- {f}→{t} [{dt}] {c}회' for (f, t, dt), c in ranked]
+
+  concern_pairs = [
+    (f, t, c) for (f, t, dt), c in pair_counts.items()
+    if dt == 'peer_concern' and c >= 2
+  ]
+  if concern_pairs:
+    concern_pairs.sort(key=lambda x: x[2], reverse=True)
+    lines.append('')
+    lines.append('[주의: 반복적 우려 쌍]')
+    lines.extend(f'- {f}→{t}: peer_concern {c}회' for f, t, c in concern_pairs[:3])
+
+  return '\n'.join(lines)
+
+
 async def run_loop(office) -> None:
   '''팀장 역할로 최근 대화를 배치 분석한다.
 
@@ -95,9 +131,11 @@ async def run_single(office, force: bool = False) -> None:
   convo = '\n'.join(
     f'[{l["agent_id"]}] {l["message"][:300]}' for l in reversed(fresh[:120])
   )
+  dynamics_summary = _summarize_team_dynamics(office)
   prompt = (
     f'당신은 팀장 잡스입니다. 아래는 지난 배치 이후 팀의 자발적 대화입니다.\n'
     f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 선언형 발언은 신뢰하지 마세요.\n\n'
+    f'[팀 협업 패턴 (최근 100건 집계)]\n{dynamics_summary}\n\n'
     f'[대화]\n{convo}\n\n'
     f'JSON만 출력:\n'
     f'{{\n'
