@@ -4,6 +4,38 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
+
+@pytest.fixture(autouse=True)
+def _isolate_prod_dbs(tmp_path_factory, monkeypatch):
+    '''모든 테스트에서 프로덕션 DB 경로를 임시 파일로 치환하는 안전망.
+
+    테스트가 EventBus.publish / save_log / create_suggestion 등을 호출할 때
+    실제 `data/*.db`에 쓰는 사고를 방지한다. 개별 테스트가 tmp_path로
+    재설정하면 해당 값이 우선 적용된다(monkeypatch 스택이 나중 것 우선).
+
+    과거 사고: test_project_runner_e2e가 log_store를 격리하지 않아
+    프로덕션 chat_logs에 "샘플 프로젝트 만들어줘" + 스크립트 placeholder
+    응답이 기록됨.
+    '''
+    tmp_root = tmp_path_factory.mktemp('isolated_db')
+    try:
+        import db.log_store as _ls
+        monkeypatch.setattr(_ls, 'DB_PATH', tmp_root / 'logs.db')
+    except Exception:
+        pass
+    try:
+        import db.suggestion_store as _ss
+        monkeypatch.setattr(_ss, 'DB_PATH', tmp_root / 'sugg.db')
+    except Exception:
+        pass
+    try:
+        import db.task_store as _ts
+        monkeypatch.setattr(_ts, 'DB_PATH', tmp_root / 'tasks.db')
+    except Exception:
+        pass
+    yield
+
+
 @pytest.fixture
 def in_memory_db():
     '''인메모리 SQLite 연결 — WAL 모드 테스트용'''
