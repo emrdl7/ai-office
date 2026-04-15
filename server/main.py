@@ -52,8 +52,8 @@ Path('data').mkdir(exist_ok=True)
 # 싱글턴 인스턴스
 message_bus = MessageBus(db_path='data/bus.db')
 # WorkspaceManager: 프로젝트 루트의 workspace/ 디렉토리 사용
-WORKSPACE_ROOT = Path(__file__).parent.parent / 'workspace'
-workspace = WorkspaceManager(task_id='', workspace_root=str(WORKSPACE_ROOT))
+from core import paths
+workspace = WorkspaceManager(task_id='', workspace_root=str(paths.WORKSPACE_ROOT))
 
 
 @asynccontextmanager

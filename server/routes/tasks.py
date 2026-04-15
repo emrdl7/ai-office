@@ -15,7 +15,7 @@ from workspace.manager import WorkspaceManager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent / 'workspace'
+from core import paths
 
 # 업로드 제한은 main.py의 _validate_upload와 동일 규격
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024
@@ -56,7 +56,7 @@ async def chat(
   file_urls: list[dict] = []
   IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'}
   if files:
-    upload_dir = WORKSPACE_ROOT / task_id / 'uploads'
+    upload_dir = paths.WORKSPACE_ROOT / task_id / 'uploads'
     upload_dir.mkdir(parents=True, exist_ok=True)
     for f in files:
       if f.filename:
@@ -95,7 +95,7 @@ async def chat(
       has_pending = (hasattr(office, '_interrupted_task_id') and office._interrupted_task_id) or \
                     (hasattr(office, '_pending_project') and office._pending_project)
       if not has_pending and to != 'all':
-        task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+        task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
         office.workspace = task_workspace
       office._current_task_id = task_id
 
@@ -110,7 +110,7 @@ async def chat(
         if agent:
           dm_context = ''
           try:
-            for ws_dir in sorted(WORKSPACE_ROOT.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            for ws_dir in sorted(paths.WORKSPACE_ROOT.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
               for md_file in ws_dir.rglob(f'*{to}*result*.md'):
                 dm_context = md_file.read_text(encoding='utf-8')[:3000]
                 break
@@ -170,9 +170,8 @@ async def create_task(
   request: Request,
   instruction: str = Form(...),
   files: list[UploadFile] = File(default=[]),
-  base_task_id: str = Form(default=''),
 ):
-  '''사용자 지시 + 첨부파일 + 이전 작업 참조를 받아 오케스트레이션을 시작한다.'''
+  '''사용자 지시 + 첨부파일을 받아 오케스트레이션을 시작한다.'''
   from harness.file_reader import read_file
 
   task_id = str(uuid.uuid4())
@@ -180,10 +179,8 @@ async def create_task(
   file_names = ','.join(f.filename or '' for f in files if f.filename)
   save_task(task_id, instruction, 'idle', attachments=file_names)
 
-  prev_context = _build_prev_context(base_task_id)
-
   attachments_text = ''
-  upload_dir = WORKSPACE_ROOT / task_id / 'uploads'
+  upload_dir = paths.WORKSPACE_ROOT / task_id / 'uploads'
   upload_dir.mkdir(parents=True, exist_ok=True)
 
   for f in files:
@@ -202,13 +199,11 @@ async def create_task(
   full_instruction = instruction
   if attachments_text:
     full_instruction = f'{instruction}\n\n[첨부된 참조 자료 — 핵심 입력]\n{attachments_text}'
-  if prev_context:
-    full_instruction = f'{full_instruction}\n{prev_context}'
 
   async def _run():
     try:
       update_task_state(task_id, 'running')
-      task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+      task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
       office.workspace = task_workspace
       result = await office.receive(full_instruction)
       final_state = result.get('state', 'completed')
@@ -242,7 +237,7 @@ async def delete_task_api(task_id: str):
   c.execute('DELETE FROM tasks WHERE task_id=?', (task_id,))
   c.commit()
   c.close()
-  task_dir = WORKSPACE_ROOT / task_id
+  task_dir = paths.WORKSPACE_ROOT / task_id
   if task_dir.exists():
     shutil.rmtree(task_dir, ignore_errors=True)
   return {'deleted': task_id}

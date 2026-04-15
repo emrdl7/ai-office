@@ -11,6 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from core import paths
 from orchestration.intent import IntentType, classify_intent, classify_project_type
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
@@ -164,8 +165,7 @@ class Office:
         self._pending_project = ctx
         self._pending_task_id = task_id
         from workspace.manager import WorkspaceManager
-        WORKSPACE_ROOT = Path(__file__).parent.parent.parent / 'workspace'
-        self.workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+        self.workspace = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
         await self._emit(
           'teamlead',
           f'@마스터 이전에 확인 요청드린 사항이 있습니다. 답변해 주시면 이어서 진행하겠습니다.',
@@ -182,8 +182,7 @@ class Office:
         self._interrupted_instruction = instruction
         self._interrupted_task_id = task_id
         from workspace.manager import WorkspaceManager
-        WORKSPACE_ROOT = Path(__file__).parent.parent.parent / 'workspace'
-        self.workspace = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
+        self.workspace = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
         await self._emit(
           'teamlead',
           f'@마스터 서버 재시작으로 중단된 작업이 있습니다: "{instruction_preview}..."\n이어서 진행하려면 말씀해 주세요.',
@@ -294,7 +293,7 @@ class Office:
         self._interrupted_task_id = None
         self._interrupted_confirmed = False
         if original_task_id:
-          ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
+          ws_root = str(paths.WORKSPACE_ROOT)
           self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=ws_root)
         return await self.receive(original)
       else:
@@ -359,7 +358,7 @@ class Office:
         # 기존 프로젝트 이어가기 — workspace 재사용
         self.workspace = WorkspaceManager(
           task_id=self._active_project_id,
-          workspace_root=str(Path(__file__).parent.parent.parent / 'workspace'),
+          workspace_root=str(paths.WORKSPACE_ROOT),
         )
         if hasattr(self, '_current_task_id'):
           update_task_project(self._current_task_id, self._active_project_id)
@@ -372,7 +371,7 @@ class Office:
         if self._active_project_id:
           archive_project(self._active_project_id)
 
-        ws_root = str(Path(__file__).parent.parent.parent / 'workspace')
+        ws_root = str(paths.WORKSPACE_ROOT)
         new_pid = str(uuid.uuid4())
         title = await generate_project_title(user_input)
 

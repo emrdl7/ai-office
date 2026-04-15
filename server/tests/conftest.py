@@ -33,6 +33,15 @@ def _isolate_prod_dbs(tmp_path_factory, monkeypatch):
         monkeypatch.setattr(_ts, 'DB_PATH', tmp_root / 'tasks.db')
     except Exception:
         pass
+    # workspace 격리 — restore_pending_tasks 등이 하드코딩 경로로 prod 디렉토리를
+    # 잡지 못하게 core.paths.WORKSPACE_ROOT를 임시 디렉토리로 치환.
+    try:
+        from core import paths as _paths
+        ws = tmp_root / 'workspace'
+        ws.mkdir(exist_ok=True)
+        monkeypatch.setattr(_paths, 'WORKSPACE_ROOT', ws)
+    except Exception:
+        pass
     yield
 
 
