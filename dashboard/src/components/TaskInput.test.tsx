@@ -55,7 +55,7 @@ describe('<TaskInput>', () => {
 
   it('지시하기 클릭 시 POST /api/tasks 호출', async () => {
     let postBody: FormData | null = null
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
         postBody = init.body as FormData
         return { ok: true, json: async () => ({ task_id: 'new-1' }) }

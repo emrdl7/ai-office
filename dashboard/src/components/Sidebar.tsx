@@ -4,12 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Agent, ChannelId } from '../types'
 import { AGENT_PROFILE, AGENT_IDS, IDLE_COMMENTS as TEAM_IDLE_COMMENTS } from '../config/team'
-import { IconClipboard, IconChart, IconRefresh, IconSearch } from './icons'
-import { ReactionStatsPanel } from './ReactionStats'
+import { MatIcon } from './icons'
 import { SearchPanel } from './SearchPanel'
-import { MetricsPanel } from './MetricsPanel'
-import { AutonomousStatsPanel } from './AutonomousStatsPanel'
-import { PersonaDriftPanel } from './PersonaDriftPanel'
+import { InsightPanel } from './InsightPanel'
 
 export { AGENT_PROFILE }
 
@@ -219,14 +216,34 @@ function AgentCard({
   )
 }
 
+function SidebarBtn({
+  icon, label, onClick, title,
+}: {
+  icon: string
+  label: string
+  onClick: () => void
+  title?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg
+        text-sm text-gray-600 dark:text-gray-400
+        hover:bg-gray-100 dark:hover:bg-gray-800
+        cursor-pointer transition-colors"
+    >
+      <MatIcon name={icon} className="text-[18px] shrink-0" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { activeChannel, setActiveChannel, toggleTheme, theme, toggleArtifacts, showArtifacts, logs } = useStore()
   const prevLogsLen = useRef(0)
-  const [showReactions, setShowReactions] = useState(false)
-  const [showMetrics, setShowMetrics] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
-  const [showAutonomousStats, setShowAutonomousStats] = useState(false)
-  const [showPersonaDrift, setShowPersonaDrift] = useState(false)
+  const [showInsight, setShowInsight] = useState(false)
 
   function selectChannel(channel: ChannelId) {
     setActiveChannel(channel)
@@ -354,68 +371,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
 
       {/* 하단 메뉴 */}
-      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-1">
-        <button
-          onClick={() => setShowSearch(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
-        >
-          <IconSearch className="w-4 h-4" />
-          <span>통합 검색</span>
-        </button>
-        <button
-          onClick={() => useStore.getState().setShowSuggestions(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
-        >
-          <IconClipboard className="w-4 h-4" />
-          <span>건의게시판</span>
-        </button>
-        <button
-          onClick={() => setShowReactions(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
-        >
-          <IconChart className="w-4 h-4" />
-          <span>리액션 통계</span>
-        </button>
-        <button
-          onClick={() => setShowMetrics(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
-        >
-          <IconChart className="w-4 h-4" />
-          <span>자가개선 분석</span>
-        </button>
-        <button
-          onClick={() => setShowAutonomousStats(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
-        >
-          <IconChart className="w-4 h-4" />
-          <span>자율 대화 관측</span>
-        </button>
-        <button
-          onClick={() => setShowPersonaDrift(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
-        >
-          <span className="w-4 h-4 text-center leading-4">🎭</span>
-          <span>페르소나 드리프트</span>
-        </button>
-        <button
+      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-0.5">
+        <SidebarBtn icon="search" label="통합 검색" onClick={() => setShowSearch(true)} />
+        <SidebarBtn icon="campaign" label="건의게시판" onClick={() => useStore.getState().setShowSuggestions(true)} />
+        <SidebarBtn icon="insights" label="인사이트" onClick={() => setShowInsight(true)} />
+        <SidebarBtn
+          icon="restart_alt"
+          label="서버 재시작"
           onClick={async () => {
             if (!confirm('백엔드 서버를 재시작합니다. 5초 내 자동 재연결됩니다. 계속할까요?')) return
             try {
@@ -428,21 +390,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               }
             } catch { /* 프로세스 종료로 인한 네트워크 에러 무시 */ }
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
-            text-sm text-gray-600 dark:text-gray-400
-            hover:bg-gray-100 dark:hover:bg-gray-800
-            cursor-pointer transition-colors"
           title="백엔드만 재시작 (코드 병합 후 반영용)"
-        >
-          <IconRefresh className="w-4 h-4" />
-          <span>서버 재시작</span>
-        </button>
+        />
       </div>
-      {showReactions && <ReactionStatsPanel onClose={() => setShowReactions(false)} />}
-      {showMetrics && <MetricsPanel onClose={() => setShowMetrics(false)} />}
       {showSearch && <SearchPanel onClose={() => setShowSearch(false)} />}
-      {showAutonomousStats && <AutonomousStatsPanel onClose={() => setShowAutonomousStats(false)} />}
-      {showPersonaDrift && <PersonaDriftPanel onClose={() => setShowPersonaDrift(false)} />}
+      {showInsight && <InsightPanel onClose={() => setShowInsight(false)} />}
     </aside>
   )
 }

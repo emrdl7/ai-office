@@ -3,6 +3,25 @@
 type P = { className?: string }
 const base = 'inline-block shrink-0'
 
+// Google Material Symbols Outlined 래퍼
+// index.html에서 폰트 로드 필요
+export const MatIcon = ({
+  name,
+  className = 'text-[18px]',
+  fill = false,
+}: {
+  name: string
+  className?: string
+  fill?: boolean
+}) => (
+  <span
+    className={`material-symbols-outlined leading-none select-none ${className}`}
+    style={{ fontVariationSettings: `'FILL' ${fill ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 20` }}
+  >
+    {name}
+  </span>
+)
+
 export const IconBrain = ({ className = 'w-4 h-4' }: P) => (
   <svg className={`${base} ${className}`} fill="none" stroke="currentColor" strokeWidth={2}
     strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
