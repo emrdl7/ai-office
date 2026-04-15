@@ -29,10 +29,11 @@
        `_agents_react_to_peers`, `_autonomous_react`, `_autonomous_closing` 분리 완료.
        office.py 3,772 → 3,205 LOC (−567). autonomous_loop.py 634 LOC 신규.
        Office는 8개 forwarder만 유지.
-3. [ ] **`agent_interactions.py`** — `_team_reaction`, `_consult_peers`, `_peer_review`,
+3. [x] **`agent_interactions.py`** — `_team_reaction`, `_consult_peers`, `_peer_review`,
        `_handoff_comment`, `_task_acknowledgment`, `_phase_intro`, `_work_commentary`,
-       `_contextual_reaction`, `_team_chat`, `_resolve_reviewer`. **팀원 간 잡답/협의
-       로직 전체**. 가장 크지만 응집도 높음.
+       `_contextual_reaction`, `_team_chat`, `_resolve_reviewer` 분리 완료.
+       office.py 3,205 → 2,564 LOC (−641). agent_interactions.py 726 LOC 신규.
+       `_record_dynamic`/`_PEER_REVIEWERS`는 공유 인프라로 Office에 유지.
 4. [ ] **`project_runner.py`** — `_handle_project`, `_continue_project`,
        `_plan_project_phases`, `_default_phases`, `_execute_project`, `_cross_review`,
        `_auto_export`, `_run_qa_check`, `_teamlead_final_review`,
