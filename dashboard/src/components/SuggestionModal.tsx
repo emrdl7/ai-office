@@ -365,10 +365,10 @@ export function SuggestionModal() {
                           {statusInfo.text}
                         </span>
                         {s.auto_applied === 1 && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700
+                          <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700
                             dark:bg-amber-900/30 dark:text-amber-400"
                             title="팀장이 자동 반영함 — 24h 내 되돌리기 가능">
-                            <MatIcon name="smart_toy" className="text-[11px]" /> 자동
+                            자동
                           </span>
                         )}
                         <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">

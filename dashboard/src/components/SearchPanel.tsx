@@ -112,10 +112,10 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <MatIcon name="close" className="text-[20px]" />
             </button>
           </div>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-xs flex-wrap">
             <button
               onClick={() => setErrorsPreset((v) => !v)}
-              className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors ${
+              className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
                 errorsPreset
                   ? 'bg-red-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -128,7 +128,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <button
                 key={t}
                 onClick={() => setType(t)}
-                className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
                   type === t
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -137,7 +137,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                 {t === 'all' ? '전체' : t === 'logs' ? '로그' : t === 'suggestions' ? '건의' : '다이내믹'}
               </button>
             ))}
-            <label className="ml-auto flex items-center gap-1.5 text-gray-500 dark:text-gray-400 cursor-pointer">
+            <label className="ml-auto flex items-center gap-1.5 text-gray-500 dark:text-gray-400 cursor-pointer whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={includeArchive}
