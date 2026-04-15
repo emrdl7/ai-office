@@ -70,7 +70,7 @@ class TeamMemory:
     '''
 
     MAX_LESSONS = 30
-    MAX_DYNAMICS = 20
+    MAX_DYNAMICS = 200  # 동일 (from,to,type) 누적 허용 → 임계치 기반 집계/경고 가능
     MAX_PROJECTS = 15
 
     def __init__(self, memory_root: str | Path = 'data/memory'):
@@ -88,15 +88,13 @@ class TeamMemory:
         self._save(data)
 
     def add_dynamic(self, dynamic: TeamDynamic) -> None:
-        '''에이전트 간 협업 관계를 기록한다.'''
+        '''에이전트 간 협업 관계를 기록한다.
+
+        동일 (from, to, type) 튜플도 append — 반복 카운트로 임계치 기반 경고에 사용.
+        MAX_DYNAMICS 초과 시 오래된 기록부터 drop.
+        '''
         data = self._load()
         dynamics = data.setdefault('dynamics', [])
-        # 같은 from→to 관계가 있으면 업데이트
-        dynamics = [
-            d for d in dynamics
-            if not (d['from_agent'] == dynamic.from_agent and d['to_agent'] == dynamic.to_agent
-                    and d['dynamic_type'] == dynamic.dynamic_type)
-        ]
         dynamics.append(asdict(dynamic))
         if len(dynamics) > self.MAX_DYNAMICS:
             dynamics = dynamics[-self.MAX_DYNAMICS:]

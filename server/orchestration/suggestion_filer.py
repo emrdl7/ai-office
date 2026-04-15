@@ -274,25 +274,40 @@ async def _file_commitment_suggestion(
   )
   content = '\n'.join(content_parts)
 
-  dup, reason = is_duplicate(title, content)
-  if dup:
-    logger.info('다짐 건의 중복 skip: %s | reason=%s', title[:30], reason)
-    return
-
-  # 같은 committer가 같은 주제를 반복하면 즉시 pending (draft 승격 조건 c)
-  from db.suggestion_store import list_suggestions
-  repeat_hit = False
+  # 같은 committer가 같은 주제를 반복하면 — 기존 draft가 있으면 pending 승격하고
+  # 새로 등록하지 않음 (draft 승격 조건 c).
+  from db.suggestion_store import list_suggestions, promote_draft
+  topic_key = first_line[:30]
+  existing_by_committer = []
   try:
-    topic_key = first_line[:30]
     for prev in list_suggestions(status=''):
       if prev.get('agent_id') != committer_id:
         continue
       if topic_key in (prev.get('title') or ''):
-        repeat_hit = True
-        break
+        existing_by_committer.append(prev)
   except Exception:
     logger.debug('다짐 반복 감지 실패', exc_info=True)
-  initial_status = 'pending' if repeat_hit else 'draft'
+
+  if existing_by_committer:
+    # 반복 다짐 — 기존 draft를 모두 pending으로 승격
+    promoted_any = False
+    for prev in existing_by_committer:
+      if prev.get('status') == 'draft' and promote_draft(prev['id']):
+        promoted_any = True
+        try:
+          from main import auto_triage_new_suggestion
+          asyncio.create_task(auto_triage_new_suggestion(prev['id']))
+        except Exception:
+          logger.debug('재다짐 auto_triage 호출 실패', exc_info=True)
+    if promoted_any:
+      logger.info('재다짐 감지 — 기존 draft 승격: %s / %s', committer_id, topic_key)
+    return
+
+  dup, reason = is_duplicate(title, content)
+  if dup:
+    logger.info('다짐 건의 중복 skip: %s | reason=%s', title[:30], reason)
+    return
+  initial_status = 'draft'
 
   try:
     created = create_suggestion(
