@@ -1134,38 +1134,56 @@ async def _execute_project(
           'artifacts': phase_artifacts,
         }
 
-  # HTML 산출물이 포함된 프로젝트(사이트 구축)인지 판단
+  await _emit_final_report(office, PHASES, all_results, phase_artifacts, user_input)
+
+  await _finalize_project(
+    office, project_type, all_results, user_input,
+    phase_artifacts, _project_started_at, _phase_metrics,
+  )
+  return {
+    'state': office._state.value,
+    'response': '프로젝트 완료',
+    'artifacts': phase_artifacts,
+  }
+
+
+async def _emit_final_report(
+  office,
+  PHASES: list[dict],
+  all_results: dict[str, str],
+  phase_artifacts: list[str],
+  user_input: str,
+) -> None:
+  '''프로젝트 phase 루프 완료 후 최종 보고 발행.
+
+  사이트 구축류(HTML 산출물 포함) → 요약 + 산출물 링크.
+  문서/분석류 → planner 취합 + 팀장 최종 검수 + MAX_REVISION_ROUNDS 보완 루프.
+  '''
   has_publishing = (
     any('퍼블리싱' in k for k in all_results)
     or any(p.get('output_format') == 'html' for p in PHASES)
   )
 
   if has_publishing:
-    # 사이트 구축 → 짧은 요약 + 산출물 링크
     await office._emit('teamlead', '최종 보고서를 작성하고 있습니다.', 'response')
     office._active_agent = 'teamlead'
 
-    # 현재 프로젝트에서 사용된 산출물만 수집
     final_artifacts = list(phase_artifacts)
 
-    # 각 단계별 제목(첫 마크다운 헤더)을 추출
     phase_summaries = []
     for name, content in all_results.items():
       title = '완료'
       for line in content.strip().split('\n'):
         stripped = line.strip()
-        # 마크다운 헤더 우선
         if stripped.startswith('#'):
           title = stripped.lstrip('#').strip()[:80]
           break
-        # 헤더 없으면 20자 이상 첫 줄 (서문/인사말 제외)
         skip_prefixes = ('알겠습니다', '네,', '안녕', 'I ', 'OK')
         if len(stripped) > 20 and not any(stripped.startswith(p) for p in skip_prefixes):
           title = stripped[:80]
           break
       phase_summaries.append(f'- **{name}**: {title}')
 
-    # Haiku에게 전체 요약 (완료 시점 기준)
     try:
       overview = await run_claude_isolated(
         f'아래 프로젝트의 모든 단계가 완료되었습니다. 2~3문장으로 최종 완료 보고를 작성하세요.\n\n'
@@ -1192,42 +1210,53 @@ async def _execute_project(
       message='\n'.join(report_lines),
       data={'artifacts': final_artifacts},
     ))
-  else:
-    # 문서/분석 프로젝트 → 기획자가 최종 보고서 취합
-    await office._emit('teamlead', '기획자에게 최종 보고서 작성을 요청합니다.', 'response')
-    office._active_agent = 'planner'
-    await office._emit('planner', '', 'typing')
-    await office._run_planner_synthesize(user_input, all_results)
+    return
 
-    # 팀장 최종 검수
-    office._state = OfficeState.TEAMLEAD_REVIEW
-    office._active_agent = 'teamlead'
-    passed = await office._teamlead_final_review(user_input, None)
+  # 문서/분석 프로젝트 → 기획자가 최종 보고서 취합
+  await office._emit('teamlead', '기획자에게 최종 보고서 작성을 요청합니다.', 'response')
+  office._active_agent = 'planner'
+  await office._emit('planner', '', 'typing')
+  await office._run_planner_synthesize(user_input, all_results)
 
-    if not passed:
-      for _ in range(office.MAX_REVISION_ROUNDS):
-        office._revision_count += 1
-        await office._run_planner_synthesize(
-          user_input, all_results, revision_feedback=office._last_review_feedback,
-        )
-        passed = await office._teamlead_final_review(user_input, None)
-        if passed:
-          break
+  # 팀장 최종 검수 + 보완 루프
+  office._state = OfficeState.TEAMLEAD_REVIEW
+  office._active_agent = 'teamlead'
+  passed = await office._teamlead_final_review(user_input, None)
+  if not passed:
+    for _ in range(office.MAX_REVISION_ROUNDS):
+      office._revision_count += 1
+      await office._run_planner_synthesize(
+        user_input, all_results, revision_feedback=office._last_review_feedback,
+      )
+      passed = await office._teamlead_final_review(user_input, None)
+      if passed:
+        break
 
+
+async def _finalize_project(
+  office,
+  project_type: str,
+  all_results: dict[str, str],
+  user_input: str,
+  phase_artifacts: list[str],
+  project_started_at: str,
+  phase_metrics: list[PhaseMetrics],
+) -> None:
+  '''프로젝트 phase 루프 완료 후 마감 처리 — 회고/세션종료/상태리셋/메트릭/내보내기.'''
   # 팀 회고 — 프로젝트 완료 후 각 에이전트가 배운 점 공유
   try:
     try:
-      _total_dur = (
-        datetime.now(timezone.utc) - datetime.fromisoformat(_project_started_at)
+      total_dur = (
+        datetime.now(timezone.utc) - datetime.fromisoformat(project_started_at)
       ).total_seconds()
     except Exception:
-      _total_dur = 0.0
+      total_dur = 0.0
     await office._team_retrospective(
       project_title=office._active_project_title or '프로젝트',
       project_type=project_type,
       all_results=all_results,
       user_input=user_input,
-      duration=_total_dur,
+      duration=total_dur,
     )
   except Exception:
     logger.debug("팀 회고 실행 실패", exc_info=True)
@@ -1255,23 +1284,15 @@ async def _execute_project(
   if task_id:
     _update_task(task_id, 'completed')
 
-  # 자가개선: 프로젝트 메트릭 수집 및 분석
   await _collect_project_metrics(
     office, task_id, project_type, user_input,
-    _project_started_at, _phase_metrics,
+    project_started_at, phase_metrics,
   )
 
-  # ── 자동 내보내기 — 산출물 PDF/DOCX/ZIP 생성 ──
   try:
     await office._auto_export(phase_artifacts)
   except Exception:
     logger.warning("자동 내보내기 실패", exc_info=True)
-
-  return {
-    'state': office._state.value,
-    'response': '프로젝트 완료',
-    'artifacts': phase_artifacts,
-  }
 
 
 

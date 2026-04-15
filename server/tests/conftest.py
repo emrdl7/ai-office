@@ -45,7 +45,20 @@ def _isolate_prod_dbs(tmp_path_factory, monkeypatch):
         monkeypatch.setattr(_paths, 'MEMORY_ROOT', mem)
     except Exception:
         pass
+    # event_bus 싱글턴은 모듈 레벨이라 인스턴스 swap이 불가(29개 모듈이
+    # import 시점에 이름을 바인딩). 구독자 목록만 리셋해 테스트 간 leak 차단.
+    # DB는 위에서 격리됐으므로 publish 사이드이펙트는 이미 무해.
+    try:
+        from log_bus.event_bus import event_bus as _bus
+        _bus._subscribers.clear()
+    except Exception:
+        pass
     yield
+    try:
+        from log_bus.event_bus import event_bus as _bus
+        _bus._subscribers.clear()
+    except Exception:
+        pass
 
 
 @pytest.fixture

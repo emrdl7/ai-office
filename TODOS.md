@@ -9,7 +9,7 @@
 >   dynamics 기반 peer reviewer 자동 선정 / 회고 유기화(metrics+synthesis).
 > - 통합 검색 API + SearchPanel UI + **errors preset** 필터 완성.
 > - 관측: `/api/project/status` (state/phase/elapsed/nodes) + placeholder 오염 warning 감지.
-> - 테스트: **169 pass / 0 fail / 5 skip**. CI 워크플로우 + `data/` 오염 가드.
+> - 테스트: **170 pass / 0 fail / 0 skip**. CI 워크플로우 + `data/` 오염 가드.
 > - 경로: `core/paths.py` 단일 출처 (WORKSPACE_ROOT / MEMORY_ROOT, env 주입).
 
 ---
@@ -102,12 +102,16 @@
 
 ## 🧹 P3 — 코드 건강성 남은 것
 
-- [ ] `project_runner.py` 1,711 LOC 재검토 — P1 리팩터 경험으로 더 분해 가능한지
-      (과거 판단은 "역효과 지점"이었으나 라우터 분리 선례로 임계치 달라졌을 수 있음).
-- [ ] 스킵된 테스트 재작성 — `test_qa_gate`, `test_revision_loop`은
-      `runners.gemma_runner` 제거 + Office 시그니처 변경으로 현재 skip.
-      신규 흐름(`test_qa_pushback_loop`, `test_retrospective`)으로 커버되지만
-      정식 재작성 가치 있음.
+- [x] `project_runner.py` 재검토 — `_execute_project` 411 → 283 LOC.
+      `_emit_final_report`(HTML vs 문서 분기 + 팀장 검수/보완 루프) 추출,
+      `_finalize_project`(회고/세션종료/상태리셋/메트릭/내보내기) 추출.
+      phase 루프 본체는 중간 `return`(중단/waiting_input)이 많아 추출 시
+      오히려 복잡도 상승 — 유지. 파일 전체는 1712 → 1733 LOC(헬퍼 시그니처
+      분량), 핵심은 최상위 함수의 인지 부하 감소.
+- [x] 스킵된 테스트 정리 — `test_qa_gate`, `test_revision_loop` 삭제.
+      전제였던 `ESCALATED` 상태 전이 코드 자체가 제거됐고 QA/리뷰 흐름은
+      `test_qa_pushback_loop` / `test_retrospective`가 커버. 죽은 파일
+      유지 비용 > 재작성 가치. 170 pass / 0 skip.
 - [ ] **frontend 타입 정리** — dashboard 4.3K. 빠진 타입/any 잔존 점검.
 - [x] **placeholder 검사 중복 제거** — `log_store._check_placeholder_contamination`
       제거, event_bus `_build_placeholder_notice` 단일 경로로 통합.
@@ -132,7 +136,9 @@
 - [ ] CI에 `mypy` 추가 — 점진적 타이핑 도입 전제. 현재 시그니처에 타입 힌트
       부족(특히 orchestration)해서 `--ignore-missing-imports` + 가벼운 설정부터
       시작 필요. ruff 정착 후 별도 작업.
-- [ ] pytest fixture에 event_bus 격리 — 현재 직접 publish 가능 (DB는 격리됐으나 bus는).
+- [x] pytest fixture에 event_bus 격리 — `_isolate_prod_dbs` autouse fixture에
+      `event_bus._subscribers.clear()` 전후 리셋 추가. 모듈 싱글턴이라 swap은
+      불가(29개 import 사이트), 상태 리셋으로 테스트 간 구독자 leak 차단.
 - [ ] 프론트엔드 React 컴포넌트 테스트 — 현재 서버 쪽만 테스트.
 
 ---
