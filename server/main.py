@@ -78,10 +78,30 @@ async def lifespan(app: FastAPI):
   office._autonomous_task = asyncio.create_task(office.start_autonomous_loop())
   # 팀장 배치 리뷰 루프 시작 (주기적 대화 분석 + 건의 격상 + 요약 압축)
   office._teamlead_review_task = asyncio.create_task(office.start_teamlead_review_loop())
+  # 메시지 버스 아카이브 루프 — 시작 시 1회 + 24h 주기 (완료 메시지 30일 이상 이관)
+  archive_task = asyncio.create_task(_archive_loop())
   yield
+  archive_task.cancel()
   office.stop_autonomous_loop()
   await office.groq_runner.stop()
   message_bus.close()
+
+
+async def _archive_loop():
+  '''서버 생존 동안 24시간 주기로 오래된 done 메시지를 archive 테이블로 이관.'''
+  while True:
+    try:
+      moved = await asyncio.to_thread(message_bus.archive_old_messages)
+      if moved:
+        logger.info('message bus archive: moved %d rows', moved)
+    except asyncio.CancelledError:
+      raise
+    except Exception:
+      logger.exception('message bus archive failed')
+    try:
+      await asyncio.sleep(24 * 60 * 60)
+    except asyncio.CancelledError:
+      break
 
 
 app = FastAPI(title='AI Office', lifespan=lifespan)
