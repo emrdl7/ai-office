@@ -2760,6 +2760,17 @@ class Office:
             if answer:
               await self._emit(target_id, answer[:200], 'response')
 
+              # 다짐 감지 — 멘션 응답 중 "~하겠습니다" 발화면 건의 등록
+              try:
+                await self._file_commitment_suggestion(
+                  committer_id=target_id,
+                  message=answer,
+                  source_speaker=speaker,
+                  source_message=question,
+                )
+              except Exception:
+                logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)
+
               # 팀 다이나믹 기록 — 에이전트 간 소통 패턴 학습
               try:
                 self.team_memory.add_dynamic(TeamDynamic(
@@ -2998,6 +3009,15 @@ class Office:
             except Exception:
               logger.debug('자동 건의 등록 실패', exc_info=True)
 
+            # 자기 다짐 감지 — 자발 발화 중 "~하겠습니다"
+            try:
+              await self._file_commitment_suggestion(
+                committer_id=speaker_name,
+                message=message,
+              )
+            except Exception:
+              logger.debug('자발 다짐 등록 실패', exc_info=True)
+
             # 1단 반응 — 50% 확률로 다른 에이전트가 구체 보완/반론
             first_reactor = ''
             first_reply = ''
@@ -3016,6 +3036,16 @@ class Office:
                     event_type='autonomous',
                     message=first_reply,
                   ))
+                  # 리액터의 다짐 감지 (원 발화에 대한 반응 중 "~하겠습니다")
+                  try:
+                    await self._file_commitment_suggestion(
+                      committer_id=first_reactor,
+                      message=first_reply,
+                      source_speaker=speaker_name,
+                      source_message=message,
+                    )
+                  except Exception:
+                    logger.debug('리액터 다짐 등록 실패', exc_info=True)
                   # 2단 — 원 발언자가 재반론/수용 결론 (30%)
                   if random.random() < 0.3:
                     closing = await self._autonomous_closing(
@@ -3030,6 +3060,16 @@ class Office:
                         event_type='autonomous',
                         message=closing,
                       ))
+                      # 원 발언자의 수용 결론에서 다짐 감지
+                      try:
+                        await self._file_commitment_suggestion(
+                          committer_id=speaker_name,
+                          message=closing,
+                          source_speaker=first_reactor,
+                          source_message=first_reply,
+                        )
+                      except Exception:
+                        logger.debug('클로징 다짐 등록 실패', exc_info=True)
                 else:
                   first_reactor = ''  # 반응 실패 시 체인 종결
 
@@ -3960,3 +4000,85 @@ class Office:
         logger.debug('auto_triage 호출 실패', exc_info=True)
     except Exception:
       logger.debug('create_suggestion 실패', exc_info=True)
+
+  async def _file_commitment_suggestion(
+    self,
+    committer_id: str,
+    message: str,
+    source_speaker: str = '',
+    source_message: str = '',
+  ) -> None:
+    '''에이전트가 "~하겠습니다" 류 자기 다짐을 하면 건의게시판에 등록.
+
+    멘션 응답이든 자발적 발언이든, committer 본인이 수행하기로 약속한 경우
+    target_agent=committer로 pending 등록하여 실제 실행 궤적을 남긴다.
+    말로만 "반영하겠습니다" 하고 끝나는 것을 방지.
+    '''
+    if not message or len(message.strip()) < 15:
+      return
+
+    # 자기 다짐 시그널 — 본인이 무언가 하겠다는 1인칭 약속
+    commit_markers = (
+      '반영하겠', '적용하겠', '도입하겠', '추가하겠',
+      '수정하겠', '개선하겠', '변경하겠', '바꾸겠',
+      '정리하겠', '만들겠', '만들어보겠', '작성하겠',
+      '업데이트하겠', '보완하겠', '진행하겠', '처리하겠',
+      '반영할게', '적용할게', '도입할게', '추가할게',
+      '수정할게', '개선할게', '정리할게',
+    )
+    if not any(m in message for m in commit_markers):
+      return
+
+    # 회피/불확실 시그널 — 있으면 다짐 아님
+    uncertain_markers = ('할 수도', '해볼까', '고려해', '검토만', '상의 후', '여쭤', '~해도 될지')
+    if any(m in message for m in uncertain_markers):
+      return
+
+    from db.suggestion_store import create_suggestion, is_duplicate, log_event
+
+    first_line = message.strip().split('\n')[0][:80]
+    title = f'[다짐] {display_name(committer_id)}: {first_line[:50]}'
+
+    content_parts = []
+    if source_speaker and source_message:
+      content_parts.append(f'**요청자**: {display_name(source_speaker)}')
+      content_parts.append(f'**요청**: {source_message.strip()[:300]}')
+    content_parts.append(f'**다짐 발화**: "{message.strip()[:500]}"')
+    content_parts.append('')
+    content_parts.append(
+      f'_{display_name(committer_id)}의 자기 다짐을 자동 등록했습니다. '
+      f'승인 시 실제 반영 추적, 거절 시 다짐 철회._'
+    )
+    content = '\n'.join(content_parts)
+
+    dup, reason = is_duplicate(title, content)
+    if dup:
+      logger.info('다짐 건의 중복 skip: %s | reason=%s', title[:30], reason)
+      return
+
+    try:
+      created = create_suggestion(
+        agent_id=committer_id,
+        title=title,
+        content=content,
+        category='프로세스 개선',
+        target_agent=committer_id,
+      )
+      log_event(created['id'], 'auto_filed', {
+        'speaker': committer_id, 'target_agent': committer_id,
+        'kind': 'self_commitment',
+        'source_speaker': source_speaker,
+      })
+      await self._emit(
+        'teamlead',
+        f'📌 {display_name(committer_id)}의 다짐을 건의게시판에 등록했습니다: "{first_line[:40]}..."',
+        'system_notice',
+      )
+      logger.info('다짐 건의 등록: %s | %s', committer_id, first_line[:60])
+      try:
+        from main import auto_triage_new_suggestion
+        asyncio.create_task(auto_triage_new_suggestion(created['id']))
+      except Exception:
+        logger.debug('auto_triage 호출 실패', exc_info=True)
+    except Exception:
+      logger.debug('다짐 create_suggestion 실패', exc_info=True)
