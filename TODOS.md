@@ -1,90 +1,132 @@
 # TODOS
 
-## P1 — office.py 분할 로드맵
-
-`server/orchestration/office.py`는 현재 **3,962 LOC 단일 파일 / 단일 클래스**에
-50개 이상의 메서드를 담고 있다. 팀장 판정, 프로젝트 실행, 팀원 상호작용, 자율
-루프, 회고, 건의 파일링이 모두 하나의 `Office` 클래스에 결합돼 있어 단위 테스트는
-사실상 불가능하고, 신규 기능 추가 시 관련 없는 로직까지 읽어야 한다.
-
-**원칙**: 한 번에 분할하지 않는다. (1) **동결 규칙**을 먼저 세우고, (2) 새로 추가되는
-기능만 새 모듈로 받으며, (3) 기존 메서드는 손댈 일이 생길 때마다 해당 도메인 모듈로
-이관한다. 순수 리팩터링 커밋은 지양 (행동 변화 없는 2,000줄 이동은 리뷰 불가능).
-
-### 동결 규칙 (선적용)
-
-- [ ] `office.py`에 새 메서드 추가 금지 — 신규 기능은 무조건 도메인 모듈에.
-- [ ] 기존 메서드 수정 시, 50줄 이상 손보게 되면 **먼저** 도메인 모듈로 이동한 뒤
-      변경 (2단계 커밋: `refactor: move X from office.py` → `feat: ...`).
-- [ ] `Office` 클래스의 public API는 당분간 유지 (main.py가 의존).
-
-### 도메인 분할 목표 (순서 의미 있음)
-
-1. [x] **`teamlead_review.py`** — `start_teamlead_review_loop`, `_run_single_review`,
-       `stop_teamlead_review_loop`, `_team_retrospective` 분리 완료.
-       office.py 4,144 → 3,772 LOC (−372). teamlead_review.py 395 LOC 신규.
-       Office 메서드는 forwarder 4개로 축소 (public API 유지).
-2. [x] **`autonomous_loop.py`** — `start_autonomous_loop`, `stop_autonomous_loop`,
-       `_load_digest_state`, `_save_digest_state`, `_react_to_received_reactions`,
-       `_agents_react_to_peers`, `_autonomous_react`, `_autonomous_closing` 분리 완료.
-       office.py 3,772 → 3,205 LOC (−567). autonomous_loop.py 634 LOC 신규.
-       Office는 8개 forwarder만 유지.
-3. [x] **`agent_interactions.py`** — `_team_reaction`, `_consult_peers`, `_peer_review`,
-       `_handoff_comment`, `_task_acknowledgment`, `_phase_intro`, `_work_commentary`,
-       `_contextual_reaction`, `_team_chat`, `_resolve_reviewer` 분리 완료.
-       office.py 3,205 → 2,564 LOC (−641). agent_interactions.py 726 LOC 신규.
-       `_record_dynamic`/`_PEER_REVIEWERS`는 공유 인프라로 Office에 유지.
-4. [x] **`project_runner.py`** — `_handle_project`, `_continue_project`,
-       `_plan_project_phases`, `_default_phases`, `_execute_project`, `_cross_review`,
-       `_auto_export`, `_run_qa_check`, `_teamlead_final_review`,
-       `_run_planner_synthesize`, `_quick_task_second_opinion`, `_handle_quick_task`
-       분리 완료. office.py 2,564 → 1,228 LOC (−1,336). project_runner.py 1,452 LOC.
-5. [x] **`suggestion_filer.py`** — `_file_reaction_suggestion`, `_auto_file_suggestion`,
-       `_file_commitment_suggestion` 분리 완료. office.py 1,228 → 948 LOC (−280).
-       suggestion_filer.py 312 LOC 신규.
-6. [ ] **`Office` 본체** = 상태 머신 + `receive()` 디스패치 + `__init__`만 남김.
-       목표 ≤ 500 LOC. (현재 948 — `receive`, `_route_agent_mentions`, 기타 헬퍼 잔존)
-
-### 각 분할 단계 공통 원칙
-
-- 이동하면서 **행동 변경 금지** (테스트 추가/수정 없이 import 경로만 변경).
-- 도메인 모듈은 `Office` 인스턴스를 생성자로 받고, 필요한 상태는 property 접근.
-- 각 분할 커밋은 `git diff --stat`으로 **추가·삭제 줄 수가 거의 대칭**이어야 함
-  (로직 이동만, 생성 아님).
-- 이동 후 해당 도메인에 **처음 신규 테스트 파일 추가** — 분할의 가치를 테스트로 잠금.
-
-### 측정
-
-- 분할 전 기준: `office.py` 3,962 LOC, `Office` 클래스 메서드 50+.
-- 각 단계 완료 시 `wc -l server/orchestration/*.py` 기록.
-- 최종 목표: `office.py` ≤ 500 LOC, 도메인 모듈 각 ≤ 800 LOC.
+> **현재 상태 (2026-04-15)**: office.py **948 LOC** (시작 4,144 대비 −77%).
+> 도메인별 분할 완료 — teamlead_review / autonomous_loop / agent_interactions /
+> project_runner / suggestion_filer. 상호작용·학습·관찰 루프 3종 가동 중.
 
 ---
 
-## P2 — 메시지 버스 아카이브 잡
+## P1 — office.py 본체 최종 정리 (목표 ≤500 LOC)
 
-`data/bus.db`의 messages 테이블이 영구 누적되어 장기 운영 시 쿼리·디스크 선형 증가.
+현재 948 LOC. 잔존 약 450 LOC가 목표 초과분이며, 대부분은 **이관 가능한 보조
+메서드**와 **37개 forwarder**의 반복 패턴이다.
 
-- [x] 메시지 스키마에 `archived_at` 컬럼 추가 마이그레이션.
-- [x] 완료된 프로젝트 메시지는 N일(예: 30) 후 아카이브 테이블로 이동.
-- [x] 월간 정리 잡 (서버 시작 시 1회 + 24h 주기, `main._archive_loop`).
-- [x] 기존 인덱스 외에 `(to, status, created_at)` 복합 인덱스 검토.
+### 잔존 대표 메서드
+- [ ] `_route_agent_mentions` (~80 LOC) → **`agent_interactions`로 이동**.
+      에이전트 산출물에서 `@멘션` 라우팅 — 상호작용 도메인.
+- [ ] `_create_handoff_guide` + `_generate_stitch_mockup` (~110 LOC) →
+      **`project_runner`로 이동**. 프로젝트 실행 중 파생 산출물 생성.
+- [ ] `_extract_user_questions` + `_check_user_directive` (~67 LOC) →
+      **`receive()` 주변 헬퍼**. 새 `dispatch.py` 또는 `receive_helpers.py`로 분리.
+- [ ] forwarder 37개의 `from orchestration import X` 반복 → **모듈 상수로 캐싱**
+      하여 호출당 import 비용 제거 (한 번만 import).
+
+### 유지 (Office 본체 핵심)
+- `__init__`, `receive()` 디스패치, `_emit`, `_compress_history`,
+  `_update_context`, `restore_pending_tasks`, `_record_dynamic`, `OfficeState`,
+  `_DIGEST_PATH`, `_PEER_REVIEWERS`.
+
+### 원칙 (유지)
+- 이동 커밋은 행동 변경 금지, `self.*` → `office.*` 기계적 치환.
+- 각 분할 커밋 완료 시 `wc -l` 기록.
 
 ---
 
-## P3 — REST 엔드포인트 인증 일관성
+## P2 — 상호작용·학습 루프 강화
 
-`WS_AUTH_TOKEN`은 WebSocket만 보호. REST (`/api/chat`, `/api/suggestions/*`,
-`/api/workspace/*`)는 현재 로컬호스트 전제로 공개.
+멀티 에이전트 진단 (2026-04-15) 기준 약한 영역. 구조는 섰지만 **관찰 → 적응**
+고리가 미약.
 
-- [x] 배포 모드별 인증 정책 문서화 (README, d388d1c).
-- [x] 외부 노출 시 동일 토큰 또는 세션 기반 보호 미들웨어 추가 (REST_AUTH_TOKEN).
-- [x] CORS 설정 재점검 — localhost:3100/127.0.0.1:3100만 허용 (main.py:139).
+### 약한 엣지 보강
+- [ ] `_phase_intro`에 해당 담당자의 **과거 실패 규칙 상위 1개** + **관련 팀원
+      한 줄 조언** 삽입. 현재는 착수 인사만 나감.
+- [ ] `_task_acknowledgment`에 **직전 피어 리뷰 피드백 재고지**. 수령 확인이
+      컨텍스트와 분리되어 있음.
+- [ ] `_work_commentary`가 `_route_agent_mentions` 트리거 경로와 연동되도록
+      — 진행 중 코멘트에 `@팀원` 포함되면 즉시 라우팅.
+
+### 관찰·메타 학습
+- [ ] 주간 배치 리뷰(`teamlead_review.run_loop`)에서 **TeamDynamic 집계**
+      추가 — "누가 누구와 잘 맞는지 / stuck 패턴" 요약을 팀 맥락 텍스트에 주입.
+- [ ] `_peer_review`의 `peer_concern` 누적이 임계치(예: 같은 쌍 3회) 넘으면
+      **자동 건의 등록** (`관계 개선 필요: X↔Y`).
+- [ ] `TeamDynamic.dynamic_type` 어휘 표준화 문서 (team_memory.py) —
+      현재 자유 문자열 (peer_concern/peer_approved/consulted/committed_to_request
+      등)이 흩어져 있음.
+
+### Draft 건의 상태 (자기 다짐 과잉 등록 완충)
+- [ ] `suggestion_store`에 `status='draft'` 추가. 현재 `_file_commitment_suggestion`
+      이 바로 pending을 만들어 auto_triage로 돌입 — 말로만 한 다짐도 실행됨.
+- [ ] draft → pending 승격 조건: (a) 요청자/팀장이 확정, (b) 24h 경과 후 자동 승격,
+      (c) 같은 committer의 같은 주제 반복 시 자동 승격.
+- [ ] UI: 대시보드에서 draft 건의 목록 별도 탭.
+
+### 출처 추적
+- [ ] 건의에 `source_log_id` 컬럼 추가. `_file_commitment_suggestion`/
+      `_auto_file_suggestion`/`_file_reaction_suggestion` 등록 시 원본
+      message 로그 ID 저장.
+- [ ] 대시보드에서 건의 → 원본 발화로 이동 가능.
 
 ---
 
-## P4 — 기타
+## P3 — 테스트 커버리지
 
-- [x] `_patch_lock` 점유 중 다른 suggestion apply 시 현황 브로드캐스트 (8535015).
-- [x] `_RETRY_MAX=2`로 낮춰 최악 락 점유 축소 (8535015, code_patcher.py:16).
-- [x] `code_patcher._build_patch_prompt`에 "FORBIDDEN 경로 수정 시 FILES 블록 필수" 안내 (8535015).
+22개 테스트 파일 존재하나 **E2E/통합 시나리오 부재**. 분할된 도메인 모듈의
+행동 고착화가 급선무.
+
+- [ ] `test_teamlead_review_integration.py` — force=True로 `run_single` 호출,
+      JSON 파싱 실패 시 fallback, circuit breaker 트리거.
+- [ ] `test_autonomous_loop_state.py` — digest state 저장/로드 라운드트립,
+      stuck detection 트리거.
+- [ ] `test_project_runner_e2e.py` — 프로젝트 입력 → 회의 → phase 실행 →
+      peer_review(CONCERN) → 보완 → 최종 리뷰 전 구간 1개 시나리오.
+- [ ] `test_commitment_filing.py` — "반영하겠습니다" 발화 → draft 생성 →
+      승격 → auto_apply → PromptEvolver 규칙 주입 검증.
+- [ ] `test_team_dynamic_recording.py` — peer_review / consult /
+      commitment 3종 훅이 모두 TeamDynamic에 기록되는지.
+
+---
+
+## P4 — 보조 개선 (우선순위 낮음)
+
+- [ ] `_execute_project` (659 LOC) 자체 분할 — 프로젝트 실행 로직의 단계별
+      sub-helper(`_run_phase_group`, `_persist_phase_output` 등)로 쪼갬.
+      project_runner.py 내부 리팩터.
+- [ ] `agent_interactions._team_chat` (~220 LOC)의 `_single_agent_chat` 내부
+      함수 외부화 — 테스트 가능하게.
+- [ ] MCP 재연결 시 plugin:telegram 토큰/정책 재점검 (세션 간 연결 실패 관찰됨).
+- [ ] 로그 DB 아카이빙 — `log_storage_stats` 임계치(30일+ 1만건 or 50MB)에
+      도달하면 `chat_logs_archive`로 이관 (버스 아카이브와 동일 패턴).
+
+---
+
+## ✅ 완료 (이전 로드맵 기록용)
+
+### P1 분할 (5단계)
+- [x] 1. `teamlead_review.py` (395 LOC) — 팀장 배치 리뷰·회고.
+- [x] 2. `autonomous_loop.py` (634 LOC) — 자율 활동·리액션 체인.
+- [x] 3. `agent_interactions.py` (726 LOC) — 팀원 간 협의·잡답·리뷰.
+- [x] 4. `project_runner.py` (1,452 LOC) — 프로젝트 실행 파이프라인 12종.
+- [x] 5. `suggestion_filer.py` (312 LOC) — 건의 자동 등록 감지 3종.
+
+### P2 메시지 버스 아카이브 (완료)
+- [x] `archived_at` 컬럼 + 마이그레이션.
+- [x] 30일 경과 done 메시지 이관.
+- [x] 서버 시작 시 1회 + 24h 주기 `_archive_loop` (`main.py`).
+- [x] `(to, status, created_at)` 복합 인덱스.
+
+### P3 REST 인증 (완료)
+- [x] 배포 모드별 인증 정책 문서 (`server/README.md`).
+- [x] `REST_AUTH_TOKEN` 미들웨어 (Bearer / ?token=).
+- [x] CORS — localhost:3100/127.0.0.1:3100만 허용.
+
+### P4 patch_lock/자가개선 (완료)
+- [x] `_patch_lock` 점유 중 브로드캐스트.
+- [x] `_RETRY_MAX` 3→2 축소.
+- [x] `_build_patch_prompt`에 FORBIDDEN 안내.
+
+### 상호작용·학습 루프 (완료)
+- [x] 멀티 에이전트 진단 (2026-04-15).
+- [x] 자기 다짐 감지 훅 (`_file_commitment_suggestion` + 3개 훅 지점).
+- [x] 협업 관찰 루프 (`_record_dynamic` + `_peer_review`/`_consult_peers`/
+      commitment 3개 훅 지점). TeamDynamic이 에이전트 프롬프트에 자동 주입.
