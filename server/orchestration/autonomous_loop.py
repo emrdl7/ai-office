@@ -245,6 +245,17 @@ async def _run_speaker_chain(
   if not agent:
     return ''
 
+  # 트렌드 리서치 모드 — speaker가 자기 전문 영역의 최신 트렌드를 검색해
+  # 본인 또는 동료의 프롬프트를 강화한다. 발화로 끝나므로 체인은 돌지 않음.
+  if random.random() < 0.12:
+    try:
+      from orchestration import trend_research
+      did = await trend_research.maybe_research(office, speaker_name)
+      if did:
+        return ''
+    except Exception:
+      logger.debug('trend_research 실패: %s', speaker_name, exc_info=True)
+
   # 본인 최근 자발적 발언 5개 — 같은 주제 반복 방지용
   own_recent: list[str] = []
   try:

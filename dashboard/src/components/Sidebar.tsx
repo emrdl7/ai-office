@@ -170,7 +170,7 @@ function AgentCard({
       {/* 아바타 */}
       <div className="relative flex-shrink-0 mt-0.5">
         <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${profile.color}
-          flex items-center justify-center overflow-hidden transition-all ${ring}`}>
+          flex items-center justify-center shadow-sm overflow-hidden transition-all ${ring}`}>
           {AVATAR_IMG[agent.agent_id] ? (
             <img src={AVATAR_IMG[agent.agent_id]} alt={profile.character}
               className="w-full h-full object-cover" loading="lazy" />
