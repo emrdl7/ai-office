@@ -44,6 +44,72 @@
 - 같은 파일 경로를 24h 내 2회 수정한 자가개선은 자동 rollback 후보
   리스트에 추가 (파이프라인 폭주 방지).
 
+### P5. 구성원 성격/능력 프롬프트 검증 체계
+
+> **맥락**: 시스템 프롬프트는 6계층이 동적 누적됨 — `agents/*.md`(기본
+> persona) + `expertise.py`(task 전문지식) + `rejection_analyzer`(과거
+> 불합격) + `AgentMemory`(개인 경험) + `PromptEvolver`(학습 규칙 —
+> trend_research + 건의 수용으로 매일 누적) + `TeamMemory`(팀 공유).
+> 현재 이들 상호 정합성 검증 수단이 전혀 없음. 누적 규칙이 persona와
+> 모순되거나, 선언된 능력을 실제로 쓰지 않거나, 실제 하는 일이 선언에
+> 없을 수 있음.
+
+#### 5-1. 정적 스키마 린트 (즉시 가능, CI 부담 無)
+- `scripts/lint_persona.py` — `agents/*.md` 섹션 표준 강제:
+  `# {이름} ({역할})` → `## 성격` → `## 판단력` → `## 대화 스타일` →
+  `## 역할` → `## 품질 기준` 순서와 존재 검증.
+- 각 섹션 최소 bullet 수·최대 길이·빈 섹션 금지.
+- `ruff` 전후 CI에 추가.
+
+#### 5-2. 누적 규칙 ↔ persona 충돌 감사 (주간 배치)
+- `improvement/persona_guard.py` 신설. 각 agent별로:
+  1. `PromptEvolver.load_rules` 활성 규칙 + persona 섹션 로드
+  2. Claude Haiku 1회 호출 — "아래 규칙 N개가 이 페르소나와 모순되는
+     쌍을 JSON으로 출력":
+     `{conflicts:[{rule_id, persona_clause, reason}]}`
+  3. 충돌 규칙은 `active=False`로 자동 비활성화 + `PromptRule.evidence`에
+     "persona_guard deactivated: ..." 기록
+  4. teamlead에게 `system_notice` — "아이브 규칙 3건이 '겸손' 페르소나와
+     충돌로 비활성화" 같은 감사 로그 공개
+- 실행 주기: teamlead batch review 끝에 1회 (주 1회 수준). LLM 비용 예측
+  가능.
+
+#### 5-3. 페르소나 드리프트 상시 감사 (샘플링)
+- `/api/team/persona-drift` 엔드포인트 — 최근 48h `autonomous`+`response`
+  로그에서 agent별 무작위 10건 추출 → LLM-as-judge 호출 (Haiku):
+  "이 발화가 `agents/{name}.md`의 성격·대화스타일과 일치하는가?" 0~10점
+  + 이탈 근거 1문장.
+- 6점 미만이 10건 중 3회 이상이면 `drift_detected` 이벤트 발행.
+- 대시보드에 agent별 평균 점수 + 최근 이탈 사례 3건 표시.
+- trigger: 팀장 batch review 주기와 동일.
+
+#### 5-4. 능력 선언 ↔ 실제 사용 교차 검증 (월간)
+- `scripts/capability_audit.py`:
+  1. `agents/*.md`의 `## 역할` bullet에서 능력 키워드 추출 (예:
+     아이브 → "와이어프레임", "디자인 시스템", "WCAG 2.1 AA", "접근성")
+  2. 최근 30일 `chat_logs` + `workspace/*/*` artifacts에서 각 키워드 등장
+     빈도 집계.
+  3. 분류:
+     - **dead capability** (30일 0회) → 선언 제거 후보
+     - **implicit creep** (빈도 상위인데 md에 없음) → 선언 추가 후보
+  4. 결과 보고서를 teamlead에게 제안으로 (`suggestion_type='prompt'`).
+- 자동 merge 아님 — 사람 결정.
+
+#### 5-5. 프롬프트 골든셋 회귀 테스트 (선택적)
+- `tests/golden/persona/{agent}/scenario_{n}.json` — agent별 5~10개 대표
+  입력 + 평가 rubric:
+  ```json
+  {"input":"...","must_contain":["hex","px"],"must_avoid":["대강","아마"],
+   "persona_match_expected":true}
+  ```
+- `pytest -m golden_persona` — LLM 호출 후 rubric 통과율 평가.
+- nightly CI 또는 `make check-persona` 수동 실행. PR gate 아님 (비용 때문).
+- 통과율 시계열 트래킹 → 학습 규칙 누적으로 persona 일관성 떨어지는
+  추세 조기 감지.
+
+**우선순위 제안**: 5-1(CI) → 5-2(주간 배치) → 5-3(샘플링) → 5-4(월간)
+→ 5-5(선택적). 5-1·5-2가 가장 비용 대비 가치 큼.
+
 ---
 
 ## 📦 완료 누적 (요약)
