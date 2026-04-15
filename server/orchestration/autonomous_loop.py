@@ -113,6 +113,69 @@ def _detect_topic_stuck(recent_context: str) -> tuple[bool, list[str]]:
   return stuck, repeated
 
 
+def _gather_recent_topic_blocklist(office: Any) -> list[str]:
+  '''최근 5시간 autonomous 발언 + pending 건의 제목에서 재발 주제 추출.
+
+  - autonomous 12건 + pending suggestion 전체 제목에서 3+글자 키워드 빈도 집계
+  - 2회 이상 등장한 키워드를 "이미 다뤄진 주제"로 반환 (최대 12개)
+  - stuck 여부 무관하게 _choose_topic에 전달되어 발화에서 제외됨
+  '''
+  from orchestration.office import _extract_keywords
+  from collections import Counter
+  bag: Counter[str] = Counter()
+  try:
+    from db.log_store import load_logs
+    logs = load_logs(limit=40)
+    for log in logs:
+      if log.get('event_type') != 'autonomous':
+        continue
+      for kw in _extract_keywords(log.get('message', '')):
+        if len(kw) >= 3:
+          bag[kw] += 1
+  except Exception:
+    pass
+  try:
+    from db.suggestion_store import list_suggestions
+    for s in list_suggestions(status='pending')[:20]:
+      for kw in _extract_keywords(s.get('title', '')):
+        if len(kw) >= 3:
+          bag[kw] += 2  # 건의는 가중치 2배 — 이미 공식화된 주제
+  except Exception:
+    pass
+  return [kw for kw, n in bag.most_common(30) if n >= 2][:12]
+
+
+def _team_recent_lines(
+  recent: list[dict], speaker_name: str, own_limit: int = 5, peer_limit: int = 2,
+) -> list[str]:
+  '''speaker 본인 own_limit건 + 동료별 peer_limit건씩 autonomous 발언 라인.
+
+  같은 기법/주제를 동료가 이미 얘기했는지 speaker가 인지하도록 프롬프트에 주입.
+  '''
+  from collections import defaultdict
+  buckets: dict[str, list[str]] = defaultdict(list)
+  for log in recent:
+    aid = log.get('agent_id', '')
+    if aid not in ('planner', 'designer', 'developer', 'qa', 'teamlead'):
+      continue
+    if log.get('event_type') not in ('autonomous', 'response'):
+      continue
+    msg = (log.get('message') or '').strip()
+    if not msg:
+      continue
+    buckets[aid].append(msg[:140])
+
+  lines: list[str] = []
+  own = buckets.get(speaker_name, [])[:own_limit]
+  lines.extend(own)
+  for peer, msgs in buckets.items():
+    if peer == speaker_name:
+      continue
+    for m in msgs[:peer_limit]:
+      lines.append(f'[{peer}] {m}')
+  return lines[:12]
+
+
 def _gather_real_seeds(office: Any, recent_context: str) -> str:
   '''미처리 건의 + 축적 교훈 + 최근 프로젝트에서 구체 시드 조합.'''
   from orchestration.office import _extract_keywords
@@ -163,8 +226,13 @@ def _choose_topic(
   concrete_seed: str,
   recent_context: str,
   project_context: str,
+  recent_topic_blocklist: list[str] | None = None,
 ) -> str:
-  '''주제 선택 — stuck/seed 존재/신선도에 따라 분기.'''
+  '''주제 선택 — stuck/seed 존재/신선도에 따라 분기.
+
+  recent_topic_blocklist는 stuck 여부 무관하게 "최근 반복 + 건의화된 주제"로
+  매 호출 주입되어, 에이전트가 이미 다룬 소재를 다시 꺼내지 않게 한다.
+  '''
   fresh_topics = [
     '본인 전문 영역의 구체적 기법/도구 공유 (버전, 수치 포함)',
     '현재 진행 중인 업무 흐름에서 발견한 병목이나 낭비',
@@ -173,12 +241,30 @@ def _choose_topic(
     '본인이 최근 학습한 새 기법/라이브러리',
     '팀 내 역할 경계에서 오해 소지가 있는 지점',
   ]
+  # stuck 발동 키워드 + 블록리스트 병합 (중복 제거)
+  all_banned: list[str] = []
+  seen: set[str] = set()
+  for kw in (repeated if stuck else []):
+    if kw not in seen:
+      seen.add(kw)
+      all_banned.append(kw)
+  for kw in (recent_topic_blocklist or []):
+    if kw not in seen:
+      seen.add(kw)
+      all_banned.append(kw)
+
   banned_kws = ''
-  if stuck:
+  if all_banned:
+    header = (
+      '[절대 금지: 최근 5시간 내 반복되었거나 이미 건의로 올라간 주제/키워드]'
+      if not stuck else
+      '[절대 금지: 최근에 반복된 + 이미 건의로 올라간 주제/키워드]'
+    )
     banned_kws = (
-      f'\n\n[절대 금지: 최근에 반복된 다음 주제/키워드는 더 이상 언급 금지]\n'
-      f'- {", ".join(repeated[:8])}\n'
-      f'(같은 키워드 한 번만 더 나와도 [PASS] 처리)'
+      f'\n\n{header}\n'
+      f'- {", ".join(all_banned[:15])}\n'
+      f'(같은 키워드/기법명/커밋해시 한 번만 더 나와도 [PASS] 처리. '
+      f'이미 다룬 주제의 재탕은 진전이 아니다.)'
     )
 
   use_fresh = stuck or random.random() < 0.3
@@ -194,7 +280,8 @@ def _choose_topic(
       f'[완전히 새 주제] {seed}\n'
       f'(이전 대화에 이어가지 말고 새 이야기를 꺼내세요){banned_kws}'
     )
-  return f'{recent_context}\n{project_context}' if project_context else recent_context
+  base = f'{recent_context}\n{project_context}' if project_context else recent_context
+  return f'{base}{banned_kws}'
 
 
 def _pick_speakers(recent: list[dict]) -> tuple[list[str], list[str]]:
@@ -235,7 +322,12 @@ def _load_code_context() -> str:
 
 
 async def _run_speaker_chain(
-  office: Any, speaker_name: str, topic: str, candidates: list[str], code_ctx: str,
+  office: Any,
+  speaker_name: str,
+  topic: str,
+  candidates: list[str],
+  code_ctx: str,
+  recent_logs: list[dict] | None = None,
 ) -> str:
   '''한 speaker의 발화 → 1단 반응 → 2단 결론 체인 실행.
 
@@ -256,16 +348,13 @@ async def _run_speaker_chain(
     except Exception:
       logger.debug('trend_research 실패: %s', speaker_name, exc_info=True)
 
-  # 본인 최근 자발적 발언 5개 — 같은 주제 반복 방지용
+  # 본인 5개 + 동료 각 2개 — 같은 주제 반복 방지용. recent_logs 있으면 재사용.
   own_recent: list[str] = []
   try:
-    from db.log_store import load_logs as _load_logs
-    recent_all = _load_logs(limit=60)
-    own_recent = [
-      l['message'] for l in recent_all
-      if l.get('agent_id') == speaker_name
-      and l.get('event_type') in ('autonomous', 'response')
-    ][:5]
+    if recent_logs is None:
+      from db.log_store import load_logs as _load_logs
+      recent_logs = _load_logs(limit=60)
+    own_recent = _team_recent_lines(recent_logs, speaker_name)
   except Exception:
     pass
 
@@ -449,16 +538,29 @@ async def run_loop(office: Any) -> None:
 
       stuck, repeated = _detect_topic_stuck(recent_context)
       concrete_seed = _gather_real_seeds(office, recent_context)
-      topic = _choose_topic(stuck, repeated, concrete_seed, recent_context, project_context)
+      topic_blocklist = _gather_recent_topic_blocklist(office)
+      topic = _choose_topic(
+        stuck, repeated, concrete_seed, recent_context, project_context,
+        recent_topic_blocklist=topic_blocklist,
+      )
 
       speakers, candidates = _pick_speakers(recent)
       code_ctx = _load_code_context()
+
+      # speaker chain에서 팀 발언 참조용으로 더 깊은 로그 1회 로딩
+      deep_logs: list[dict] = []
+      try:
+        from db.log_store import load_logs as _load_logs_deep
+        deep_logs = _load_logs_deep(limit=60)
+      except Exception:
+        deep_logs = recent
 
       first_reactor = ''
       speaker_name = ''
       for speaker_name in speakers:
         first_reactor = await _run_speaker_chain(
           office, speaker_name, topic, candidates, code_ctx,
+          recent_logs=deep_logs,
         )
 
       await _maybe_teamlead_closing(office, recent_context, speaker_name, first_reactor)
