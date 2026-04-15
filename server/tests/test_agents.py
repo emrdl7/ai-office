@@ -6,11 +6,11 @@ AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
 
 def test_planner_has_system_prompt():
-  '''기획자 시스템 프롬프트 파일 존재 및 역할 정의 섹션 포함 (ORCH-02)'''
+  '''기획자 시스템 프롬프트 파일 존재 및 역할 섹션 포함 (ORCH-02)'''
   planner_path = AGENTS_DIR / 'planner.md'
   assert planner_path.exists(), f'파일 없음: {planner_path}'
   content = planner_path.read_text(encoding='utf-8')
-  assert '역할 정의' in content
+  assert '## 역할' in content
 
 
 def test_all_agents_have_system_prompts():
@@ -22,7 +22,7 @@ def test_all_agents_have_system_prompts():
 
 def test_each_agent_has_required_sections():
   '''각 에이전트 프롬프트에 필수 4개 섹션 포함 (D-02)'''
-  required = ['역할 정의', 'JSON 출력', '협업 규칙', '금지사항']
+  required = ['## 성격', '## 판단력', '## 역할']
   for agent in ['planner', 'designer', 'developer', 'qa']:
     content = (AGENTS_DIR / f'{agent}.md').read_text(encoding='utf-8')
     for section in required:

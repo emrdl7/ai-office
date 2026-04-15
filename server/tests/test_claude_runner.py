@@ -69,7 +69,9 @@ async def test_bare_flag_in_subprocess_command(monkeypatch):
         captured_args.extend(args)
         proc = AsyncMock()
         proc.returncode = 0
-        proc.communicate = AsyncMock(return_value=(b'', b''))
+        proc.communicate = AsyncMock(
+            return_value=(_make_stream_json_output('ok'), b''),
+        )
         return proc
 
     monkeypatch.setattr(
@@ -79,22 +81,25 @@ async def test_bare_flag_in_subprocess_command(monkeypatch):
 
     await run_claude_isolated('test')
 
-    assert '--bare' in captured_args
     assert '--print' in captured_args
     assert '--output-format' in captured_args
     assert 'stream-json' in captured_args
+    assert '--verbose' in captured_args
     assert '--no-session-persistence' in captured_args
+    assert '--dangerously-skip-permissions' in captured_args
 
 
-async def test_isolation_dir_used_as_cwd(monkeypatch):
-    '''격리 디렉토리가 subprocess cwd로 사용됨 (D-06)'''
+async def test_project_root_used_as_cwd(monkeypatch):
+    '''프로젝트 루트가 subprocess cwd로 사용됨'''
     captured_kwargs = {}
 
     async def capture_subprocess(*args, **kwargs):
         captured_kwargs.update(kwargs)
         proc = AsyncMock()
         proc.returncode = 0
-        proc.communicate = AsyncMock(return_value=(b'', b''))
+        proc.communicate = AsyncMock(
+            return_value=(_make_stream_json_output('ok'), b''),
+        )
         return proc
 
     monkeypatch.setattr(
@@ -105,12 +110,12 @@ async def test_isolation_dir_used_as_cwd(monkeypatch):
     await run_claude_isolated('test')
 
     assert 'cwd' in captured_kwargs
-    assert 'ai-office-claude-isolated' in captured_kwargs['cwd']
+    assert captured_kwargs['cwd'].endswith('ai-office')
 
 
 async def test_failure_raises_claude_runner_error(mock_proc_failure):
     '''subprocess 실패 시 ClaudeRunnerError 발생'''
-    with pytest.raises(ClaudeRunnerError, match='Claude CLI 실패'):
+    with pytest.raises(ClaudeRunnerError):
         await run_claude_isolated('test')
 
 

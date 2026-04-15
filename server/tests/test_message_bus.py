@@ -16,7 +16,7 @@ def bus(tmp_path):
 def _make_message(**kwargs) -> AgentMessage:
     defaults = {
         'type': 'task_request',
-        'from': 'claude',
+        'from': 'orchestrator',
         'to': 'planner',
         'payload': {'task': 'test'},
     }
