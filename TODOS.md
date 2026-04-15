@@ -34,10 +34,11 @@
        `_contextual_reaction`, `_team_chat`, `_resolve_reviewer` 분리 완료.
        office.py 3,205 → 2,564 LOC (−641). agent_interactions.py 726 LOC 신규.
        `_record_dynamic`/`_PEER_REVIEWERS`는 공유 인프라로 Office에 유지.
-4. [ ] **`project_runner.py`** — `_handle_project`, `_continue_project`,
+4. [x] **`project_runner.py`** — `_handle_project`, `_continue_project`,
        `_plan_project_phases`, `_default_phases`, `_execute_project`, `_cross_review`,
        `_auto_export`, `_run_qa_check`, `_teamlead_final_review`,
-       `_run_planner_synthesize`, `_quick_task_second_opinion`, `_handle_quick_task`.
+       `_run_planner_synthesize`, `_quick_task_second_opinion`, `_handle_quick_task`
+       분리 완료. office.py 2,564 → 1,228 LOC (−1,336). project_runner.py 1,452 LOC.
 5. [ ] **`suggestion_filer.py`** — `_file_reaction_suggestion`, `_auto_file_suggestion`.
 6. [ ] **`Office` 본체** = 상태 머신 + `receive()` 디스패치 + `__init__`만 남김.
        목표 ≤ 500 LOC.
