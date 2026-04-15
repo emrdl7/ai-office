@@ -458,6 +458,58 @@ async def _consult_peers(
 
 
 
+_RELATIONSHIP_SUGGESTION_THRESHOLD = 3
+_RELATIONSHIP_SUGGESTION_COOLDOWN_HOURS = 24
+
+
+async def _maybe_file_relationship_suggestion(office, reviewer_id: str, worker_id: str) -> None:
+  '''같은 (reviewer→worker) 쌍에서 peer_concern이 임계치 누적되면 건의를 1회 등록.
+
+  중복 방지: 24h 내 동일 쌍 건의 존재 시 스킵.
+  '''
+  dynamics = office.team_memory.get_dynamics_for(worker_id)
+  pair_concerns = [
+    d for d in dynamics
+    if d.from_agent == reviewer_id and d.to_agent == worker_id and d.dynamic_type == 'peer_concern'
+  ]
+  if len(pair_concerns) < _RELATIONSHIP_SUGGESTION_THRESHOLD:
+    return
+
+  from db.suggestion_store import create_suggestion, list_suggestions
+
+  topic_marker = f'관계 개선 필요: {reviewer_id}↔{worker_id}'
+  cutoff = datetime.now(timezone.utc).timestamp() - _RELATIONSHIP_SUGGESTION_COOLDOWN_HOURS * 3600
+  try:
+    for item in list_suggestions(status=''):
+      if topic_marker not in (item.get('title') or ''):
+        continue
+      try:
+        if datetime.fromisoformat(item['created_at'].replace('Z', '+00:00')).timestamp() > cutoff:
+          return
+      except Exception:
+        return
+  except Exception:
+    logger.debug('관계 건의 중복 검사 실패', exc_info=True)
+
+  recent_descriptions = [d.description[:60] for d in pair_concerns[-3:]]
+  body = (
+    f'{display_name(reviewer_id)}이(가) {display_name(worker_id)}의 작업에 대해 '
+    f'반복적으로 우려를 제기했습니다 ({len(pair_concerns)}회).\n\n'
+    f'최근 사례:\n' + '\n'.join(f'- {d}' for d in recent_descriptions)
+  )
+  try:
+    create_suggestion(
+      agent_id=reviewer_id,
+      title=topic_marker,
+      content=body,
+      category='collaboration',
+      target_agent=worker_id,
+    )
+    logger.info('관계 개선 건의 자동 등록: %s↔%s', reviewer_id, worker_id)
+  except Exception:
+    logger.debug('관계 건의 등록 실패', exc_info=True)
+
+
 async def _peer_review(
   office,
   worker_name: str,
@@ -522,6 +574,12 @@ async def _peer_review(
           dynamic_type='peer_concern' if has_concern else 'peer_approved',
           description=f'[{phase_name}] {feedback.replace("[CONCERN]", "").strip()[:80]}',
         )
+        # 누적 임계치(같은 쌍 3회 peer_concern) 도달 시 자동 건의 — P2
+        if has_concern:
+          try:
+            await _maybe_file_relationship_suggestion(office, reviewer_id, worker_name)
+          except Exception:
+            logger.debug('관계 개선 자동 건의 실패', exc_info=True)
     except Exception:
       logger.debug("피어 리뷰 실행 실패: %s", reviewer_id, exc_info=True)
 
@@ -582,11 +640,40 @@ async def _handoff_comment(office, from_agent: str, to_agent: str, phase_name: s
 
 
 async def _task_acknowledgment(office, agent_name: str, phase_name: str) -> None:
-  '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.'''
+  '''업무 수령 시 담당자가 간단한 확인 메시지를 보낸다.
+
+  직전 단계에서 자신이 받은 피어 우려(peer_concern)가 있으면
+  수령 확인에 자연스럽게 반영하도록 프롬프트에 주입 (P2 보강).
+  '''
+  prior_concern_line = ''
+  try:
+    recent = [
+      f for f in (office._phase_feedback or [])
+      if f.get('phase') != phase_name
+    ][-3:]
+    concern_text = next(
+      (f['content'] for f in reversed(recent) if 'CONCERN' in f.get('content', '').upper() or '우려' in f.get('content', '')),
+      '',
+    )
+    if not concern_text:
+      dynamics = office.team_memory.get_dynamics_for(agent_name)
+      concerns = [
+        d for d in dynamics
+        if d.to_agent == agent_name and d.dynamic_type == 'peer_concern'
+      ]
+      concerns.sort(key=lambda d: d.timestamp, reverse=True)
+      if concerns:
+        concern_text = concerns[0].description[:80]
+    if concern_text:
+      prior_concern_line = f'\n[직전 피어 우려] {concern_text[:100]}\n수령 확인에 "이번엔 {{핵심}} 신경쓰겠다" 식으로 자연스럽게 반영.\n'
+  except Exception:
+    logger.debug('task_ack: 피어 우려 조회 실패', exc_info=True)
+
   try:
     response = await run_claude_isolated(
       f'당신은 {display_name(agent_name)}입니다.\n'
       f'팀장이 "{phase_name}" 작업을 지시했습니다.\n'
+      f'{prior_concern_line}'
       f'"네, 확인했습니다. [간단한 계획 한 줄]" 형태로 수령 확인하세요.\n'
       f'30자 이내, 메신저 톤. 마크다운 금지.',
       model='claude-haiku-4-5-20251001',
@@ -699,18 +786,47 @@ async def _work_commentary(office, worker: str, phase_name: str, result_preview:
 
 
 async def _phase_intro(office, agent_name: str, phase_name: str) -> None:
-  '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.'''
+  '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.
+
+  과거 실패 교훈 1개 + 팀원의 협업 조언 1줄을 프롬프트에 주입해
+  맥락 있는 착수 메시지를 유도한다 (P2 보강).
+  '''
   fallback_intros = {
     'planner': '기획 구조 잡아볼게요 📋',
     'designer': '디자인 방향 잡겠습니다 🎨',
     'developer': '코드 작성 들어갑니다 💻',
     'qa': '검수 기준 세우겠습니다 🔍',
   }
+
+  context_lines = []
+  try:
+    lessons = office.team_memory.get_lessons_for_agent(agent_name, limit=1)
+    if lessons:
+      context_lines.append(f'[과거 교훈] {lessons[0].lesson[:100]}')
+  except Exception:
+    logger.debug('phase_intro: 교훈 조회 실패', exc_info=True)
+  try:
+    dynamics = office.team_memory.get_dynamics_for(agent_name)
+    incoming = [
+      d for d in dynamics
+      if d.to_agent == agent_name and d.dynamic_type in ('peer_concern', 'peer_approved', 'consulted')
+    ]
+    incoming.sort(key=lambda d: d.timestamp, reverse=True)
+    if incoming:
+      d = incoming[0]
+      context_lines.append(f'[{d.from_agent}의 직전 의견] {d.description[:80]}')
+  except Exception:
+    logger.debug('phase_intro: 다이나믹 조회 실패', exc_info=True)
+
+  context_block = ('\n' + '\n'.join(context_lines) + '\n') if context_lines else ''
+
   try:
     response = await run_claude_isolated(
       f'당신은 {display_name(agent_name)}입니다.\n'
       f'"{phase_name}" 작업을 시작합니다.\n'
+      f'{context_block}'
       f'동료들에게 작업 포부를 한마디 해주세요 (20자 이내, 메신저 톤, 이모지 1개, 마크다운 금지).\n'
+      f'위 맥락이 있으면 자연스럽게 반영하세요.\n'
       f'예: "사용자 동선 꼼꼼히 잡아볼게요 🎯", "반응형까지 깔끔하게 가겠습니다 💪"',
       model='claude-haiku-4-5-20251001',
       timeout=10.0,

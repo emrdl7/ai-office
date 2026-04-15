@@ -22,12 +22,31 @@ class SharedLesson:
     timestamp: str
 
 
+DYNAMIC_TYPES = (
+    # 피어 리뷰 (agent_interactions._peer_review)
+    'peer_concern',          # 리뷰어가 우려 표명 ([CONCERN])
+    'peer_approved',         # 리뷰어가 무난/긍정 평가
+    # 자문 (agent_interactions._consult_peers)
+    'consulted',             # A가 B에게 자문 요청 → B 응답
+    # 다짐/약속 (suggestion_filer._file_commitment_suggestion)
+    'committed_to_request',  # A가 B의 요청에 "~하겠습니다" 응답
+    # 멘션 라우팅 (agent_interactions._route_agent_mentions)
+    'needs_clarification',   # A가 작업 중 B에게 @멘션으로 질문
+    # 미사용 예약 — 향후 분류용
+    'prefers_detail', 'works_well', 'complements',
+)
+
+
 @dataclass
 class TeamDynamic:
-    '''에이전트 간 협업 관계 기록'''
+    '''에이전트 간 협업 관계 기록.
+
+    dynamic_type은 위 DYNAMIC_TYPES 어휘를 사용한다 (자유 문자열 허용하지만
+    가능하면 표준 어휘로 통일 — 통계 집계 일관성 확보).
+    '''
     from_agent: str
     to_agent: str
-    dynamic_type: str     # 'prefers_detail' | 'works_well' | 'needs_clarification' | 'complements'
+    dynamic_type: str
     description: str
     timestamp: str
 
