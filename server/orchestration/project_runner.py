@@ -1528,3 +1528,60 @@ async def _generate_stitch_mockup(office, all_results: dict, user_input: str) ->
   except Exception as e:
     logger.warning("Stitch 시안 생성 실패", exc_info=True)
     await office._emit('designer', f'시안 생성을 건너뜁니다 ({str(e)[:100]})', 'response')
+
+
+async def _extract_user_questions(office, user_input: str, meeting_summary: str) -> str:
+  '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''
+  prompt = (
+    f'팀 회의가 끝났습니다. 당신은 팀장입니다.\n\n'
+    f'[사용자 요청]\n{user_input}\n\n'
+    f'[회의 내용]\n{meeting_summary}\n\n'
+    f'회의에서 사용자에게 확인이 필요한 사항이 있습니까?\n'
+    f'예: 사이트 목적(브랜딩/채용), 타겟 대상, 필수 기능, 디자인 선호도 등\n\n'
+    f'확인이 필요하면 "@마스터"로 시작하여 자연스러운 메신저 톤으로 질문하세요 (2~4개 질문).\n'
+    f'예시: "@마스터 몇 가지 확인이 필요합니다."\n'
+    f'사용자 요청이 이미 충분히 구체적이면 [SKIP] 한 단어만 출력하세요.\n'
+    f'마크다운 형식 사용하지 마세요.'
+  )
+  try:
+    response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
+    text = response.strip()
+    if text.upper().startswith('[SKIP]') or text.upper() == 'SKIP':
+      return ''
+    return text
+  except Exception:
+    logger.debug("사용자 확인 질문 추출 실패", exc_info=True)
+    return ''
+
+
+async def _check_user_directive(office) -> dict | None:
+  '''소단계 사이에 사용자가 보낸 메시지가 있는지 확인한다.'''
+  from db.log_store import load_logs
+
+  recent = load_logs(limit=5)
+  for log in recent:
+    if log['agent_id'] != 'user':
+      continue
+    if log['event_type'] != 'message':
+      continue
+    msg = log['message'].strip()
+
+    if not hasattr(office, '_last_checked_log_id'):
+      office._last_checked_log_id = ''
+    if log['id'] == office._last_checked_log_id:
+      return None
+    office._last_checked_log_id = log['id']
+
+    stop_keywords = ('중단', '멈춰', '그만', '스탑', 'stop', '취소')
+    if any(kw in msg.lower() for kw in stop_keywords):
+      return {'action': 'stop'}
+
+    mentions = re.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
+    if mentions:
+      return {'action': 'mention_feedback', 'message': msg, 'mentions': mentions}
+
+    skip_keywords = ('진행', 'ㅇㅇ', '응', '네', 'ok', 'yes', '확인')
+    if len(msg) > 5 and not any(msg.lower().strip() == kw for kw in skip_keywords):
+      return {'message': msg}
+
+  return None

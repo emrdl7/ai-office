@@ -21,6 +21,13 @@ from config.team import (
   display_name, display_with_role, profile_names,
 )
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
+from orchestration import (
+  agent_interactions,
+  autonomous_loop,
+  project_runner,
+  suggestion_filer,
+  teamlead_review,
+)
 from runners.groq_runner import GroqRunner
 from runners.claude_runner import run_claude_isolated
 from runners.gemini_runner import run_gemini
@@ -253,7 +260,6 @@ class Office:
     self._context_summary = '\n'.join(updated[-15:])
 
   async def _team_chat(self, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._team_chat(self, user_input, chat_subtype, teamlead_response)
 
   async def receive(self, user_input: str) -> dict[str, Any]:
@@ -432,110 +438,39 @@ class Office:
     return {'state': self._state.value, 'response': '처리할 수 없는 입력입니다.', 'artifacts': []}
 
   async def _handle_quick_task(self, *args, **kwargs):
-    from orchestration import project_runner
     return await project_runner._handle_quick_task(self, *args, **kwargs)
 
   async def _handle_project(self, *args, **kwargs):
-    from orchestration import project_runner
     return await project_runner._handle_project(self, *args, **kwargs)
 
   async def _continue_project(self, user_answer: str) -> dict[str, Any]:
-    from orchestration import project_runner
     return await project_runner._continue_project(self, user_answer)
 
   async def _plan_project_phases(self, *args, **kwargs):
-    from orchestration import project_runner
     return await project_runner._plan_project_phases(self, *args, **kwargs)
 
   def _default_phases(self, user_input: str) -> tuple[list[dict], str]:
-    from orchestration import project_runner
     return project_runner._default_phases(self, user_input)
 
   async def _execute_project(self, *args, **kwargs):
-    from orchestration import project_runner
     return await project_runner._execute_project(self, *args, **kwargs)
 
   async def _auto_export(self, phase_artifacts: list[str]) -> None:
-    from orchestration import project_runner
     return await project_runner._auto_export(self, phase_artifacts)
 
   async def _cross_review(self, group_name: str, all_results: dict[str, str]) -> None:
-    from orchestration import project_runner
     return await project_runner._cross_review(self, group_name, all_results)
 
   async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str:
-    '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''
-    prompt = (
-      f'팀 회의가 끝났습니다. 당신은 팀장입니다.\n\n'
-      f'[사용자 요청]\n{user_input}\n\n'
-      f'[회의 내용]\n{meeting_summary}\n\n'
-      f'회의에서 사용자에게 확인이 필요한 사항이 있습니까?\n'
-      f'예: 사이트 목적(브랜딩/채용), 타겟 대상, 필수 기능, 디자인 선호도 등\n\n'
-      f'확인이 필요하면 "@마스터"로 시작하여 자연스러운 메신저 톤으로 질문하세요 (2~4개 질문).\n'
-      f'예시: "@마스터 몇 가지 확인이 필요합니다."\n'
-      f'사용자 요청이 이미 충분히 구체적이면 [SKIP] 한 단어만 출력하세요.\n'
-      f'마크다운 형식 사용하지 마세요.'
-    )
-    try:
-      response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
-      text = response.strip()
-      if text.upper().startswith('[SKIP]') or text.upper() == 'SKIP':
-        return ''
-      return text
-    except Exception:
-      logger.debug("사용자 확인 질문 추출 실패", exc_info=True)
-      return ''
+    return await project_runner._extract_user_questions(self, user_input, meeting_summary)
 
   async def _check_user_directive(self) -> dict | None:
-    '''소단계 사이에 사용자가 보낸 메시지가 있는지 확인한다.
-
-    Returns:
-      None — 사용자 메시지 없음
-      {'action': 'stop'} — 중단 요청
-      {'message': str} — 방향 전환/추가 지시
-    '''
-    from db.log_store import load_logs
-
-    recent = load_logs(limit=5)
-    for log in recent:
-      if log['agent_id'] != 'user':
-        continue
-      if log['event_type'] != 'message':
-        continue
-      msg = log['message'].strip()
-
-      # 이미 처리한 메시지인지 (작업 시작 전 메시지는 무시)
-      if not hasattr(self, '_last_checked_log_id'):
-        self._last_checked_log_id = ''
-      if log['id'] == self._last_checked_log_id:
-        return None
-      self._last_checked_log_id = log['id']
-
-      # 중단 요청
-      stop_keywords = ('중단', '멈춰', '그만', '스탑', 'stop', '취소')
-      if any(kw in msg.lower() for kw in stop_keywords):
-        return {'action': 'stop'}
-
-      # @멘션 감지 → 해당 에이전트가 짧게 응답
-      import re as _re_directive
-      mentions = _re_directive.findall(r'@([가-힣A-Za-z]+(?:님)?)', msg)
-      if mentions:
-        return {'action': 'mention_feedback', 'message': msg, 'mentions': mentions}
-
-      # 새로운 지시 (작업 관련 메시지)
-      # "진행해", "ㅇㅇ" 등 단순 확인은 무시
-      skip_keywords = ('진행', 'ㅇㅇ', '응', '네', 'ok', 'yes', '확인')
-      if len(msg) > 5 and not any(msg.lower().strip() == kw for kw in skip_keywords):
-        return {'message': msg}
-
-    return None
+    return await project_runner._check_user_directive(self)
 
   async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._team_reaction(self, worker, phase_name, content_summary)
 
   async def _consult_peers(self, *args, **kwargs):
-    from orchestration import agent_interactions
     return await agent_interactions._consult_peers(self, *args, **kwargs)
 
   def _record_dynamic(
@@ -572,35 +507,27 @@ class Office:
   }
 
   async def _peer_review(self, worker_name: str, phase_name: str, content: str, user_input: str) -> list[dict]:
-    from orchestration import agent_interactions
     return await agent_interactions._peer_review(self, worker_name, phase_name, content, user_input)
 
   async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._handoff_comment(self, from_agent, to_agent, phase_name)
 
   async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._task_acknowledgment(self, agent_name, phase_name)
 
   async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str:
-    from orchestration import agent_interactions
     return await agent_interactions._contextual_reaction(self, reactor, phase_name, worker)
 
   def _resolve_reviewer(self, worker: str, prompt: str) -> tuple[str, str] | None:
-    from orchestration import agent_interactions
     return agent_interactions._resolve_reviewer(self, worker, prompt)
 
   async def _quick_task_second_opinion(self, *args, **kwargs):
-    from orchestration import project_runner
     return await project_runner._quick_task_second_opinion(self, *args, **kwargs)
 
   async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._work_commentary(self, worker, phase_name, result_preview)
 
   async def _phase_intro(self, agent_name: str, phase_name: str) -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._phase_intro(self, agent_name, phase_name)
 
   async def handle_mid_work_input(self, user_input: str) -> None:
@@ -677,27 +604,21 @@ class Office:
     await self._emit('teamlead', f'말씀 확인했습니다. 작업에 반영하겠습니다.', 'response')
 
   async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
-    from orchestration import project_runner
     return await project_runner._create_handoff_guide(self, group_name, group_results, target_phase)
 
   async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None:
-    from orchestration import project_runner
     return await project_runner._generate_stitch_mockup(self, all_results, user_input)
 
   async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool:
-    from orchestration import project_runner
     return await project_runner._run_qa_check(self, qa_agent, node, content)
 
   async def _run_planner_synthesize(self, *args, **kwargs):
-    from orchestration import project_runner
     return await project_runner._run_planner_synthesize(self, *args, **kwargs)
 
   async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool:
-    from orchestration import project_runner
     return await project_runner._teamlead_final_review(self, user_input, task_graph)
 
   async def _route_agent_mentions(self, speaker: str, content: str) -> None:
-    from orchestration import agent_interactions
     return await agent_interactions._route_agent_mentions(self, speaker, content)
 
   # ──────────────────────────────────────────────────────────────
@@ -708,34 +629,27 @@ class Office:
 
   async def start_autonomous_loop(self) -> None:
     '''자율 활동 루프 — autonomous_loop 모듈로 위임.'''
-    from orchestration import autonomous_loop
     return await autonomous_loop.run_loop(self)
 
   def stop_autonomous_loop(self) -> None:
     '''자발적 활동 루프를 중단한다.'''
-    from orchestration import autonomous_loop
     autonomous_loop.stop_loop(self)
 
   def _load_digest_state(self) -> dict:
-    from orchestration import autonomous_loop
     return autonomous_loop.load_digest_state(self)
 
   def _save_digest_state(self, state: dict) -> None:
-    from orchestration import autonomous_loop
     autonomous_loop.save_digest_state(self, state)
 
   async def start_teamlead_review_loop(self) -> None:
     '''팀장 배치 리뷰 루프 — teamlead_review 모듈로 위임.'''
-    from orchestration import teamlead_review
     return await teamlead_review.run_loop(self)
 
   async def _run_single_review(self, force: bool = False) -> None:
     '''배치 리뷰 1회 실행 — teamlead_review 모듈로 위임. main.py 어드민 엔드포인트 호환.'''
-    from orchestration import teamlead_review
     return await teamlead_review.run_single(self, force=force)
 
   def stop_teamlead_review_loop(self) -> None:
-    from orchestration import teamlead_review
     teamlead_review.stop_loop(self)
 
   async def _team_retrospective(
@@ -747,7 +661,6 @@ class Office:
     duration: float,
   ) -> None:
     '''프로젝트 완료 회고 — teamlead_review 모듈로 위임.'''
-    from orchestration import teamlead_review
     return await teamlead_review.run_retrospective(
       self, project_title, project_type, all_results, user_input, duration,
     )
@@ -757,12 +670,10 @@ class Office:
 
   async def _react_to_received_reactions(self) -> None:
     '''리액션 답례 — autonomous_loop 모듈로 위임.'''
-    from orchestration import autonomous_loop
     return await autonomous_loop.react_to_received_reactions(self)
 
   async def _agents_react_to_peers(self) -> None:
     '''피어 이모지 리액션 — autonomous_loop 모듈로 위임.'''
-    from orchestration import autonomous_loop
     return await autonomous_loop.agents_react_to_peers(self)
 
   async def _autonomous_react(
@@ -772,7 +683,6 @@ class Office:
     prior_message: str,
   ) -> str:
     '''자발 1단 반응 — autonomous_loop 모듈로 위임.'''
-    from orchestration import autonomous_loop
     return await autonomous_loop.autonomous_react(reactor_name, prior_speaker, prior_message)
 
   async def _autonomous_closing(
@@ -783,18 +693,14 @@ class Office:
     challenge: str,
   ) -> str:
     '''자발 2단 결론 — autonomous_loop 모듈로 위임.'''
-    from orchestration import autonomous_loop
     return await autonomous_loop.autonomous_closing(original_speaker, original_message, challenger, challenge)
 
 
   async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str) -> None:
-    from orchestration import suggestion_filer
     return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message)
 
   async def _auto_file_suggestion(self, agent_id: str, message: str) -> None:
-    from orchestration import suggestion_filer
     return await suggestion_filer._auto_file_suggestion(self, agent_id, message)
 
   async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '') -> None:
-    from orchestration import suggestion_filer
     return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message)
