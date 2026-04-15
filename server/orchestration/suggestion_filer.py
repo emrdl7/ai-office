@@ -15,7 +15,7 @@ from log_bus.event_bus import LogEvent
 logger = logging.getLogger(__name__)
 
 
-async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, message: str) -> None:
+async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None:
   '''소단계 리액션의 [건의] 라벨을 건의게시판에 등록. _auto_file_suggestion의 dedup을 재사용.'''
   from db.suggestion_store import create_suggestion, list_suggestions
 
@@ -78,6 +78,7 @@ async def _file_reaction_suggestion(office, agent_id: str, phase_name: str, mess
       content=content,
       category=matched_category,
       target_agent=target,
+      source_log_id=source_log_id,
     )
     await office._emit(
       'teamlead',

@@ -661,7 +661,7 @@ class Office:
     return await autonomous_loop.autonomous_closing(original_speaker, original_message, challenger, challenge)
 
 
-  async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str) -> None: return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message)
+  async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None: return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message, source_log_id)
 
   async def _auto_file_suggestion(self, agent_id: str, message: str, source_log_id: str = '') -> None: return await suggestion_filer._auto_file_suggestion(self, agent_id, message, source_log_id)
 

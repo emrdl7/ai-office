@@ -640,7 +640,7 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
     const isAutonomousMsg = log.event_type === 'autonomous'
     if (isNewGroup) {
       elements.push(
-        <div key={log.id ?? i} className="flex gap-2 md:gap-3 py-1.5">
+        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined} className="flex gap-2 md:gap-3 py-1.5 transition-shadow rounded">
           <div className="flex-shrink-0 mt-0.5 relative self-start w-8 h-8 md:w-9 md:h-9">
             <div className={`w-full h-full rounded-full bg-gradient-to-br ${profile.color}
               flex items-center justify-center shadow-sm overflow-hidden`}>
@@ -674,7 +674,7 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
       )
     } else {
       elements.push(
-        <div key={log.id ?? i} className="flex gap-3 py-0.5 pl-10 md:pl-12">
+        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined} className="flex gap-3 py-0.5 pl-10 md:pl-12 transition-shadow rounded">
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
             <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
           </div>

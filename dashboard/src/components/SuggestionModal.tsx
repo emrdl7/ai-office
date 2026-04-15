@@ -18,6 +18,7 @@ interface Suggestion {
   target_agent?: string     // 적용 대상 에이전트 (빈 값이면 제안자 본인)
   auto_applied?: number     // 자동 반영 여부 (0/1)
   auto_applied_at?: string  // ISO timestamp
+  source_log_id?: string    // 트리거 발화 로그 ID (있으면 채팅 로그로 점프)
 }
 
 const TYPE_BADGE: Record<string, { Icon: typeof IconBrain; label: string; color: string }> = {
@@ -374,6 +375,26 @@ export function SuggestionModal() {
                             title="원 건의 ID">
                             #{parentId}
                           </span>
+                        )}
+                        {s.source_log_id && (
+                          <a
+                            href={`#log-${s.source_log_id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const el = document.getElementById(`log-${s.source_log_id}`)
+                              if (el) {
+                                e.preventDefault()
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                el.classList.add('ring-2', 'ring-blue-400')
+                                setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 2000)
+                              }
+                            }}
+                            className="px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/30
+                              text-blue-600 dark:text-blue-400 hover:underline"
+                            title="이 건의의 원본 발화 로그로 이동"
+                          >
+                            📍 원본
+                          </a>
                         )}
                         <span className="ml-auto text-gray-400">
                           {new Date(s.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
