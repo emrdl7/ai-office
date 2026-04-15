@@ -30,6 +30,9 @@ jobs:
         working-directory: server
         run: uv run ruff check .
 
+      - name: Persona schema lint (agents/*.md 섹션 표준)
+        run: python3 scripts/lint_persona.py
+
       - name: Run mypy (strict — core/db/log_bus/bus + orchestration 13종)
         working-directory: server
         run: uv run mypy core/paths.py db/ log_bus/ bus/ orchestration/state.py orchestration/phase_registry.py orchestration/task_graph.py orchestration/intent.py orchestration/expertise.py orchestration/router.py orchestration/meeting.py orchestration/agent.py orchestration/user_input.py orchestration/agent_interactions.py orchestration/teamlead_review.py orchestration/autonomous_loop.py orchestration/project_runner.py

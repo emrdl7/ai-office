@@ -9,6 +9,7 @@ import { ReactionStatsPanel } from './ReactionStats'
 import { SearchPanel } from './SearchPanel'
 import { MetricsPanel } from './MetricsPanel'
 import { AutonomousStatsPanel } from './AutonomousStatsPanel'
+import { PersonaDriftPanel } from './PersonaDriftPanel'
 
 export { AGENT_PROFILE }
 
@@ -225,6 +226,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const [showMetrics, setShowMetrics] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [showAutonomousStats, setShowAutonomousStats] = useState(false)
+  const [showPersonaDrift, setShowPersonaDrift] = useState(false)
 
   function selectChannel(channel: ChannelId) {
     setActiveChannel(channel)
@@ -404,6 +406,16 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <span>자율 대화 관측</span>
         </button>
         <button
+          onClick={() => setShowPersonaDrift(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg
+            text-sm text-gray-600 dark:text-gray-400
+            hover:bg-gray-100 dark:hover:bg-gray-800
+            cursor-pointer transition-colors"
+        >
+          <span className="w-4 h-4 text-center leading-4">🎭</span>
+          <span>페르소나 드리프트</span>
+        </button>
+        <button
           onClick={async () => {
             if (!confirm('백엔드 서버를 재시작합니다. 5초 내 자동 재연결됩니다. 계속할까요?')) return
             try {
@@ -430,6 +442,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       {showMetrics && <MetricsPanel onClose={() => setShowMetrics(false)} />}
       {showSearch && <SearchPanel onClose={() => setShowSearch(false)} />}
       {showAutonomousStats && <AutonomousStatsPanel onClose={() => setShowAutonomousStats(false)} />}
+      {showPersonaDrift && <PersonaDriftPanel onClose={() => setShowPersonaDrift(false)} />}
     </aside>
   )
 }

@@ -55,7 +55,7 @@
   포함. 병합 직후 24h 내 다른 병합에서 동일 파일 경로가 있으면
   `rollback_candidate` 이벤트 + `system_notice` 발행.
 
-### P5. 구성원 성격/능력 프롬프트 검증 체계
+### P5. 구성원 성격/능력 프롬프트 검증 체계 ✅
 
 > **맥락**: 시스템 프롬프트는 6계층이 동적 누적됨 — `agents/*.md`(기본
 > persona) + `expertise.py`(task 전문지식) + `rejection_analyzer`(과거
@@ -65,14 +65,14 @@
 > 모순되거나, 선언된 능력을 실제로 쓰지 않거나, 실제 하는 일이 선언에
 > 없을 수 있음.
 
-#### 5-1. 정적 스키마 린트 (즉시 가능, CI 부담 無)
+#### 5-1. 정적 스키마 린트 (즉시 가능, CI 부담 無) ✅
 - `scripts/lint_persona.py` — `agents/*.md` 섹션 표준 강제:
   `# {이름} ({역할})` → `## 성격` → `## 판단력` → `## 대화 스타일` →
   `## 역할` → `## 품질 기준` 순서와 존재 검증.
 - 각 섹션 최소 bullet 수·최대 길이·빈 섹션 금지.
 - `ruff` 전후 CI에 추가.
 
-#### 5-2. 누적 규칙 ↔ persona 충돌 감사 (주간 배치)
+#### 5-2. 누적 규칙 ↔ persona 충돌 감사 (주간 배치) ✅
 - `improvement/persona_guard.py` 신설. 각 agent별로:
   1. `PromptEvolver.load_rules` 활성 규칙 + persona 섹션 로드
   2. Claude Haiku 1회 호출 — "아래 규칙 N개가 이 페르소나와 모순되는
@@ -85,7 +85,7 @@
 - 실행 주기: teamlead batch review 끝에 1회 (주 1회 수준). LLM 비용 예측
   가능.
 
-#### 5-3. 페르소나 드리프트 상시 감사 (샘플링)
+#### 5-3. 페르소나 드리프트 상시 감사 (샘플링) ✅
 - `/api/team/persona-drift` 엔드포인트 — 최근 48h `autonomous`+`response`
   로그에서 agent별 무작위 10건 추출 → LLM-as-judge 호출 (Haiku):
   "이 발화가 `agents/{name}.md`의 성격·대화스타일과 일치하는가?" 0~10점
@@ -94,7 +94,7 @@
 - 대시보드에 agent별 평균 점수 + 최근 이탈 사례 3건 표시.
 - trigger: 팀장 batch review 주기와 동일.
 
-#### 5-4. 능력 선언 ↔ 실제 사용 교차 검증 (월간)
+#### 5-4. 능력 선언 ↔ 실제 사용 교차 검증 (월간) ✅
 - `scripts/capability_audit.py`:
   1. `agents/*.md`의 `## 역할` bullet에서 능력 키워드 추출 (예:
      아이브 → "와이어프레임", "디자인 시스템", "WCAG 2.1 AA", "접근성")

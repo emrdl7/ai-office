@@ -342,6 +342,10 @@ async def run_single(office: Any, force: bool = False) -> None:
   except Exception:
     logger.debug('주기 압축 실패', exc_info=True)
 
+  # P5-2: 누적 규칙 ↔ 페르소나 충돌 감사 (주 1회 수준)
+  from improvement.persona_guard import maybe_run_persona_guard
+  await maybe_run_persona_guard(office)
+
   msg = f'📋 팀장 리뷰 완료{circuit_note}{dryrun_note} — 분석 {len(fresh)}건, 건의 {registered}건 (자동 반영 {auto_applied}건)'
   if summary:
     msg += f'\n요약: {summary[:200]}'
