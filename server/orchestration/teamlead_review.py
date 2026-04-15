@@ -85,6 +85,12 @@ async def run_loop(office) -> None:
     except Exception:
       logger.debug('팀장 리뷰 루프 에러', exc_info=True)
 
+    # 다짐 follow-up — 배치 리뷰와 별개로 저비용 추적 (DB only, LLM 호출 없음).
+    try:
+      await run_commitment_followup(office)
+    except Exception:
+      logger.debug('다짐 follow-up 실패', exc_info=True)
+
     await asyncio.sleep(300)
 
 
@@ -134,14 +140,21 @@ async def run_single(office, force: bool = False) -> None:
   dynamics_summary = _summarize_team_dynamics(office)
   prompt = (
     f'당신은 팀장 잡스입니다. 아래는 지난 배치 이후 팀의 자발적 대화입니다.\n'
-    f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 선언형 발언은 신뢰하지 마세요.\n\n'
+    f'에이전트들은 AI이며 실제 실행 권한이 없습니다. 따라서 말로만 끝나는 발화를\n'
+    f'실제 실행 궤적으로 전환하는 것이 팀장의 역할입니다.\n'
+    f'**선언형 발언(X하겠습니다/올리겠습니다/건의하겠습니다/반영하겠습니다)은\n'
+    f'반드시 `[다짐]` 카테고리로 등록**하고 target_agent를 발화자 본인으로 지정하세요.\n'
+    f'"도구가 없어서/템플릿이 없어서/할 수 없어서"처럼 **능력 부족을 드러낸 발화**도\n'
+    f'`도구 부족`/`정보 부족` 카테고리로 반드시 등록하세요 (발화자 자가발전의 시작점).\n'
+    f'중요: 대화가 결론·실행·진행으로 수렴하지 않은 주제가 있으면, 그 자체를\n'
+    f'`프로세스 개선` 건의로 올려 후속 조치가 묻히지 않게 하세요.\n\n'
     f'[팀 협업 패턴 (최근 100건 집계)]\n{dynamics_summary}\n\n'
     f'[대화]\n{convo}\n\n'
     f'JSON만 출력:\n'
     f'{{\n'
     f'  "suggestions":[{{"title":"40자","body":"구체 문제+제안 2-3문장",'
     f'"target_agent":"planner|designer|developer|qa|teamlead|",'
-    f'"category":"프로세스 개선|도구 부족|정보 부족|아이디어",'
+    f'"category":"프로세스 개선|도구 부족|정보 부족|아이디어|다짐",'
     f'"reasoning":"1문장",'
     f'"auto_safe":true|false}}],\n'
     f'  "summary":"2-4문장",\n'
@@ -150,9 +163,9 @@ async def run_single(office, force: bool = False) -> None:
     f'auto_safe 판정 기준:\n'
     f'- true: 단순 규칙 추가/명세 작성 가이드/문서화 방식 같이 되돌리기 쉬운 변경\n'
     f'- false: 실제 코드 생성, 다수 에이전트에 영향, 기존 규칙과 충돌 가능, 범위 모호\n'
-    f'보수적으로 판정: 조금이라도 의심되면 false.\n\n'
-    f'규칙: suggestions 최대 3건·중복 금지. 수치 환각 금지. '
-    f'추상 방법론 단독 언급(Gherkin/WCAG/KPI)만 있으면 건의 아님.'
+    f'보수적으로 판정: 조금이라도 의심되면 false. 단 `[다짐]`은 항상 false.\n\n'
+    f'규칙: suggestions 최대 5건·중복 금지. 수치 환각 금지. '
+    f'추상 방법론 단독 언급(Gherkin/WCAG/KPI)만 있고 구체 맥락이 없으면 건의 아님.'
   )
   raw = await run_gemini(prompt=prompt)
   m = _re.search(r'\{[\s\S]*\}', raw)
@@ -182,7 +195,7 @@ async def run_single(office, force: bool = False) -> None:
 
   registered = 0
   auto_applied = 0
-  for s in (data.get('suggestions') or [])[:3]:
+  for s in (data.get('suggestions') or [])[:5]:
     title = (s.get('title') or '').strip()[:80]
     body = (s.get('body') or '').strip()
     if not title or not body:
@@ -599,3 +612,144 @@ async def run_retrospective(
     ))
   except Exception:
     logger.debug("프로젝트 요약 저장 실패", exc_info=True)
+
+
+# --------------------------------------------------------------------
+# 다짐 follow-up — 말·행동 일치 시스템
+# --------------------------------------------------------------------
+
+_COMMITMENT_FOLLOWUP_MINUTES = 30  # 다짐 후 이 시간 내 실행 흔적 없으면 재촉
+_COMMITMENT_FOLLOWUP_COOLDOWN_HOURS = 24  # 같은 committer 재촉 주기
+
+
+async def run_commitment_followup(office) -> None:
+  '''다짐 후 실행 궤적이 없으면 팀장이 채팅에서 재촉한다.
+
+  원칙(2026-04-15): 채팅 발화가 공허한 외침이 되지 않게,
+  "~하겠습니다" 후 N분 내 후속 조치(suggestion 등록/관련 발화)가 없으면
+  팀장이 직접 재촉 발화를 생성하고 `followup_nudged` 이벤트를 남긴다.
+
+  저비용 — DB 조회만, LLM 호출 없음.
+  '''
+  from db.suggestion_store import list_suggestions, list_events, log_event
+  from db.log_store import load_logs as _load_logs
+
+  now = datetime.now(timezone.utc)
+  cutoff_old = now - timedelta(minutes=_COMMITMENT_FOLLOWUP_MINUTES)
+  cutoff_too_old = now - timedelta(hours=6)  # 6시간 넘은 건 재촉 안 함 (소음 방지)
+
+  try:
+    all_sugg = list_suggestions(status='')
+  except Exception:
+    logger.debug('follow-up list_suggestions 실패', exc_info=True)
+    return
+
+  # 24h 내 이미 재촉한 committer 집계 (쿨다운)
+  recent_nudged: set[str] = set()
+  cooldown_cut = now - timedelta(hours=_COMMITMENT_FOLLOWUP_COOLDOWN_HOURS)
+  try:
+    for ev in list_events(limit=500):
+      if ev.get('kind') != 'followup_nudged':
+        continue
+      try:
+        ts = datetime.fromisoformat((ev.get('ts') or '').replace('Z', '+00:00'))
+      except Exception:
+        continue
+      if ts < cooldown_cut:
+        continue
+      c = (ev.get('payload') or {}).get('committer') or ''
+      if c:
+        recent_nudged.add(c)
+  except Exception:
+    logger.debug('follow-up 쿨다운 조회 실패', exc_info=True)
+
+  # 다짐 대상 후보: [다짐]으로 시작하거나 events에 self_commitment 기록된 건
+  candidates: list[dict] = []
+  for s in all_sugg:
+    title = s.get('title') or ''
+    if not title.startswith('[다짐]'):
+      continue
+    try:
+      created = datetime.fromisoformat((s.get('created_at') or '').replace('Z', '+00:00'))
+    except Exception:
+      continue
+    if created > cutoff_old or created < cutoff_too_old:
+      continue
+    candidates.append({'sugg': s, 'created': created})
+
+  if not candidates:
+    return
+
+  # 최근 로그로 "실행 흔적" 샘플링 — 해당 committer가 다짐 후 발화에서
+  # 구체 수치/파일명/PR/커밋 같은 팔로우업 키워드를 썼는지만 가볍게 확인.
+  try:
+    recent_logs = _load_logs(limit=200)
+  except Exception:
+    recent_logs = []
+
+  action_markers = (
+    '커밋', 'commit', 'PR', 'pr ', '머지', '반영됨', '등록 완료', '올렸',
+    '올림', '배포', 'merged', '처리 완료', '완료했', '완료함', '반영했',
+    '추가했', '수정했',
+  )
+
+  for cand in candidates:
+    s = cand['sugg']
+    committer = s.get('agent_id') or ''
+    if not committer or committer in recent_nudged:
+      continue
+
+    # 이미 follow-up 이벤트가 있으면 스킵
+    try:
+      evs = list_events(suggestion_id=s['id'], limit=20)
+    except Exception:
+      evs = []
+    if any(e.get('kind') == 'followup_nudged' for e in evs):
+      continue
+
+    # 다짐 이후 committer가 실행 흔적을 남겼는지
+    executed = False
+    for lg in recent_logs:
+      if lg.get('agent_id') != committer:
+        continue
+      try:
+        lts = datetime.fromisoformat((lg.get('timestamp') or '').replace('Z', '+00:00'))
+      except Exception:
+        continue
+      if lts <= cand['created']:
+        continue
+      msg = lg.get('message') or ''
+      if any(m in msg for m in action_markers):
+        executed = True
+        break
+
+    # suggestion 자체가 이미 merged/applied면 실행된 것으로 간주
+    status = s.get('status') or ''
+    if status in ('merged', 'applied', 'approved'):
+      executed = True
+
+    if executed:
+      try:
+        log_event(s['id'], 'followup_cleared', {'committer': committer})
+      except Exception:
+        logger.debug('follow-up cleared 기록 실패', exc_info=True)
+      continue
+
+    # 재촉 발화
+    first_line = (s.get('title') or '').replace('[다짐]', '').strip()[:60]
+    nudge = (
+      f'@{display_name(committer)} — 앞서 다짐하신 "{first_line}" 건, '
+      f'{_COMMITMENT_FOLLOWUP_MINUTES}분이 지났는데 후속 진행이 안 보입니다. '
+      f'지금 상태 공유 부탁드립니다 — 실행 중이면 어디까지, 막혔으면 어디서 막혔는지. '
+      f'할 수 없는 부분이 있으면 건의게시판에 등록해 주세요.'
+    )
+    try:
+      await office._emit('teamlead', nudge, 'response')
+      log_event(s['id'], 'followup_nudged', {
+        'committer': committer,
+        'nudged_at': now.isoformat(),
+      })
+      recent_nudged.add(committer)
+      logger.info('다짐 follow-up 재촉: %s | %s', committer, first_line[:40])
+    except Exception:
+      logger.debug('다짐 재촉 실패', exc_info=True)

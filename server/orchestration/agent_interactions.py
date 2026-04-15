@@ -1060,33 +1060,66 @@ async def _route_agent_mentions(office, speaker: str, content: str) -> None:
         logger.debug("에이전트→팀장 질문 라우팅 실패", exc_info=True)
     else:
       agent = office.agents.get(target_id)
-      if agent:
+      if not agent:
+        # 멘션 대상이 아예 존재하지 않음 — 팀장이 즉시 해명
         try:
-          await office._emit(target_id, '', 'typing')
-          answer = await agent.respond_to(display_name(speaker), question)
-          if answer:
-            answer_event = await office._emit(target_id, answer[:200], 'response')
-
-            try:
-              await office._file_commitment_suggestion(
-                committer_id=target_id,
-                message=answer,
-                source_speaker=speaker,
-                source_message=question,
-                source_log_id=answer_event.id,
-              )
-            except Exception:
-              logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)
-
-            try:
-              office.team_memory.add_dynamic(TeamDynamic(
-                from_agent=speaker,
-                to_agent=target_id,
-                dynamic_type='needs_clarification',
-                description=question[:80],
-                timestamp=datetime.now(timezone.utc).isoformat(),
-              ))
-            except Exception:
-              logger.debug("팀 다이나믹 기록 실패", exc_info=True)
+          await office._emit(
+            'teamlead',
+            f'@{display_name(speaker)} — {raw_target} 라는 담당자가 팀에 없어 질문이 라우팅되지 못했습니다. 대상 확인 부탁드립니다.',
+            'response',
+          )
         except Exception:
-          logger.debug("에이전트 간 질문 라우팅 실패: %s→%s", speaker, target_id, exc_info=True)
+          logger.debug('멘션 대상 부재 해명 실패', exc_info=True)
+        continue
+      answer: str = ''
+      try:
+        await office._emit(target_id, '', 'typing')
+        answer = await agent.respond_to(display_name(speaker), question)
+      except Exception:
+        logger.debug("에이전트 응답 실패: %s→%s", speaker, target_id, exc_info=True)
+        answer = ''
+      if not answer:
+        # SLA 위반 — 질문이 응답 없이 사라지는 공허한 외침을 막기 위해 팀장이 재촉
+        try:
+          await office._emit(
+            'teamlead',
+            f'@{display_name(target_id)} — {display_name(speaker)}의 질문에 아직 응답이 없습니다: "{question[:80]}". '
+            f'즉답이 어려우면 이유를 공유하거나 건의게시판에 등록해 주세요.',
+            'response',
+          )
+          logger.info('멘션 SLA 재촉: %s→%s | %s', speaker, target_id, question[:40])
+        except Exception:
+          logger.debug('멘션 SLA 재촉 실패', exc_info=True)
+        continue
+      answer_event = await office._emit(target_id, answer[:200], 'response')
+
+      try:
+        await office._file_commitment_suggestion(
+          committer_id=target_id,
+          message=answer,
+          source_speaker=speaker,
+          source_message=question,
+          source_log_id=answer_event.id,
+        )
+      except Exception:
+        logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)
+
+      try:
+        await office._file_capability_gap_suggestion(
+          speaker_id=target_id,
+          message=answer,
+          source_log_id=answer_event.id,
+        )
+      except Exception:
+        logger.debug('멘션 응답 능력 부족 등록 실패', exc_info=True)
+
+      try:
+        office.team_memory.add_dynamic(TeamDynamic(
+          from_agent=speaker,
+          to_agent=target_id,
+          dynamic_type='needs_clarification',
+          description=question[:80],
+          timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
+      except Exception:
+        logger.debug("팀 다이나믹 기록 실패", exc_info=True)

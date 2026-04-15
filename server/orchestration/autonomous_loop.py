@@ -274,6 +274,12 @@ async def _run_speaker_chain(
     )
   except Exception:
     logger.debug('자발 다짐 등록 실패', exc_info=True)
+  try:
+    await office._file_capability_gap_suggestion(
+      speaker_id=speaker_name, message=message, source_log_id=speaker_event.id,
+    )
+  except Exception:
+    logger.debug('능력 부족 등록 실패', exc_info=True)
 
   # 1단 반응 (50%)
   first_reactor = ''
@@ -297,6 +303,12 @@ async def _run_speaker_chain(
           )
         except Exception:
           logger.debug('리액터 다짐 등록 실패', exc_info=True)
+        try:
+          await office._file_capability_gap_suggestion(
+            speaker_id=first_reactor, message=first_reply, source_log_id=reactor_event.id,
+          )
+        except Exception:
+          logger.debug('리액터 능력 부족 등록 실패', exc_info=True)
         # 2단 결론 (30%)
         if random.random() < 0.3:
           closing = await autonomous_closing(
@@ -316,6 +328,12 @@ async def _run_speaker_chain(
               )
             except Exception:
               logger.debug('클로징 다짐 등록 실패', exc_info=True)
+            try:
+              await office._file_capability_gap_suggestion(
+                speaker_id=speaker_name, message=closing, source_log_id=closing_event.id,
+              )
+            except Exception:
+              logger.debug('클로징 능력 부족 등록 실패', exc_info=True)
       else:
         first_reactor = ''
   return first_reactor

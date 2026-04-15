@@ -313,6 +313,10 @@ async def _file_commitment_suggestion(
     '업데이트하겠', '보완하겠', '진행하겠', '처리하겠',
     '반영할게', '적용할게', '도입할게', '추가할게',
     '수정할게', '개선할게', '정리할게',
+    # 건의게시판·보고 계통 다짐 (2026-04-15 사각지대 보완)
+    '올리겠', '등록하겠', '건의하겠', '제안하겠',
+    '요청하겠', '보고하겠', '공유하겠', '알리겠',
+    '올릴게', '등록할게', '건의할게', '제안할게',
   )
   if not any(m in message for m in commit_markers):
     return
@@ -372,7 +376,10 @@ async def _file_commitment_suggestion(
   if dup:
     logger.info('다짐 건의 중복 skip: %s | reason=%s', title[:30], reason)
     return
-  initial_status = 'draft'
+  # 다짐은 pending으로 등록해 게시판 전면에 바로 노출되지만,
+  # auto_triage는 건너뛴다 — 다짐은 실행 추적 대상이지 자동 반영 대상이 아님.
+  # (2026-04-15 사용자 피드백: 말-행동 일치를 위해 가시성 먼저)
+  initial_status = 'pending'
 
   try:
     created = create_suggestion(
@@ -406,12 +413,101 @@ async def _file_commitment_suggestion(
         dynamic_type='committed_to_request',
         description=first_line[:80],
       )
-    # draft는 auto_triage 대상 아님 — 승격 후 호출됨
-    if initial_status == 'pending':
-      try:
-        from main import auto_triage_new_suggestion
-        asyncio.create_task(auto_triage_new_suggestion(created['id']))
-      except Exception:
-        logger.debug('auto_triage 호출 실패', exc_info=True)
+    # 다짐은 pending이어도 auto_triage 대상 아님 — 실행 추적만, 자동 반영 금지.
+    # (title 접두 `[다짐]` 기준 → auto_triage 내부 가드와 이중 방어)
   except Exception:
     logger.debug('다짐 create_suggestion 실패', exc_info=True)
+
+
+async def _file_capability_gap_suggestion(
+  office,
+  speaker_id: str,
+  message: str,
+  source_log_id: str = '',
+) -> None:
+  '''"도구가 없어서/템플릿이 없어서/할 수 없어서" 류 능력 부족 발화를 자동 건의.
+
+  원칙(2026-04-15 사용자): "너희는 AI다. 할 수 없는 능력이 있으면 그 필요성을
+  정확히 보고하는 것 자체가 책임이다. 그게 팀이 성장하는 방식이다."
+
+  category는 발화 문구에 따라 `도구 부족` 또는 `정보 부족`으로 분기.
+  '''
+  if not message or len(message.strip()) < 15:
+    return
+
+  tool_gap_markers = (
+    '도구가 없', '도구가 부족', '스크립트가 없', '스크립트 없',
+    '자동화가 없', '자동화 없', '권한이 없', '권한 없',
+    'API가 없', 'API 없', '기능이 없', '기능 없',
+    '인프라가 없', '인프라 없', '환경이 없', '환경 없',
+    '템플릿이 없', '템플릿 없',
+  )
+  info_gap_markers = (
+    '가이드가 없', '가이드 없', '기준이 없', '기준 없',
+    '문서가 없', '문서 없', '레퍼런스가 없', '레퍼런스 없',
+    '데이터가 없', '데이터 없', '정보가 없', '정보 없',
+    '확인할 수 없', '알 수 없', '모르겠',
+  )
+  inability_markers = (
+    '할 수 없', '불가능', '막혀있', '막혔', '한계', '제약이',
+  )
+
+  tool_hit = any(m in message for m in tool_gap_markers)
+  info_hit = any(m in message for m in info_gap_markers)
+  inability_hit = any(m in message for m in inability_markers)
+
+  if not (tool_hit or info_hit or inability_hit):
+    return
+
+  # inability 단독은 약한 시그널 — tool/info 동반 필요
+  if inability_hit and not (tool_hit or info_hit):
+    return
+
+  category = '도구 부족' if tool_hit else '정보 부족'
+
+  from db.suggestion_store import create_suggestion, is_duplicate, log_event
+
+  first_line = message.strip().split('\n')[0][:80]
+  title = f'[능력] {display_name(speaker_id)}: {first_line[:45]}'
+  content = (
+    f'**발화자**: {display_name(speaker_id)}\n'
+    f'**발화**: "{message.strip()[:500]}"\n\n'
+    f'카테고리: {category}\n\n'
+    f'_능력 부족 시그널을 자동 감지해 등록했습니다. '
+    f'AI 팀원이 실행할 수 없는 일은 명확히 정의해 건의하는 것이 자가발전의 출발점입니다._'
+  )
+
+  dup, reason = is_duplicate(title, content)
+  if dup:
+    logger.info('능력 건의 중복 skip: %s | reason=%s', title[:30], reason)
+    return
+
+  try:
+    created = create_suggestion(
+      agent_id=speaker_id,
+      title=title,
+      content=content,
+      category=category,
+      target_agent='',
+      status='pending',
+      source_log_id=source_log_id,
+    )
+    log_event(created['id'], 'auto_filed', {
+      'speaker': speaker_id,
+      'kind': 'capability_gap',
+      'category': category,
+      'source_log_id': source_log_id,
+    })
+    await office._emit(
+      'teamlead',
+      f'🛠 {display_name(speaker_id)}의 능력 부족 신호를 건의게시판에 등록했습니다 ({category}): "{first_line[:40]}..."',
+      'system_notice',
+    )
+    logger.info('능력 건의 등록: %s | %s | %s', speaker_id, category, first_line[:60])
+    try:
+      from main import auto_triage_new_suggestion
+      asyncio.create_task(auto_triage_new_suggestion(created['id']))
+    except Exception:
+      logger.debug('능력 건의 auto_triage 호출 실패', exc_info=True)
+  except Exception:
+    logger.debug('능력 건의 create_suggestion 실패', exc_info=True)

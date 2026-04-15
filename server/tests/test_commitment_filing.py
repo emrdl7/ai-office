@@ -13,8 +13,11 @@ def isolated_suggestion_db(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_commitment_creates_draft(isolated_suggestion_db, tmp_path):
-  '''다짐 감지 발화는 draft 상태로 등록되어 auto_triage를 건너뛴다.'''
+async def test_commitment_creates_pending(isolated_suggestion_db, tmp_path):
+  '''다짐 감지 발화는 pending 상태로 등록되어 게시판 전면에 즉시 노출된다.
+
+  (2026-04-15 업데이트: draft → pending. auto_triage는 [다짐] 접두어로 스킵.)
+  '''
   from orchestration import suggestion_filer
   from db.suggestion_store import list_suggestions
 
@@ -34,14 +37,18 @@ async def test_commitment_creates_draft(isolated_suggestion_db, tmp_path):
   all_s = list_suggestions(status='')
   assert len(all_s) == 1
   s = all_s[0]
-  assert s['status'] == 'draft'
+  assert s['status'] == 'pending'
+  assert s['title'].startswith('[다짐]')
   assert s['source_log_id'] == 'log-xyz'
   assert s['target_agent'] == 'developer'
 
 
 @pytest.mark.asyncio
-async def test_repeated_commitment_promotes_immediately(isolated_suggestion_db):
-  '''같은 committer가 같은 주제로 두 번 약속하면 두 번째는 즉시 pending.'''
+async def test_repeated_commitment_dedupes(isolated_suggestion_db):
+  '''같은 committer가 같은 주제로 두 번 약속해도 중복 등록되지 않는다.
+
+  (이전: draft→pending 승격 테스트였으나, pending이 기본이 되어 중복 스킵으로 동작.)
+  '''
   from orchestration import suggestion_filer
   from db.suggestion_store import list_suggestions
 
@@ -51,11 +58,9 @@ async def test_repeated_commitment_promotes_immediately(isolated_suggestion_db):
 
   msg = '테스트 커버리지 반드시 챙기겠습니다. 이번엔 꼭 반영하겠습니다.'
   await suggestion_filer._file_commitment_suggestion(office, committer_id='developer', message=msg)
-  # 첫 호출은 draft 생성
-  assert [s['status'] for s in list_suggestions(status='')] == ['draft']
+  assert [s['status'] for s in list_suggestions(status='')] == ['pending']
 
   await suggestion_filer._file_commitment_suggestion(office, committer_id='developer', message=msg + ' (재다짐)')
-  # 재다짐은 기존 draft를 pending으로 승격 (신규 등록 아님)
   all_s = list_suggestions(status='')
   assert len(all_s) == 1
   assert all_s[0]['status'] == 'pending'

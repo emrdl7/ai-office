@@ -146,6 +146,11 @@ async def auto_triage_new_suggestion(suggestion_id: str):
   s = get_suggestion(suggestion_id)
   if not s or s.get('status') != 'pending':
     return
+  # [다짐] / [능력] 접두 건의는 자동 반영 대상 아님 — 실행 추적 전용
+  _title = s.get('title') or ''
+  if _title.startswith('[다짐]') or _title.startswith('[능력]'):
+    log_event(suggestion_id, 'auto_triage_skip', {'reason': 'tracking_only_prefix'})
+    return
 
   cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
   c = _sconn()

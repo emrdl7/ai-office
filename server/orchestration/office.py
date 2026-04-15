@@ -602,3 +602,6 @@ class Office:
 
   async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '', source_log_id: str = '') -> None:
     return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message, source_log_id)
+
+  async def _file_capability_gap_suggestion(self, speaker_id: str, message: str, source_log_id: str = '') -> None:
+    return await suggestion_filer._file_capability_gap_suggestion(self, speaker_id, message, source_log_id)
