@@ -91,7 +91,8 @@ async def lifespan(app: FastAPI):
 
 
 async def _archive_loop():
-  '''서버 생존 동안 24시간 주기로 오래된 done 메시지를 archive 테이블로 이관.'''
+  '''서버 생존 동안 24시간 주기로 오래된 done 메시지 + 임계치 도달한 chat_logs를 archive로 이관.'''
+  from db.log_store import maybe_archive_logs
   while True:
     try:
       moved = await asyncio.to_thread(message_bus.archive_old_messages)
@@ -101,6 +102,14 @@ async def _archive_loop():
       raise
     except Exception:
       logger.exception('message bus archive failed')
+    try:
+      moved_logs = await asyncio.to_thread(maybe_archive_logs, 30)
+      if moved_logs:
+        logger.info('chat_logs archive: moved %d rows', moved_logs)
+    except asyncio.CancelledError:
+      raise
+    except Exception:
+      logger.exception('chat_logs archive failed')
     try:
       await asyncio.sleep(24 * 60 * 60)
     except asyncio.CancelledError:

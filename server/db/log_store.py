@@ -23,8 +23,60 @@ def _conn() -> sqlite3.Connection:
   ''')
   # 최근 조회·정렬에 쓰는 timestamp DESC 인덱스 (로그 10만건 넘어도 빠름)
   conn.execute('CREATE INDEX IF NOT EXISTS idx_chat_logs_ts ON chat_logs(timestamp DESC)')
+  # 아카이브 테이블 — 임계치 도달 시 30일+ 로그를 이관 (메시지 버스 archive 동일 패턴)
+  conn.execute('''
+    CREATE TABLE IF NOT EXISTS chat_logs_archive (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      data TEXT DEFAULT '{}',
+      timestamp TEXT NOT NULL,
+      archived_at TEXT NOT NULL
+    )
+  ''')
+  conn.execute('CREATE INDEX IF NOT EXISTS idx_chat_logs_archive_ts ON chat_logs_archive(timestamp DESC)')
   conn.commit()
   return conn
+
+
+# 임계치 — 둘 중 하나라도 충족하면 아카이브 트리거
+ARCHIVE_TRIGGER_OLD_COUNT = 10_000   # 30일+ 로그가 이만큼 쌓이면
+ARCHIVE_TRIGGER_DB_SIZE = 50 * 1024 * 1024  # 또는 DB 50MB 초과면
+
+
+def archive_old_logs(days: int = 30) -> int:
+  '''N일 이전 chat_logs를 chat_logs_archive로 이관. 트랜잭션으로 INSERT+DELETE.'''
+  from datetime import datetime, timezone, timedelta
+  cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+  now = datetime.now(timezone.utc).isoformat()
+  c = _conn()
+  try:
+    c.execute('BEGIN IMMEDIATE')
+    c.execute(
+      'INSERT OR IGNORE INTO chat_logs_archive '
+      '(id, agent_id, event_type, message, data, timestamp, archived_at) '
+      'SELECT id, agent_id, event_type, message, data, timestamp, ? '
+      'FROM chat_logs WHERE timestamp < ?',
+      (now, cutoff),
+    )
+    moved = c.execute('SELECT changes()').fetchone()[0]
+    c.execute('DELETE FROM chat_logs WHERE timestamp < ?', (cutoff,))
+    c.commit()
+    return moved
+  except Exception:
+    c.rollback()
+    raise
+  finally:
+    c.close()
+
+
+def maybe_archive_logs(days: int = 30) -> int:
+  '''임계치(30일+ 1만건 또는 DB 50MB 초과) 도달 시에만 아카이브.'''
+  stats = log_storage_stats()
+  if stats['old_30d'] >= ARCHIVE_TRIGGER_OLD_COUNT or stats['db_size_bytes'] >= ARCHIVE_TRIGGER_DB_SIZE:
+    return archive_old_logs(days=days)
+  return 0
 
 
 def save_log(log_dict: dict) -> None:
