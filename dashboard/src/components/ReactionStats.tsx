@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { displayName, AGENT_IDS } from '../config/team'
+import { MatIcon } from './icons'
 
 interface ReactionStats {
   per_agent: Record<string, Record<string, number>>
@@ -35,9 +36,7 @@ export function ReactionStatsPanel({ onClose }: { onClose: () => void }) {
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
               cursor-pointer transition-colors"
             aria-label="닫기">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <MatIcon name="close" className="text-[20px]" />
           </button>
         </div>
 

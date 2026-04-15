@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { displayName } from '../config/team'
+import { MatIcon } from './icons'
 
 type SearchType = 'all' | 'logs' | 'suggestions' | 'dynamics'
 
@@ -108,9 +109,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
                 cursor-pointer transition-colors"
               aria-label="닫기">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <MatIcon name="close" className="text-[20px]" />
             </button>
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -123,7 +122,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               }`}
               title="error / system_notice 이벤트만"
             >
-              ⚠ 에러만
+              <MatIcon name="warning" className="text-[13px] mr-0.5" /> 에러만
             </button>
             {(['all', 'logs', 'suggestions', 'dynamics'] as SearchType[]).map((t) => (
               <button

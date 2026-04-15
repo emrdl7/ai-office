@@ -3,7 +3,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { Task } from '../types'
-import { IconPaperclip } from './icons'
+import { MatIcon } from './icons'
 
 async function fetchTasks(): Promise<Task[]> {
   const res = await fetch('/api/tasks')
@@ -112,7 +112,7 @@ export function TaskInput() {
                   bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
                   border border-blue-200 dark:border-blue-800"
               >
-                <IconPaperclip className="w-3 h-3" /> {f.name}
+                <MatIcon name="attach_file" className="text-[12px]" /> {f.name}
                 <button
                   onClick={() => removeFile(i)}
                   className="text-blue-400 hover:text-red-400 cursor-pointer ml-0.5"
@@ -128,7 +128,7 @@ export function TaskInput() {
         {/* 이전 작업 기반 표시 */}
         {baseTaskId && (
           <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
-            <span>🔗 이전 작업 기반:</span>
+            <MatIcon name="link" className="text-[14px]" /><span>이전 작업 기반:</span>
             <span className="truncate flex-1">
               {tasks.find(t => t.task_id === baseTaskId)?.instruction?.slice(0, 30) || baseTaskId.slice(0, 8)}...
             </span>
@@ -157,7 +157,7 @@ export function TaskInput() {
             aria-label="파일 첨부"
             disabled={mutation.isPending}
           >
-            <span className="inline-flex items-center gap-1"><IconPaperclip className="w-3.5 h-3.5" /> 첨부</span>
+            <span className="inline-flex items-center gap-1"><MatIcon name="attach_file" className="text-[14px]" /> 첨부</span>
           </button>
           <button
             onClick={handleSubmit}
@@ -220,7 +220,7 @@ export function TaskInput() {
                           border border-blue-200 dark:border-blue-800 truncate max-w-[120px]"
                         title={name.trim()}
                       >
-                        <span className="inline-flex items-center gap-1"><IconPaperclip className="w-3 h-3" /> {name.trim()}</span>
+                        <span className="inline-flex items-center gap-1"><MatIcon name="attach_file" className="text-[11px]" /> {name.trim()}</span>
                       </span>
                     ))}
                   </span>
@@ -236,7 +236,7 @@ export function TaskInput() {
                 }}
                 className="text-[10px] text-gray-400 hover:text-red-500 cursor-pointer flex-shrink-0 ml-1"
                 aria-label="삭제"
-              >✕</button>
+              ><MatIcon name="close" className="text-[12px]" /></button>
             </li>
           ))}
         </ul>

@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
+import { MatIcon } from './icons'
 
 interface AgentDrift {
   agent: string
@@ -86,7 +87,7 @@ export function PersonaDriftPanel({ onClose }: { onClose: () => void }) {
               className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer"
               aria-label="닫기"
             >
-              ✕
+              <MatIcon name="close" className="text-[16px]" />
             </button>
           </div>
         </div>

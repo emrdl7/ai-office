@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
-import { IconBrain, IconWrench, IconSearch, IconGitMerge, IconTrash, IconGitBranch } from './icons'
+import { MatIcon } from './icons'
 
 interface Suggestion {
   id: string
@@ -21,10 +21,10 @@ interface Suggestion {
   source_log_id?: string    // 트리거 발화 로그 ID (있으면 채팅 로그로 점프)
 }
 
-const TYPE_BADGE: Record<string, { Icon: typeof IconBrain; label: string; color: string }> = {
-  prompt: { Icon: IconBrain, label: '프롬프트', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  rule: { Icon: IconBrain, label: '규칙', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
-  code: { Icon: IconWrench, label: '코드 수정', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+const TYPE_BADGE: Record<string, { icon: string; label: string; color: string }> = {
+  prompt: { icon: 'psychology', label: '프롬프트', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  rule: { icon: 'psychology', label: '규칙', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
+  code: { icon: 'build', label: '코드 수정', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 }
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
@@ -230,9 +230,10 @@ export function SuggestionModal() {
             </h2>
             <button
               onClick={() => setShow(false)}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl cursor-pointer leading-none"
+              className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300
+                hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
             >
-              &times;
+              <MatIcon name="close" className="text-[20px]" />
             </button>
           </div>
           {/* 탭 + 검색 */}
@@ -243,12 +244,12 @@ export function SuggestionModal() {
               // auto_applied 별도 집계
               counts['auto_applied'] = suggestions.filter((s) => s.auto_applied === 1).length
               const tabs: [string, string][] = [
-                ['draft', '📝 초안'],
+                ['draft', '초안'],
                 ['pending', '대기'],
                 ['review_pending', '검토 대기'],
                 ['accepted', '처리 중'],
-                ['supplementing', '🛠️ 보완 중'],
-                ['auto_applied', '🤖 자동 반영'],
+                ['supplementing', '보완 중'],
+                ['auto_applied', '자동 반영'],
                 ['done', '완료'],
                 ['rejected', '반려'],
                 ['all', '전체'],
@@ -358,7 +359,7 @@ export function SuggestionModal() {
                         )}
                         <span className="text-gray-300 dark:text-gray-700">·</span>
                         <span className={`px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 ${t.color}`}>
-                          <t.Icon className="w-3 h-3" /> {t.label}
+                          <MatIcon name={t.icon} className="text-[12px]" /> {t.label}
                         </span>
                         <span className={`px-1.5 py-0.5 rounded-full ${statusInfo.color}`}>
                           {statusInfo.text}
@@ -558,7 +559,7 @@ export function SuggestionModal() {
                                   hover:bg-purple-600 cursor-pointer transition-colors
                                   inline-flex items-center gap-1.5"
                               >
-                                <IconSearch className="w-3.5 h-3.5" /> 변경사항 보기
+                                <MatIcon name="diff" className="text-[14px]" /> 변경사항 보기
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); mergeBranch(s.id) }}
@@ -567,7 +568,7 @@ export function SuggestionModal() {
                                   inline-flex items-center gap-1.5"
                                 title="main 브랜치로 병합 (재시작 필요)"
                               >
-                                <IconGitMerge className="w-3.5 h-3.5" /> 병합
+                                <MatIcon name="merge" className="text-[14px]" /> 병합
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); supplementBranch(s.id) }}
@@ -576,7 +577,7 @@ export function SuggestionModal() {
                                   inline-flex items-center gap-1.5"
                                 title="AI 리뷰 위험사항 보완 — Claude 재실행"
                               >
-                                🛠️ 보완
+                                <MatIcon name="handyman" className="text-[14px]" /> 보완
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); discardBranch(s.id) }}
@@ -584,7 +585,7 @@ export function SuggestionModal() {
                                   hover:bg-red-600 cursor-pointer transition-colors
                                   inline-flex items-center gap-1.5"
                               >
-                                <IconTrash className="w-3.5 h-3.5" /> 폐기
+                                <MatIcon name="delete" className="text-[14px]" /> 폐기
                               </button>
                             </>
                           )}
@@ -621,7 +622,7 @@ export function SuggestionModal() {
               <div>
                 <h3 className="text-base font-bold text-gray-900 dark:text-gray-100
                   inline-flex items-center gap-2">
-                  <IconGitBranch className="w-4 h-4 text-emerald-500" />
+                  <MatIcon name="fork_right" className="text-[16px] text-emerald-500" />
                   improvement/{branchDiff.id}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -634,7 +635,7 @@ export function SuggestionModal() {
                   className="text-xs px-3 py-1.5 rounded-lg bg-green-500 text-white hover:bg-green-600 cursor-pointer
                     inline-flex items-center gap-1.5"
                 >
-                  <IconGitMerge className="w-3.5 h-3.5" /> 병합
+                  <MatIcon name="merge" className="text-[14px]" /> 병합
                 </button>
                 <button
                   onClick={() => supplementBranch(branchDiff.id)}
@@ -642,20 +643,21 @@ export function SuggestionModal() {
                     inline-flex items-center gap-1.5"
                   title="AI 리뷰 위험사항 보완 — Claude 재실행"
                 >
-                  🛠️ 보완
+                  <MatIcon name="handyman" className="text-[14px]" /> 보완
                 </button>
                 <button
                   onClick={() => discardBranch(branchDiff.id)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 cursor-pointer
                     inline-flex items-center gap-1.5"
                 >
-                  <IconTrash className="w-3.5 h-3.5" /> 폐기
+                  <MatIcon name="delete" className="text-[14px]" /> 폐기
                 </button>
                 <button
                   onClick={() => setBranchDiff(null)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl cursor-pointer"
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300
+                    hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
                 >
-                  &times;
+                  <MatIcon name="close" className="text-[20px]" />
                 </button>
               </div>
             </div>
@@ -691,16 +693,16 @@ export function SuggestionModal() {
                       const supCount = explain.supplement_count || 0
                       const needsFixLabel = supCount > 0
                         ? `${supCount}회 보완 후에도 추가 개선 여지 — 수동 검토 또는 폐기 권장 (추가 보완은 수렴 어려울 수 있음)`
-                        : '보완 필요 (🛠️ 보완 버튼으로 Claude 재실행 가능)'
+                        : '보완 필요 (보완 버튼으로 Claude 재실행 가능)'
                       const cfg = rec === 'merge'
-                        ? { label: '병합 권장', icon: '🔀', cls: 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300' }
+                        ? { label: '병합 권장', matIcon: 'merge', cls: 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300' }
                         : rec === 'discard'
-                          ? { label: '폐기 권장', icon: '🗑️', cls: 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300' }
-                          : { label: needsFixLabel, icon: '🛠️', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
+                          ? { label: '폐기 권장', matIcon: 'delete', cls: 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300' }
+                          : { label: needsFixLabel, matIcon: 'handyman', cls: 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' }
                       return (
                         <div className={`rounded-md border px-2.5 py-1.5 ${cfg.cls}`}>
                           <div className="flex items-center gap-1.5 font-bold text-[11px]">
-                            <span>{cfg.icon}</span>
+                            <MatIcon name={cfg.matIcon} className="text-[13px]" />
                             <span>판단: {cfg.label}</span>
                             {supCount > 0 && (
                               <span className="ml-auto text-[10px] font-normal opacity-75">

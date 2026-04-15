@@ -1,5 +1,6 @@
 // 산출물 모달 — 모든 산출물을 날짜별·태스크별로 정리
 import { useState } from 'react'
+import { MatIcon } from './icons'
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import Markdown from 'react-markdown'
@@ -162,9 +163,7 @@ export function ArtifactModal() {
                   cursor-pointer transition-colors"
                 aria-label="뒤로"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <MatIcon name="arrow_back_ios" className="text-[18px]" />
               </button>
             )}
             <h2 className="text-base font-semibold">
@@ -182,10 +181,7 @@ export function ArtifactModal() {
                   transition-colors"
                 title="새 탭에서 열기"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
+                <MatIcon name="open_in_new" className="text-[16px]" />
               </a>
             )}
             <button
@@ -195,9 +191,7 @@ export function ArtifactModal() {
                 cursor-pointer transition-colors"
               aria-label="닫기"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <MatIcon name="close" className="text-[20px]" />
             </button>
           </div>
         </div>
@@ -245,10 +239,7 @@ export function ArtifactModal() {
             <div className="p-6 md:p-8">
               {sortedDates.length === 0 ? (
                 <div className="text-center text-gray-400 py-16">
-                  <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  <MatIcon name="description" className="text-[48px] mx-auto mb-3 opacity-30" />
                   <p className="text-sm">아직 산출물이 없습니다</p>
                 </div>
               ) : (
@@ -291,9 +282,7 @@ export function ArtifactModal() {
                                     {file.path.split('/').slice(1, -1).join('/') || '루트'} · {formatSize(file.size)}
                                   </p>
                                 </div>
-                                <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
+                                <MatIcon name="chevron_right" className="text-[16px] text-gray-300 flex-shrink-0" />
                               </button>
                             </li>
                           ))}

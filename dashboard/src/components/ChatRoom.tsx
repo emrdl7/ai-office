@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from './Sidebar'
 import { AGENT_IDS } from '../config/team'
-import { IconFolder } from './icons'
+import { MatIcon } from './icons'
 import { ProjectStatusBar } from './ProjectStatusBar'
 import type { Agent, LogEntry, ChannelId } from '../types'
 import Markdown from 'react-markdown'
@@ -36,12 +36,12 @@ function isSystemEvent(e: LogEntry): boolean {
 
 function fileIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (['pdf'].includes(ext)) return '📕'
-  if (['doc', 'docx'].includes(ext)) return '📘'
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return '📗'
-  if (IMAGE_EXTS.has(ext)) return '🖼️'
-  if (['zip', 'tar', 'gz'].includes(ext)) return '📦'
-  return '📄'
+  if (['pdf'].includes(ext)) return 'picture_as_pdf'
+  if (['doc', 'docx'].includes(ext)) return 'article'
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'table_chart'
+  if (IMAGE_EXTS.has(ext)) return 'image'
+  if (['zip', 'tar', 'gz'].includes(ext)) return 'folder_zip'
+  return 'description'
 }
 
 function formatSize(bytes: number): string {
@@ -364,9 +364,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
               dark:hover:bg-gray-800 cursor-pointer"
             aria-label="메뉴"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <MatIcon name="menu" className="text-[20px]" />
           </button>
           {activeChannel !== 'all' && AVATAR_IMG[activeChannel] && (
             <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile?.color}
@@ -390,10 +388,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             aria-label="검색"
             title="대화 검색"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <MatIcon name="search" className="text-[16px]" />
           </button>
           <button
             onClick={() => {
@@ -407,10 +402,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             aria-label="대화 지우기"
             title="화면에서 대화 숨기기 (서버 기록은 보존)"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+            <MatIcon name="delete_sweep" className="text-[16px]" />
           </button>
           <button
             onClick={() => window.location.reload()}
@@ -420,10 +412,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             aria-label="새로고침"
             title="새로고침"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+            <MatIcon name="refresh" className="text-[16px]" />
           </button>
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
         </div>
@@ -434,7 +423,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/20
           border-b border-blue-100 dark:border-blue-800
           flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
-          <IconFolder className="w-3.5 h-3.5" />
+          <MatIcon name="folder_open" className="text-[14px]" />
           <span className="font-medium">{activeProject.title}</span>
         </div>
       )}
@@ -474,7 +463,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             bg-blue-500/10 pointer-events-none">
             <div className="flex flex-col items-center gap-2 px-6 py-4 rounded-2xl
               bg-white dark:bg-gray-800 border-2 border-dashed border-blue-400 shadow-lg">
-              <span className="text-3xl">🖼️</span>
+              <MatIcon name="image" className="text-[36px] text-blue-400" />
               <span className="text-sm font-medium text-blue-600 dark:text-blue-400">여기에 놓으세요</span>
             </div>
           </div>
@@ -518,20 +507,20 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                       className="absolute top-1 right-1 w-5 h-5 rounded-full
                         bg-black/60 text-white text-xs flex items-center justify-center
                         opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
-                      aria-label={`${f.name} 제거`}>✕</button>
+                      aria-label={`${f.name} 제거`}><MatIcon name="close" className="text-[12px]" /></button>
                   </div>
                 ) : (
                   // 일반 파일
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg
                     bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                    <span className="text-lg">{fileIcon(f.name)}</span>
+                    <MatIcon name={fileIcon(f.name)} className="text-[20px] text-gray-500" />
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[120px]">{f.name}</p>
                       <p className="text-[10px] text-gray-400">{formatSize(f.size)}</p>
                     </div>
                     <button onClick={() => removeFile(i)}
                       className="text-gray-400 hover:text-red-400 cursor-pointer text-sm ml-1"
-                      aria-label={`${f.name} 제거`}>✕</button>
+                      aria-label={`${f.name} 제거`}><MatIcon name="close" className="text-[12px]" /></button>
                   </div>
                 )}
               </div>
@@ -566,20 +555,14 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
                 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700
                 cursor-pointer transition-colors" aria-label="파일 첨부" disabled={sending}>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
-              </svg>
+              <MatIcon name="attach_file" className="text-[20px]" />
             </button>
             </div>
             <button onClick={handleSend}
               disabled={sending || (!message.trim() && files.length === 0)}
               className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-30
                 text-white transition-colors cursor-pointer disabled:cursor-not-allowed" aria-label="전송">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-              </svg>
+              <MatIcon name="send" className="text-[16px]" />
             </button>
           </div>
         </div>
@@ -710,7 +693,7 @@ function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string;
           <div className="flex justify-end mb-1.5">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg
               bg-purple-500/80 text-white text-xs">
-              🔗 {baseTaskInstruction ? baseTaskInstruction.slice(0, 30) + '...' : '이전 작업 참조'}
+              <MatIcon name="link" className="text-[14px]" /> {baseTaskInstruction ? baseTaskInstruction.slice(0, 30) + '...' : '이전 작업 참조'}
             </span>
           </div>
         )}
@@ -741,7 +724,7 @@ function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string;
               <a key={`file-${i}`} href={f.url} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
                   bg-blue-500/80 text-white text-xs hover:bg-blue-500 transition-colors">
-                <span>{fileIcon(f.name)}</span>
+                <MatIcon name={fileIcon(f.name)} className="text-[14px]" />
                 <span className="truncate max-w-[120px]">{f.name}</span>
                 <span className="text-blue-200 text-[10px]">{formatSize(f.size)}</span>
               </a>
@@ -755,7 +738,7 @@ function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string;
             {fileNames.map((name, i) => (
               <div key={`fn-${i}`} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
                 bg-blue-500/80 text-white text-xs">
-                <span>{fileIcon(name)}</span>
+                <MatIcon name={fileIcon(name)} className="text-[14px]" />
                 <span className="truncate max-w-[120px]">{name}</span>
               </div>
             ))}
@@ -967,7 +950,7 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
                   bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600
                   text-xs text-gray-600 dark:text-gray-300
                   hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                <span>{fileIcon(name)}</span>
+                <MatIcon name={fileIcon(name)} className="text-[14px]" />
                 <span className="truncate max-w-[250px]">{name}</span>
               </a>
             )

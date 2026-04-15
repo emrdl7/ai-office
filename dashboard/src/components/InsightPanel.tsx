@@ -217,7 +217,7 @@ function TabMetrics() {
                 </span>
                 <span>·</span>
                 <span>{p.started_at ? new Date(p.started_at).toLocaleString('ko-KR') : '-'}</span>
-                <span className="ml-auto">{p.final_review_passed ? '✅' : '❌'} · rev {p.final_review_rounds}</span>
+                <span className="ml-auto flex items-center gap-1"><MatIcon name={p.final_review_passed ? 'check_circle' : 'cancel'} className={`text-[12px] ${p.final_review_passed ? 'text-green-500' : 'text-red-500'}`} fill /> rev {p.final_review_rounds}</span>
               </div>
               <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 line-clamp-2">
                 {p.instruction || '(지시 없음)'}
@@ -409,9 +409,7 @@ export function InsightPanel({ onClose, defaultTab = 'reaction' }: {
             className="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200
               hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
             aria-label="닫기">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <MatIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
