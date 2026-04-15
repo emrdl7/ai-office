@@ -32,6 +32,8 @@ DYNAMIC_TYPES = (
     'committed_to_request',  # A가 B의 요청에 "~하겠습니다" 응답
     # 멘션 라우팅 (agent_interactions._route_agent_mentions)
     'needs_clarification',   # A가 작업 중 B에게 @멘션으로 질문
+    # 회고 상호 코멘트 (teamlead_review._peer_lesson_commentary)
+    'lesson_applied',        # B가 A의 회고 교훈을 자신의 다음 작업에 적용하겠다고 연결
     # 미사용 예약 — 향후 분류용
     'prefers_detail', 'works_well', 'complements',
 )

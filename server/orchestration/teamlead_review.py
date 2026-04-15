@@ -366,6 +366,64 @@ def _build_agent_metrics_context(office, agent_name: str) -> str:
   return '\n'.join(lines)
 
 
+async def _peer_lesson_commentary(
+  office,
+  lesson_pairs: list[tuple[str, str]],
+) -> None:
+  '''회고 발언 직후, 다른 팀원이 "내 다음 작업에 이렇게 적용" 한 문장 연결.
+
+  유기성 원칙 (memory/feedback_team_organic.md): 각자 교훈이 고립되지 않고
+  다음 사람의 행동으로 이어지도록 라운드로빈 커뮤니터리 1회.
+  '''
+  if len(lesson_pairs) < 2:
+    return
+
+  names = [n for n, _ in lesson_pairs]
+  lesson_map = dict(lesson_pairs)
+
+  async def _one_comment(owner: str, lesson: str, commenter: str) -> tuple[str, str, str]:
+    owner_kr = display_name(owner)
+    commenter_kr = display_name(commenter)
+    prompt = (
+      f'팀원 {owner_kr}의 회고 한 줄: "{lesson}"\n\n'
+      f'당신({commenter_kr})의 다음 작업에 이 교훈을 어떻게 적용할지 '
+      f'한 문장으로 답하세요.\n'
+      f'- 30자 이내, 메신저 톤, 마크다운/서두 인사 금지.\n'
+      f'- 구체 행동으로 (예: "다음 초안 제출 전 AC 체크리스트 먼저")'
+    )
+    try:
+      text = await run_claude_isolated(
+        prompt, model='claude-haiku-4-5-20251001', timeout=15.0,
+      )
+      return owner, commenter, (text or '').strip().split('\n')[0][:80]
+    except Exception:
+      logger.debug('상호 회고 코멘트 실패: %s→%s', commenter, owner, exc_info=True)
+      return owner, commenter, ''
+
+  # 라운드로빈 — names[i]의 교훈에 names[(i+1) % n]가 코멘트
+  n = len(names)
+  tasks = [
+    _one_comment(names[i], lesson_map[names[i]], names[(i + 1) % n])
+    for i in range(n)
+  ]
+  comments = await asyncio.gather(*tasks, return_exceptions=False)
+
+  for owner, commenter, text in comments:
+    if not text:
+      continue
+    owner_kr = display_name(owner)
+    await office._emit(commenter, f'↳ {owner_kr} 교훈 반영: {text}', 'response')
+    try:
+      office._record_dynamic(
+        from_agent=commenter,
+        to_agent=owner,
+        dynamic_type='lesson_applied',
+        description=text[:100],
+      )
+    except Exception:
+      logger.debug('lesson_applied 기록 실패', exc_info=True)
+
+
 async def _synthesize_and_save_retrospective(
   office,
   project_title: str,
@@ -510,6 +568,12 @@ async def run_retrospective(
       ))
     except Exception:
       logger.debug("팀 교훈 저장 실패: %s", name, exc_info=True)
+
+  # 팀원 간 상호 코멘트 — 교훈 연결 (유기성 원칙)
+  try:
+    await _peer_lesson_commentary(office, lesson_pairs)
+  except Exception:
+    logger.debug('상호 회고 코멘트 실패', exc_info=True)
 
   # 팀장 종합 → retrospective.md 아티팩트
   try:

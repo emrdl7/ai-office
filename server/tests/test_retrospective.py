@@ -128,3 +128,54 @@ async def test_retrospective_saves_artifact_and_lessons(office_stub):
   lessons = office_stub.team_memory.get_all_lessons()
   assert len(lessons) >= 1
   assert all(l.project_title == '테스트 프로젝트' for l in lessons)
+
+
+@pytest.mark.asyncio
+async def test_peer_lesson_commentary_round_robin(office_stub):
+  '''회고 후 라운드로빈으로 다른 팀원이 교훈 연결 코멘트를 남긴다.'''
+  from orchestration import teamlead_review
+
+  lesson_pairs = [
+    ('planner', '드러나지 않은 제약을 먼저 물어본다'),
+    ('designer', '초안에 AC 체크 먼저'),
+    ('developer', '레이아웃 확정이 속도를 올린다'),
+  ]
+
+  async def _fake_claude(prompt, **kwargs):
+    # 코멘트 프롬프트에는 "당신의 다음 작업"이 포함됨
+    assert '다음 작업' in prompt
+    return '다음 초안 전 AC 체크리스트 먼저'
+
+  with patch(
+    'orchestration.teamlead_review.run_claude_isolated',
+    new=AsyncMock(side_effect=_fake_claude),
+  ):
+    await teamlead_review._peer_lesson_commentary(office_stub, lesson_pairs)
+
+  # 3명의 코멘트 emit — ↳ 접두사 포함
+  emit_messages = [c.args[1] for c in office_stub._emit.await_args_list]
+  connector_msgs = [m for m in emit_messages if m.startswith('↳')]
+  assert len(connector_msgs) == 3
+
+  # _record_dynamic 3회 호출 — dynamic_type='lesson_applied'
+  dyn_calls = office_stub._record_dynamic.call_args_list
+  lesson_calls = [c for c in dyn_calls if c.kwargs.get('dynamic_type') == 'lesson_applied']
+  assert len(lesson_calls) == 3
+  # 라운드로빈 — 자기 자신에게 코멘트 금지
+  for c in lesson_calls:
+    assert c.kwargs['from_agent'] != c.kwargs['to_agent']
+
+
+@pytest.mark.asyncio
+async def test_peer_lesson_commentary_skipped_when_alone(office_stub):
+  '''참여자 1명 이하면 상호 코멘트는 스킵된다.'''
+  from orchestration import teamlead_review
+
+  with patch(
+    'orchestration.teamlead_review.run_claude_isolated',
+    new=AsyncMock(return_value='unreachable'),
+  ) as mock:
+    await teamlead_review._peer_lesson_commentary(
+      office_stub, [('planner', '혼자 배운 점')],
+    )
+  assert mock.await_count == 0
