@@ -3,8 +3,8 @@
 > **현재 상태 (2026-04-15)**: office.py **669 LOC** (시작 4,144 대비 −84%).
 > 도메인별 분할 완료 — teamlead_review / autonomous_loop / agent_interactions /
 > project_runner / suggestion_filer. 상호작용·학습·관찰 루프 3종 가동 중.
-> P2 약한 엣지 4종 보강 완료 (phase_intro 맥락 주입, task_ack 우려 재고지,
-> peer_concern 임계치 자동 건의, DYNAMIC_TYPES 표준 어휘).
+> P2 대부분 완료 (약한 엣지 3종, 메타 학습 3종). Draft 건의 백엔드 완성
+> (schema + loop), source_log_id 스키마 준비. 남은 P2: 대시보드 UI + 로그ID 배선.
 
 ---
 
@@ -44,28 +44,28 @@
 ### 약한 엣지 보강
 - [x] `_phase_intro`에 과거 교훈 + 직전 동료 의견 주입 (2026-04-15).
 - [x] `_task_acknowledgment`에 직전 피어 우려 재고지 (2026-04-15).
-- [ ] `_work_commentary`가 `_route_agent_mentions` 트리거 경로와 연동되도록
-      — 진행 중 코멘트에 `@팀원` 포함되면 즉시 라우팅.
+- [x] `_work_commentary`가 @멘션 포함 시 `_route_agent_mentions` 즉시 연동 (2026-04-15).
 
 ### 관찰·메타 학습
-- [ ] 주간 배치 리뷰(`teamlead_review.run_loop`)에서 **TeamDynamic 집계**
-      추가 — "누가 누구와 잘 맞는지 / stuck 패턴" 요약을 팀 맥락 텍스트에 주입.
-- [x] `_peer_review`의 `peer_concern` 누적 임계치(같은 쌍 3회) → 자동 건의
-      등록 + 24h 쿨다운 (2026-04-15).
+- [x] 팀장 배치 리뷰에 TeamDynamic 집계 주입 (`_summarize_team_dynamics`,
+      2026-04-15). 상위 8쌍 + peer_concern 2회+ 경고 쌍.
+- [x] `_peer_review` peer_concern 임계치 → 자동 건의 (2026-04-15).
 - [x] `TeamDynamic.dynamic_type` 어휘 표준화 (`DYNAMIC_TYPES`, 2026-04-15).
 
 ### Draft 건의 상태 (자기 다짐 과잉 등록 완충)
-- [ ] `suggestion_store`에 `status='draft'` 추가. 현재 `_file_commitment_suggestion`
-      이 바로 pending을 만들어 auto_triage로 돌입 — 말로만 한 다짐도 실행됨.
-- [ ] draft → pending 승격 조건: (a) 요청자/팀장이 확정, (b) 24h 경과 후 자동 승격,
-      (c) 같은 committer의 같은 주제 반복 시 자동 승격.
+- [x] `suggestion_store.create_suggestion(status='draft')` + `promote_draft`/
+      `auto_promote_drafts` (2026-04-15).
+- [x] `_file_commitment_suggestion` 기본 draft, 동일 주제 반복 시 즉시 pending.
+- [x] `main._draft_promotion_loop` — 1시간 주기로 24h 경과 draft 자동 승격.
 - [ ] UI: 대시보드에서 draft 건의 목록 별도 탭.
+- [ ] 수동 승격(`promote_draft`) 관리자 엔드포인트 노출.
 
 ### 출처 추적
-- [ ] 건의에 `source_log_id` 컬럼 추가. `_file_commitment_suggestion`/
-      `_auto_file_suggestion`/`_file_reaction_suggestion` 등록 시 원본
-      message 로그 ID 저장.
-- [ ] 대시보드에서 건의 → 원본 발화로 이동 가능.
+- [x] `suggestions.source_log_id` 컬럼 + `create_suggestion` 매개변수 (2026-04-15).
+- [ ] `_auto_file_suggestion` / `_file_reaction_suggestion` / autonomous
+      발화 경로에서 source_log_id 실제 전파 (현재 스키마만 준비, 값은 ''
+      상태). 로그 ID 소스에 따라 2~3곳 배선 필요.
+- [ ] 대시보드에서 건의 → 원본 발화 이동 링크.
 
 ---
 
