@@ -71,6 +71,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
   # 중단된 태스크 알림 (자동 재실행 없이 사용자에게 선택권)
   asyncio.create_task(office.restore_pending_tasks())
+  # Job 파이프라인 복구 — 재시작으로 중단된 running/waiting_gate Job 재개
+  async def _resume_jobs() -> None:
+    from jobs.runner import resume_orphan_jobs
+    await resume_orphan_jobs()
+  asyncio.create_task(_resume_jobs())
   # 재기동 복구 — 코드 패치 중단으로 남은 orphan git 상태 정리
   asyncio.create_task(_recover_orphan_patches())
   # 재시작 완료 알림 — 직전이 "재시작 중" 시스템 알림이면 후속 알림 발행

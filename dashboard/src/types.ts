@@ -72,6 +72,7 @@ export interface Job {
   started_at: string
   finished_at: string
   artifacts: Record<string, string>
+  total_cost_usd: number
   steps?: JobStep[]
   gates?: JobGate[]
 }

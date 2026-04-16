@@ -169,23 +169,41 @@ def _load_teamlead_prompt() -> str:
 
 
 def _parse_intent_response(response: str) -> IntentResult:
-  '''Claude 응답을 파싱하여 IntentResult로 변환한다.'''
-  text = response.strip()
-  lines = text.split('\n', 1)
-  header = lines[0].strip()
-  body = lines[1].strip() if len(lines) > 1 else ''
+  '''Claude 응답을 파싱하여 IntentResult로 변환한다.
 
-  if header.startswith('[CONVERSATION'):
+  헤더가 첫 줄에 없어도 전체 텍스트에서 regex로 탐색한다.
+  파싱 실패 시 CONVERSATION 폴백 (200자 휴리스틱 제거).
+  '''
+  import re as _re
+  import json as _json
+
+  text = response.strip()
+
+  # 전체 텍스트에서 태그 탐색 (첫 줄 한정 X)
+  pattern = _re.compile(
+    r'\[(CONVERSATION|QUICK_TASK(?::[a-z]+)?|CONTINUE_PROJECT(?::[a-z]+)?|PROJECT|JOB(?::[a-z_]+)?)\]',
+    _re.IGNORECASE,
+  )
+  m = pattern.search(text)
+  if not m:
+    # 파싱 실패 — CONVERSATION 폴백 (로그에 원본 기록)
+    logger.debug('[intent] 파싱 실패, CONVERSATION 폴백. 원본: %.200s', text)
+    return IntentResult(intent=IntentType.CONVERSATION, direct_response=text)
+
+  tag = m.group(1).upper()
+  # 태그 이후 텍스트를 body로 사용
+  body = text[m.end():].strip()
+
+  if tag.startswith('CONVERSATION'):
     return IntentResult(
       intent=IntentType.CONVERSATION,
       direct_response=body or text,
     )
 
-  if header.startswith('[QUICK_TASK'):
-    # [QUICK_TASK:developer] 형태에서 에이전트명 추출
+  if tag.startswith('QUICK_TASK'):
     agent = 'developer'
-    if ':' in header:
-      agent_part = header.split(':')[1].strip().rstrip(']')
+    if ':' in tag:
+      agent_part = tag.split(':')[1].lower()
       if agent_part in ('planner', 'designer', 'developer', 'qa'):
         agent = agent_part
     return IntentResult(
@@ -194,10 +212,10 @@ def _parse_intent_response(response: str) -> IntentResult:
       analysis=body,
     )
 
-  if header.startswith('[CONTINUE_PROJECT'):
+  if tag.startswith('CONTINUE_PROJECT'):
     agent = 'planner'
-    if ':' in header:
-      agent_part = header.split(':')[1].strip().rstrip(']')
+    if ':' in tag:
+      agent_part = tag.split(':')[1].lower()
       if agent_part in ('planner', 'designer', 'developer', 'qa'):
         agent = agent_part
     return IntentResult(
@@ -206,40 +224,32 @@ def _parse_intent_response(response: str) -> IntentResult:
       analysis=body,
     )
 
-  if header.startswith('[PROJECT]'):
+  if tag == 'PROJECT':
     return IntentResult(
       intent=IntentType.PROJECT,
       analysis=body,
     )
 
-  if header.startswith('[JOB'):
-    import json as _json
-    spec_id = ''
-    if ':' in header:
-      spec_id = header.split(':')[1].strip().rstrip(']').strip()
+  if tag.startswith('JOB'):
+    spec_id = tag.split(':')[1].lower() if ':' in tag else ''
     job_input: dict = {}
     if body:
-      try:
-        job_input = _json.loads(body)
-      except Exception:
-        pass
+      # body에서 JSON 블록 추출 (마크다운 코드블록 포함 대응)
+      json_match = _re.search(r'\{[\s\S]*\}', body)
+      if json_match:
+        try:
+          job_input = _json.loads(json_match.group())
+        except Exception:
+          pass
     return IntentResult(
       intent=IntentType.JOB,
       job_spec_id=spec_id,
       job_input=job_input,
     )
 
-
-  # 파싱 실패 시 기본값: 내용이 짧으면 대화, 길면 프로젝트
-  if len(text) < 200:
-    return IntentResult(
-      intent=IntentType.CONVERSATION,
-      direct_response=text,
-    )
-  return IntentResult(
-    intent=IntentType.PROJECT,
-    analysis=text,
-  )
+  # 알 수 없는 태그 — CONVERSATION 폴백
+  logger.debug('[intent] 알 수 없는 태그 %s, CONVERSATION 폴백', tag)
+  return IntentResult(intent=IntentType.CONVERSATION, direct_response=text)
 
 
 async def generate_project_title(user_input: str) -> str:

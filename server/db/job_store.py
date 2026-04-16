@@ -14,8 +14,11 @@ _DB = Path(__file__).parent.parent / 'data' / 'jobs.db'
 
 def _conn() -> sqlite3.Connection:
     _DB.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(_DB))
+    c = sqlite3.connect(str(_DB), check_same_thread=False)
     c.row_factory = sqlite3.Row
+    c.execute('PRAGMA journal_mode=WAL')
+    c.execute('PRAGMA synchronous=NORMAL')
+    c.execute('PRAGMA busy_timeout=5000')
     c.executescript('''
         CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY,
@@ -28,7 +31,8 @@ def _conn() -> sqlite3.Connection:
             started_at TEXT DEFAULT '',
             finished_at TEXT DEFAULT '',
             current_step TEXT DEFAULT '',
-            error TEXT DEFAULT ''
+            error TEXT DEFAULT '',
+            total_cost_usd REAL DEFAULT 0.0
         );
         CREATE TABLE IF NOT EXISTS job_steps (
             job_id TEXT NOT NULL,
@@ -58,12 +62,13 @@ def _conn() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
     ''')
     # 기존 DB 마이그레이션 — 컬럼이 없으면 추가
-    for col, definition in [
-        ('revised', 'INTEGER DEFAULT 0'),
-        ('revision_feedback', 'TEXT DEFAULT ""'),
+    for table, col, definition in [
+        ('job_steps', 'revised', 'INTEGER DEFAULT 0'),
+        ('job_steps', 'revision_feedback', 'TEXT DEFAULT ""'),
+        ('jobs', 'total_cost_usd', 'REAL DEFAULT 0.0'),
     ]:
         try:
-            c.execute(f'ALTER TABLE job_steps ADD COLUMN {col} {definition}')
+            c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
         except Exception:
             pass  # 이미 존재하면 무시
     c.commit()

@@ -252,6 +252,17 @@ async def job_insights() -> dict[str, Any]:
     ).fetchall()
     daily_done = [{'day': r['day'], 'count': r['cnt']} for r in daily_rows]
 
+    cost_row = c.execute(
+        "SELECT COALESCE(SUM(total_cost_usd), 0.0) as total_cost "
+        "FROM jobs WHERE status='done'"
+    ).fetchone()
+    total_cost_usd = round(float(cost_row['total_cost'] or 0), 4)
+
+    step_cost_row = c.execute(
+        "SELECT COALESCE(SUM(cost_usd), 0.0) as total FROM job_steps WHERE status='done'"
+    ).fetchone()
+    step_cost_usd = round(float(step_cost_row['total'] or 0), 4)
+
     c.close()
     total = sum(by_status.values())
     done = by_status.get('done', 0)
@@ -266,6 +277,8 @@ async def job_insights() -> dict[str, Any]:
         'total_steps_done': total_steps,
         'revision_rate': round(total_revised / total_steps * 100, 1) if total_steps else 0,
         'daily_done': daily_done,
+        'total_cost_usd': total_cost_usd,
+        'step_cost_usd': step_cost_usd,
     }
 
 

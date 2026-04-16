@@ -17,6 +17,8 @@ interface JobInsights {
   total_steps_done: number
   revision_rate: number
   daily_done: { day: string; count: number }[]
+  total_cost_usd: number
+  step_cost_usd: number
 }
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
@@ -119,6 +121,27 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
                   </div>
                 ))}
               </div>
+
+              {/* 비용 추적 */}
+              {(data.total_cost_usd > 0 || data.step_cost_usd > 0) && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">추정 비용</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-0.5">완료 Job 합산</p>
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                        ${data.total_cost_usd.toFixed(4)}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] text-gray-400 mb-0.5">Step 합산</p>
+                      <p className="text-lg font-bold text-gray-600 dark:text-gray-300 font-mono">
+                        ${data.step_cost_usd.toFixed(4)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 모델 사용 */}
               {data.model_usage.length > 0 && (

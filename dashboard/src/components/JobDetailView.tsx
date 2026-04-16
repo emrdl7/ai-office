@@ -412,6 +412,11 @@ export function JobDetailView({
                 {new Date(job.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
+            {job.status === 'done' && (job.total_cost_usd ?? 0) > 0 && (
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
+                ${job.total_cost_usd.toFixed(4)}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex gap-1 shrink-0">

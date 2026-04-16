@@ -475,7 +475,24 @@ class Office:
       self._work_started_at = ''
       return {'state': self._state.value, 'response': '', 'artifacts': []}
 
-    job = await job_submit(spec, job_input, title=user_input[:40])
+    # 활성 프로젝트가 있으면 최근 완료 Job 산출물을 context로 주입 (1-5)
+    attachments_text = ''
+    if self._active_project_id:
+      try:
+        from db.job_store import list_jobs as _list_jobs, get_job as _get_job
+        recent = _list_jobs(status='done', limit=5)
+        if recent:
+          src = _get_job(recent[0]['id'])
+          if src:
+            arts = src.get('artifacts') or {}
+            if arts:
+              attachments_text = '\n\n'.join(
+                f'[{k}]\n{str(v)[:800]}' for k, v in arts.items() if v
+              )[:3000]
+      except Exception:
+        pass
+
+    await job_submit(spec, job_input, title=user_input[:40], attachments_text=attachments_text)
 
     await self._emit(
       'teamlead',
