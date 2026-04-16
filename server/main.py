@@ -81,14 +81,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
   # 재시작 완료 알림 — 직전이 "재시작 중" 시스템 알림이면 후속 알림 발행
   asyncio.create_task(_announce_restart_complete())
 
-  # [동결] 자율 대화 루프 — UX Studio 전환으로 비활성화
-  # office._autonomous_task = asyncio.create_task(office.start_autonomous_loop())
-  # [동결] 팀장 배치 리뷰 루프
-  # office._teamlead_review_task = asyncio.create_task(office.start_teamlead_review_loop())
-  # [동결] 대화 품질 자동 평가 루프
-  # from orchestration.conversation_quality import quality_eval_loop
-  # quality_task = asyncio.create_task(quality_eval_loop(office))
-
   # 메시지 버스 아카이브 루프 — 시작 시 1회 + 24h 주기 (완료 메시지 30일 이상 이관)
   archive_task = asyncio.create_task(_archive_loop())
   # draft 건의 자동 승격 루프 — 24h 경과 draft를 pending으로

@@ -27,12 +27,6 @@ export interface LogEntry {
   timestamp: string
 }
 
-export interface FileEntry {
-  path: string
-  type: 'code' | 'doc' | 'design' | 'data' | 'unknown'
-  size: number
-}
-
 // 채널 타입
 export type ChannelId = 'all' | 'jobs' | 'gates'
 
