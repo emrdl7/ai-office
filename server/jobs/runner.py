@@ -352,8 +352,8 @@ async def _wait_gate(
             prev_steps = {s['step_id']: s for s in _get_steps(job_id)}
             prev_revised = (prev_steps.get(step.id) or {}).get('revised', 0) or 0
 
-            # step 재실행
-            step_run = await _run_step(job_id, step, context)
+            # step 재실행 — revision_prompt가 있으면 부분 수정 프롬프트 사용 (2-3)
+            step_run = await _run_step(job_id, step, context, is_revision=True)
             step_run.revised = prev_revised + 1
             step_run.revision_feedback = fb
             upsert_step(step_run)
@@ -384,8 +384,14 @@ async def _wait_gate(
             continue
 
 
-async def _run_step(job_id: str, step: StepSpec, context: dict[str, str]) -> StepRun:
-    """단일 Step 실행 — 프롬프트를 채우고 model_router로 호출한다."""
+async def _run_step(
+    job_id: str, step: StepSpec, context: dict[str, str], is_revision: bool = False
+) -> StepRun:
+    """단일 Step 실행 — 프롬프트를 채우고 model_router로 호출한다.
+
+    Args:
+        is_revision: True이면 revision_prompt_template 우선 사용 (2-3)
+    """
     from runners import model_router
 
     started = datetime.now(timezone.utc).isoformat()
@@ -398,7 +404,11 @@ async def _run_step(job_id: str, step: StepSpec, context: dict[str, str]) -> Ste
     upsert_step(step_run)
 
     try:
-        prompt = _fill(step.prompt_template, context)
+        # 수정 재실행: revision_prompt_template이 있으면 사용 (2-3)
+        if is_revision and step.revision_prompt_template:
+            prompt = _fill(step.revision_prompt_template, context)
+        else:
+            prompt = _fill(step.prompt_template, context)
 
         if step.tools:
             tool_results = await _run_tools(step.tools, context)

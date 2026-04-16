@@ -27,6 +27,7 @@ class StepSpec:
     tools: list[str] = field(default_factory=list)
     parallel: bool = False
     output_key: str = ''                   # 결과를 저장할 artifact 키
+    revision_prompt_template: str = ''     # 수정 재실행용 프롬프트 (2-3), 없으면 원본 사용
 
 
 @dataclass
