@@ -4,6 +4,28 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
+  --safe-right: env(safe-area-inset-right);
+}
+
+html, body, #root {
+  height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+@supports not (height: 100dvh) {
+  html, body, #root {
+    height: 100vh;
+  }
+}
+
+/* 가로 스크롤바 감추기 유틸 */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 @font-face {
   font-family: 'NexonLv1Gothic';
   src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@2.1/NEXON Lv1 Gothic OTF Light.woff') format('woff');
@@ -38,7 +60,13 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@supports not (min-height: 100dvh) {
+  #root {
+    min-height: 100vh;
+  }
 }
 
 /* @멘션 강조 — 에이전트 메시지(어두운 배경)에서는 파란색, 사용자 메시지(파란 배경)에서는 흰색 */

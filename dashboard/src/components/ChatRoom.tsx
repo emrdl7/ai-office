@@ -7,6 +7,7 @@ import { MatIcon } from './icons'
 import type { Agent } from '../types'
 import { useChatWebSocket } from '../hooks/useChatWebSocket'
 import { useFileAttachment } from '../hooks/useFileAttachment'
+import { useKeyboardInset } from '../hooks/useKeyboardInset'
 import { MessageList } from './chat/MessageList'
 import { WorkingIndicator } from './chat/WorkingIndicator'
 import { filterLogs, fileIcon, formatSize, isImageFile, AVATAR_IMG } from './chat/chatUtils'
@@ -17,7 +18,12 @@ async function fetchAgents(): Promise<Agent[]> {
   return res.json()
 }
 
-export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
+interface ChatRoomProps {
+  onMenuClick?: () => void
+  onBack?: () => void
+}
+
+export function ChatRoom({ onMenuClick, onBack }: ChatRoomProps) {
   const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
 
   const { data: agents = [] } = useQuery({
@@ -29,6 +35,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
   const { connected, typingAgents } = useChatWebSocket({ addLog, setLogs })
   const { files, previews, fileInputRef, addFiles, handleFileChange, handlePaste, removeFile, clearFiles } = useFileAttachment()
+  const kbInset = useKeyboardInset()
 
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
@@ -98,29 +105,41 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     : `${profile?.character || profile?.name || activeChannel}`
 
   return (
-    <>
+    <div className="flex flex-col h-full min-h-0">
       {/* 이미지 라이트박스 */}
       {lightbox && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
           onClick={() => setLightbox(null)}>
           <img src={lightbox} alt="확대 이미지"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            className="max-w-[90vw] max-h-[90dvh] object-contain rounded-lg shadow-2xl"
             onClick={(e) => e.stopPropagation()} />
-          <button className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl cursor-pointer"
+          <button className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl cursor-pointer
+            min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
             onClick={() => setLightbox(null)}>&times;</button>
         </div>
       )}
 
       {/* 헤더 */}
-      <header className="flex items-center justify-between px-4 md:px-5 py-3
+      <header className="shrink-0 flex items-center justify-between px-4 md:px-5 py-3
         bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-3">
-          <button onClick={onMenuClick}
-            className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
-              dark:hover:bg-gray-800 cursor-pointer"
-            aria-label="메뉴">
-            <MatIcon name="menu" className="text-[20px]" />
-          </button>
+          {activeChannel === 'all' ? (
+            <button onClick={onMenuClick}
+              className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
+                dark:hover:bg-gray-800 cursor-pointer touch-manipulation
+                min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="메뉴">
+              <MatIcon name="menu" className="text-[20px]" />
+            </button>
+          ) : (
+            <button onClick={onBack}
+              className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
+                dark:hover:bg-gray-800 cursor-pointer touch-manipulation
+                min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="뒤로가기">
+              <MatIcon name="arrow_back_ios_new" className="text-[18px]" />
+            </button>
+          )}
           {activeChannel !== 'all' && AVATAR_IMG[activeChannel] && (
             <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${profile?.color}
               flex items-center justify-center overflow-hidden`}>
@@ -138,7 +157,8 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery('') }}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer touch-manipulation
+              min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center
               ${showSearch ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
             aria-label="검색" title="대화 검색">
             <MatIcon name="search" className="text-[16px]" />
@@ -150,14 +170,16 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             }}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
-              cursor-pointer transition-colors"
+              min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center
+              cursor-pointer transition-colors touch-manipulation"
             aria-label="대화 지우기" title="화면에서 대화 숨기기 (서버 기록은 보존)">
             <MatIcon name="delete_sweep" className="text-[16px]" />
           </button>
           <button onClick={() => window.location.reload()}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
-              cursor-pointer transition-colors"
+              min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center
+              cursor-pointer transition-colors touch-manipulation"
             aria-label="새로고침" title="새로고침">
             <MatIcon name="refresh" className="text-[16px]" />
           </button>
@@ -165,12 +187,23 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
       </header>
 
+      {/* 연결 끊김 배너 */}
+      {!connected && (
+        <div className="shrink-0 flex items-center justify-center gap-1.5
+          px-4 py-1.5 bg-amber-50 dark:bg-amber-900/20
+          text-amber-700 dark:text-amber-400 text-xs
+          border-b border-amber-200 dark:border-amber-800">
+          <MatIcon name="wifi_off" className="text-[14px]" />
+          연결 끊김 — 재연결 중...
+        </div>
+      )}
+
       {/* 검색 바 */}
       {showSearch && (
-        <div className="px-4 py-2 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+        <div className="shrink-0 px-4 py-2 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
           <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="대화 검색..."
-            className="w-full px-3 py-1.5 text-sm rounded-lg
+            className="w-full px-3 py-2 text-base md:text-sm rounded-lg
               bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700
               focus:outline-none focus:ring-2 focus:ring-blue-500
               text-gray-800 dark:text-gray-200 placeholder-gray-400"
@@ -197,7 +230,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           </div>
         )}
-        <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1 pt-3 pb-32">
+        <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1 pt-3 pb-4">
           {channelLogs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 py-40">
               <p className="text-sm">
@@ -214,109 +247,116 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </>
           )}
         </div>
+      </div>
 
-        {/* 입력창 */}
-        <div className="sticky bottom-0 px-3 md:px-5 pb-4 pt-2">
-          <div className="max-w-3xl mx-auto">
-            <input ref={fileInputRef} type="file" multiple accept="*/*"
-              onChange={handleFileChange} className="hidden" />
+      {/* 입력창 — flex shrink-0, iOS 키보드 대응 */}
+      <div
+        className="shrink-0 px-3 md:px-5 pt-2 pb-[max(12px,env(safe-area-inset-bottom))]
+          bg-gray-50 dark:bg-gray-900/50"
+        style={kbInset > 0 ? { marginBottom: kbInset } : undefined}
+      >
+        <div className="max-w-3xl mx-auto">
+          <input ref={fileInputRef} type="file" multiple accept="*/*"
+            onChange={handleFileChange} className="hidden" />
 
-            <div className={`rounded-2xl px-4 pt-3 pb-2
-              backdrop-blur-xl shadow-lg transition-all duration-200 border
-              ${message.trim() || files.length > 0
-                ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
-                : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
-              }`}>
+          <div className={`rounded-2xl px-4 pt-3 pb-2
+            backdrop-blur-xl shadow-lg transition-all duration-200 border
+            ${message.trim() || files.length > 0
+              ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
+              : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
+            }`}>
 
-              {/* 첨부파일 미리보기 */}
-              {files.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2.5">
-                  {files.map((f, i) => (
-                    <div key={`${f.name}-${i}`} className="relative group">
-                      {isImageFile(f.name) && previews[i] ? (
-                        <div className="w-20 h-20 rounded-xl overflow-hidden
-                          border border-gray-200/60 dark:border-gray-700/60 relative shadow-sm">
-                          <img src={previews[i]} alt={f.name} className="w-full h-full object-cover" />
-                          <button onClick={() => removeFile(i)}
-                            className="absolute top-1 right-1 w-5 h-5 rounded-full
-                              bg-black/60 text-white flex items-center justify-center
-                              opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
-                            aria-label={`${f.name} 제거`}>
-                            <MatIcon name="close" className="text-[11px]" />
-                          </button>
+            {/* 첨부파일 미리보기 */}
+            {files.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2.5">
+                {files.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="relative group">
+                    {isImageFile(f.name) && previews[i] ? (
+                      <div className="w-16 h-16 md:w-20 md:h-20 rounded-xl overflow-hidden
+                        border border-gray-200/60 dark:border-gray-700/60 relative shadow-sm">
+                        <img src={previews[i]} alt={f.name} className="w-full h-full object-cover" />
+                        <button onClick={() => removeFile(i)}
+                          className="absolute top-1 right-1 w-7 h-7 md:w-5 md:h-5 rounded-full
+                            bg-black/60 text-white flex items-center justify-center
+                            opacity-100 md:opacity-0 md:group-hover:opacity-100
+                            cursor-pointer transition-opacity touch-manipulation"
+                          aria-label={`${f.name} 제거`}>
+                          <MatIcon name="close" className="text-[14px] md:text-[11px]" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl
+                        bg-black/5 dark:bg-white/5 border border-gray-200/50 dark:border-gray-700/50">
+                        <MatIcon name={fileIcon(f.name)} className="text-[18px] text-gray-500" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[110px]">{f.name}</p>
+                          <p className="text-[10px] text-gray-400">{formatSize(f.size)}</p>
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl
-                          bg-black/5 dark:bg-white/5 border border-gray-200/50 dark:border-gray-700/50">
-                          <MatIcon name={fileIcon(f.name)} className="text-[18px] text-gray-500" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[110px]">{f.name}</p>
-                            <p className="text-[10px] text-gray-400">{formatSize(f.size)}</p>
-                          </div>
-                          <button onClick={() => removeFile(i)}
-                            className="text-gray-400 hover:text-red-400 cursor-pointer ml-1 transition-colors"
-                            aria-label={`${f.name} 제거`}>
-                            <MatIcon name="close" className="text-[13px]" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                        <button onClick={() => removeFile(i)}
+                          className="text-gray-400 hover:text-red-400 cursor-pointer ml-1 transition-colors
+                            min-w-[32px] min-h-[32px] md:min-w-0 md:min-h-0 flex items-center justify-center touch-manipulation"
+                          aria-label={`${f.name} 제거`}>
+                          <MatIcon name="close" className="text-[13px]" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-              <textarea ref={inputRef} value={message}
-                onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                placeholder={activeChannel === 'all'
-                  ? '팀에게 메시지 보내기...'
-                  : `${profile?.character || profile?.name}에게 메시지 보내기...`}
-                rows={1}
-                className="w-full text-sm resize-none bg-transparent
-                  text-gray-900 dark:text-gray-100 placeholder-gray-400/60 dark:placeholder-gray-500/70
-                  focus:outline-none min-h-[32px] max-h-[200px] leading-relaxed"
-                aria-label="메시지 입력" disabled={sending} />
+            <textarea ref={inputRef} value={message}
+              onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={activeChannel === 'all'
+                ? '팀에게 메시지 보내기...'
+                : `${profile?.character || profile?.name}에게 메시지 보내기...`}
+              rows={1}
+              className="w-full text-base md:text-sm resize-none bg-transparent
+                text-gray-900 dark:text-gray-100 placeholder-gray-400/60 dark:placeholder-gray-500/70
+                focus:outline-none min-h-[32px] max-h-[200px] leading-relaxed"
+              aria-label="메시지 입력" disabled={sending} />
 
-              <div className="flex items-center justify-between pt-1">
-                <button onClick={() => fileInputRef.current?.click()}
-                  className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600
-                    dark:hover:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10
-                    cursor-pointer transition-colors"
-                  aria-label="파일 첨부" disabled={sending}>
-                  <MatIcon name="attach_file" className="text-[18px]" />
+            <div className="flex items-center justify-between pt-1">
+              <button onClick={() => fileInputRef.current?.click()}
+                className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600
+                  dark:hover:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10
+                  min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center
+                  cursor-pointer transition-colors touch-manipulation"
+                aria-label="파일 첨부" disabled={sending}>
+                <MatIcon name="attach_file" className="text-[18px]" />
+              </button>
+              <div className="flex items-center gap-2.5">
+                {message.length >= 100 && (
+                  <span className={`text-[10px] tabular-nums
+                    ${message.length > 1500 ? 'text-red-400' : 'text-gray-400/60'}`}>
+                    {message.length.toLocaleString()}
+                  </span>
+                )}
+                <button onClick={handleSend}
+                  disabled={sending || (!message.trim() && files.length === 0)}
+                  aria-label="전송"
+                  className={`flex items-center justify-center w-11 h-11 md:w-8 md:h-8 rounded-xl
+                    transition-all duration-200 cursor-pointer touch-manipulation
+                    ${message.trim() || files.length > 0
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 hover:scale-105 active:scale-95'
+                      : 'text-gray-400/40 dark:text-gray-600 cursor-not-allowed'
+                    } disabled:opacity-60`}>
+                  {sending
+                    ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                    : <MatIcon name="send" className="text-[15px]" />
+                  }
                 </button>
-                <div className="flex items-center gap-2.5">
-                  {message.length >= 100 && (
-                    <span className={`text-[10px] tabular-nums
-                      ${message.length > 1500 ? 'text-red-400' : 'text-gray-400/60'}`}>
-                      {message.length.toLocaleString()}
-                    </span>
-                  )}
-                  <button onClick={handleSend}
-                    disabled={sending || (!message.trim() && files.length === 0)}
-                    aria-label="전송"
-                    className={`flex items-center justify-center w-8 h-8 rounded-xl
-                      transition-all duration-200 cursor-pointer
-                      ${message.trim() || files.length > 0
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 hover:scale-105 active:scale-95'
-                        : 'text-gray-400/40 dark:text-gray-600 cursor-not-allowed'
-                      } disabled:opacity-60`}>
-                    {sending
-                      ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                      : <MatIcon name="send" className="text-[15px]" />
-                    }
-                  </button>
-                </div>
               </div>
             </div>
-
-            <p className="text-[10px] text-gray-400/40 text-center mt-1 hidden md:block select-none">
-              Enter 전송 · Shift+Enter 줄바꿈
-            </p>
           </div>
+
+          <p className="text-[10px] text-gray-400/40 text-center mt-1 hidden md:block select-none">
+            Enter 전송 · Shift+Enter 줄바꿈
+          </p>
         </div>
       </div>
-    </>
+    </div>
   )
 }

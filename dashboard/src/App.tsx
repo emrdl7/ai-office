@@ -1,5 +1,5 @@
 // AI Office 메신저 — 업무용 채팅 앱
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useStore } from './store'
 import { Sidebar } from './components/Sidebar'
@@ -7,6 +7,7 @@ import { ChatRoom } from './components/ChatRoom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { JobBoard } from './components/JobBoard'
 import { GateInbox } from './components/GateInbox'
+import type { ChannelId } from './types'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,9 +18,16 @@ const queryClient = new QueryClient({
   },
 })
 
+const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates']
+
+function isChannelId(v: unknown): v is ChannelId {
+  return typeof v === 'string' && (VALID_CHANNELS as string[]).includes(v)
+}
+
 function MessengerApp() {
-  const { theme, activeChannel } = useStore()
+  const { theme, activeChannel, setActiveChannel } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sidebarRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const root = document.documentElement
@@ -42,8 +50,73 @@ function MessengerApp() {
     return () => mq.removeEventListener('change', handler)
   }, [])
 
+  // 초기 진입 시 해시에 채널이 있으면 해당 채널로 이동
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '')
+    if (isChannelId(hash) && hash !== activeChannel) {
+      setActiveChannel(hash)
+    }
+    // 초기 상태를 history에 기록 (뒤로가기 기준점)
+    if (!window.history.state || !isChannelId(window.history.state.channel)) {
+      window.history.replaceState({ channel: activeChannel }, '', `#${activeChannel}`)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 채널 변경 시 pushState + 사이드바 닫기 (뒤로가기 대상)
+  const navigate = (ch: ChannelId) => {
+    if (ch === activeChannel) {
+      setSidebarOpen(false)
+      return
+    }
+    setActiveChannel(ch)
+    setSidebarOpen(false)
+    window.history.pushState({ channel: ch }, '', `#${ch}`)
+  }
+
+  // Android 하드웨어 백버튼 / 브라우저 뒤로가기 처리
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const state = e.state
+      if (state && isChannelId(state.channel)) {
+        setActiveChannel(state.channel)
+      } else {
+        setActiveChannel('all')
+      }
+      setSidebarOpen(false)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [setActiveChannel])
+
+  // 사이드바 스와이프 닫기 (모바일)
+  useEffect(() => {
+    const el = sidebarRef.current
+    if (!el || !sidebarOpen) return
+    let startX = 0
+    let dx = 0
+    const onStart = (e: TouchEvent) => { startX = e.touches[0].clientX; dx = 0 }
+    const onMove = (e: TouchEvent) => {
+      dx = e.touches[0].clientX - startX
+      if (dx < 0) el.style.transform = `translateX(${Math.max(dx, -288)}px)`
+    }
+    const onEnd = () => {
+      el.style.transform = ''
+      if (dx < -60) setSidebarOpen(false)
+    }
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: true })
+    el.addEventListener('touchend', onEnd)
+    return () => {
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+    }
+  }, [sidebarOpen])
+
   return (
-    <div className="h-screen flex bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+    <div className="h-[100dvh] flex bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100
+      pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
 
       {/* 모바일 백드롭 */}
       {sidebarOpen && (
@@ -54,13 +127,18 @@ function MessengerApp() {
       )}
 
       {/* 좌측 사이드바 */}
-      <div className={`
-        fixed inset-y-0 left-0 z-40 w-72
-        transform transition-transform duration-200 ease-in-out
-        md:relative md:translate-x-0
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+      <div
+        ref={sidebarRef}
+        className={`
+          fixed inset-y-0 left-0 z-40 w-[min(288px,85vw)] md:w-72
+          transform transition-transform duration-200 ease-in-out
+          md:relative md:translate-x-0
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}>
+        <Sidebar
+          onClose={() => setSidebarOpen(false)}
+          navigate={navigate}
+        />
       </div>
 
       {/* 중앙: 메인 뷰 */}
@@ -68,9 +146,12 @@ function MessengerApp() {
         {activeChannel === 'jobs' ? (
           <JobBoard />
         ) : activeChannel === 'gates' ? (
-          <GateInbox />
+          <GateInbox onBack={() => navigate('all')} />
         ) : (
-          <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
+          <ChatRoom
+            onMenuClick={() => setSidebarOpen(true)}
+            onBack={() => navigate('all')}
+          />
         )}
       </div>
 

@@ -28,8 +28,8 @@ function GateInboxButton({
   return (
     <button
       onClick={() => selectChannel('gates')}
-      className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
-        flex items-center gap-2 mt-0.5
+      className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors touch-manipulation
+        flex items-center gap-2 mt-0.5 min-h-[44px] md:min-h-0
         ${activeChannel === 'gates'
           ? 'bg-blue-600/15 text-blue-400 font-medium'
           : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
@@ -58,8 +58,9 @@ function SidebarBtn({
     <button
       onClick={onClick}
       title={title}
-      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg touch-manipulation
         text-sm text-gray-600 dark:text-gray-400
+        min-h-[44px] md:min-h-0
         hover:bg-gray-100 dark:hover:bg-gray-800
         cursor-pointer transition-colors"
     >
@@ -69,21 +70,31 @@ function SidebarBtn({
   )
 }
 
-export function Sidebar({ onClose }: { onClose?: () => void }) {
+interface SidebarProps {
+  onClose?: () => void
+  navigate?: (ch: ChannelId) => void
+}
+
+export function Sidebar({ onClose, navigate }: SidebarProps) {
   const { activeChannel, setActiveChannel, toggleTheme, theme } = useStore()
   const [showSearch, setShowSearch] = useState(false)
   const [showInsight, setShowInsight] = useState(false)
 
   function selectChannel(channel: ChannelId) {
-    setActiveChannel(channel)
-    onClose?.()
+    if (navigate) {
+      navigate(channel)
+    } else {
+      setActiveChannel(channel)
+      onClose?.()
+    }
   }
 
   return (
     <aside
-      className="w-72 h-full flex-shrink-0 flex flex-col
+      className="w-[min(288px,85vw)] md:w-72 h-full flex-shrink-0 flex flex-col
         bg-white dark:bg-gray-950
-        border-r border-gray-200 dark:border-gray-800"
+        border-r border-gray-200 dark:border-gray-800
+        pt-[env(safe-area-inset-top)]"
       aria-label="채널 목록"
     >
       {/* 헤더 */}
@@ -92,11 +103,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <span className="text-blue-400 font-bold text-lg">AI</span>
           <h1 className="text-sm font-semibold text-gray-900 dark:text-white">Office</h1>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
           <button
             onClick={toggleTheme}
-            className="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800
-              cursor-pointer transition-colors"
+            className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800
+              min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0
+              flex items-center justify-center
+              cursor-pointer transition-colors touch-manipulation"
             aria-label="테마 전환"
             title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
           >
@@ -105,6 +118,19 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               : <MatIcon name="dark_mode" className="text-[16px]" />
             }
           </button>
+          {/* 모바일 전용 닫기 버튼 */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="md:hidden p-2 rounded-lg min-w-[44px] min-h-[44px]
+                flex items-center justify-center
+                text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800
+                cursor-pointer touch-manipulation"
+              aria-label="사이드바 닫기"
+            >
+              <MatIcon name="close" className="text-[18px]" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -115,8 +141,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         </h3>
         <button
           onClick={() => selectChannel('all')}
-          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
-            flex items-center gap-2
+          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors touch-manipulation
+            flex items-center gap-2 min-h-[44px] md:min-h-0
             ${activeChannel === 'all'
               ? 'bg-blue-600/15 text-blue-400 font-medium'
               : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
@@ -129,8 +155,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         {/* Job Board */}
         <button
           onClick={() => selectChannel('jobs')}
-          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
-            flex items-center gap-2 mt-0.5
+          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors touch-manipulation
+            flex items-center gap-2 mt-0.5 min-h-[44px] md:min-h-0
             ${activeChannel === 'jobs'
               ? 'bg-blue-600/15 text-blue-400 font-medium'
               : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
@@ -145,7 +171,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
 
       {/* 하단 메뉴 */}
-      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-0.5">
+      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-0.5
+        pb-[max(12px,env(safe-area-inset-bottom))]">
         <SidebarBtn icon="search" label="통합 검색" onClick={() => setShowSearch(true)} />
         <SidebarBtn icon="insights" label="인사이트" onClick={() => setShowInsight(true)} />
         <SidebarBtn

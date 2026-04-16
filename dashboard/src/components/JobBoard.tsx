@@ -174,6 +174,7 @@ export function JobBoard() {
               <button
                 onClick={() => setShowPlaybook(true)}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
+                  min-h-[44px] md:min-h-0 touch-manipulation
                   text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30
                   hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
                 title="Playbook — 여러 Job을 순서대로 자동 실행"
@@ -184,6 +185,7 @@ export function JobBoard() {
               <button
                 onClick={() => setShowNewJob(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white
+                  min-h-[44px] md:min-h-0 touch-manipulation
                   bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
               >
                 <MatIcon name="add" className="text-[14px]" />
@@ -193,32 +195,37 @@ export function JobBoard() {
           </div>
 
           {/* 상태 필터 탭 */}
-          <div className="flex gap-1 overflow-x-auto no-scrollbar">
-            {STATUS_TABS.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setFilter(tab.key)}
-                className={`shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer
-                  ${filter === tab.key
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                  }`}
-              >
-                {tab.label}
-                {tab.key !== 'all' && counts[tab.key] ? (
-                  <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
-                    ${filter === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
-                    {counts[tab.key]}
-                  </span>
-                ) : null}
-                {tab.key === 'all' && jobs.length > 0 && (
-                  <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
-                    ${filter === 'all' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
-                    {jobs.length}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="relative">
+            <div className="flex gap-1 overflow-x-auto no-scrollbar pb-1">
+              {STATUS_TABS.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setFilter(tab.key)}
+                  className={`shrink-0 px-2.5 py-1.5 text-[11px] font-medium rounded-lg transition-colors cursor-pointer touch-manipulation
+                    ${filter === tab.key
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                    }`}
+                >
+                  {tab.label}
+                  {tab.key !== 'all' && counts[tab.key] ? (
+                    <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
+                      ${filter === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                      {counts[tab.key]}
+                    </span>
+                  ) : null}
+                  {tab.key === 'all' && jobs.length > 0 && (
+                    <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
+                      ${filter === 'all' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                      {jobs.length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="absolute right-0 top-0 bottom-1 w-8
+              bg-gradient-to-l from-white dark:from-gray-950 to-transparent
+              pointer-events-none md:hidden" />
           </div>
         </div>
 
@@ -266,6 +273,20 @@ export function JobBoard() {
       {/* 우측: Job 상세 */}
       {selectedJobId ? (
         <div className="flex-1 flex flex-col min-h-0">
+          {/* 모바일 전용 목록 뒤로가기 */}
+          <button
+            onClick={() => setSelectedJobId(null)}
+            className="md:hidden flex items-center gap-1 px-3 py-2 min-h-[44px]
+              text-sm text-gray-600 dark:text-gray-400
+              border-b border-gray-200 dark:border-gray-800
+              bg-white dark:bg-gray-950
+              hover:bg-gray-50 dark:hover:bg-gray-900
+              transition-colors cursor-pointer touch-manipulation"
+            aria-label="Job 목록으로 돌아가기"
+          >
+            <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
+            <span>목록</span>
+          </button>
           <JobDetailView
             jobId={selectedJobId}
             onClose={() => setSelectedJobId(null)}
