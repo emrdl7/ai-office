@@ -22,6 +22,7 @@ _PRICE_TABLE: dict[str, tuple[float, float]] = {
   'claude-haiku': (0.0008, 0.004),
   'claude-sonnet-4-6': (0.003, 0.015),
   'claude-sonnet': (0.003, 0.015),
+  'claude-opus-4-7': (0.015, 0.075),
   'claude-opus-4-6': (0.015, 0.075),
   'claude-opus': (0.015, 0.075),
   'gemini': (0.0, 0.0),
@@ -31,9 +32,15 @@ _PRICE_TABLE: dict[str, tuple[float, float]] = {
 DAILY_BUDGET_USD = 15.0
 
 
+_db_conn: sqlite3.Connection | None = None
+
+
 def _conn() -> sqlite3.Connection:
+  global _db_conn
+  if _db_conn is not None:
+    return _db_conn
   _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-  c = sqlite3.connect(str(_DB_PATH))
+  c = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
   c.execute('''
     CREATE TABLE IF NOT EXISTS llm_calls (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +56,8 @@ def _conn() -> sqlite3.Connection:
     )
   ''')
   c.execute('CREATE INDEX IF NOT EXISTS idx_llm_calls_ts ON llm_calls(ts)')
+  c.commit()
+  _db_conn = c
   return c
 
 
@@ -89,7 +98,6 @@ def record_call(
        len(prompt or ''), len(response or ''), in_toks, out_toks, cost),
     )
     c.commit()
-    c.close()
   except Exception:
     logger.debug('LLM 호출 기록 실패', exc_info=True)
 
@@ -119,7 +127,6 @@ def get_today_stats() -> dict[str, Any]:
       'output_tokens': r['out_toks'] or 0,
       'cost_usd': round(cost, 4),
     })
-  c.close()
   return {
     'date': today,
     'total_cost_usd': round(total_cost, 4),

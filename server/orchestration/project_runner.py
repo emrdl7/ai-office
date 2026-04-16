@@ -102,6 +102,8 @@ async def _handle_quick_task(
   qa_agent = office.agents.get('qa')
   accumulated_feedback: list[str] = []
   if qa_agent and agent_name != 'qa':
+    prev_severity = 'none'
+    clarification_advice = ''
     for attempt in range(3):
       office._state = OfficeState.QA_REVIEW
       office._active_agent = 'qa'
@@ -174,12 +176,40 @@ async def _handle_quick_task(
           )
         except Exception:
           logger.debug("QA 불합격 경험 기록 실패", exc_info=True)
+
+        # 2회 연속 같은 severity → QA가 구체 수정 지침 제공
+        if attempt == 1 and severity == prev_severity and severity in ('critical', 'major'):
+          try:
+            clar_prompt = (
+              f'[{display_name(agent_name)} 산출물이 {severity} 사유로 2회 연속 불합격]\n\n'
+              f'[요구사항]\n{prompt[:500]}\n\n'
+              f'[반복 불합격 사유]\n{failure_reason[:300]}\n\n'
+              f'[산출물 일부]\n{result[:800]}\n\n'
+              f'QA 전문가로서 구체 수정 예시를 2~3개 제시하세요.\n'
+              f'"X는 Y 형태여야 합니다. 예시: Z" 구조. 100~200자.'
+            )
+            clarification_advice = await qa_agent.handle(clar_prompt)
+            await office._emit('qa', f'📋 수정 지침:\n{clarification_advice}', 'response')
+            office._record_dynamic(
+              from_agent='qa',
+              to_agent=agent_name,
+              dynamic_type='qa_clarification_cycle',
+              description=f'[2회 연속 {severity}] clarification 제공',
+            )
+          except Exception:
+            logger.debug('QA clarification 실패', exc_info=True)
+
+        prev_severity = severity
+
         if attempt < 2:
           office._state = OfficeState.WORKING
           office._active_agent = agent_name
           await office._emit('teamlead', f'{display_name(agent_name)}, 보완 부탁합니다.', 'response')
           all_feedback = '\n'.join(f'- {fb}' for fb in accumulated_feedback)
-          revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{all_feedback}\n\n[이전 결과물]\n{result}'
+          revision_prompt = f'{prompt}\n\n[QA 피드백 — 반드시 반영할 것]\n{all_feedback}'
+          if clarification_advice:
+            revision_prompt += f'\n\n[QA 구체 수정 지침]\n{clarification_advice}'
+          revision_prompt += f'\n\n[이전 결과물]\n{result}'
           result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
 
   # 산출물 저장

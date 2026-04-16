@@ -76,12 +76,14 @@ export function NewJobDialog({
 
   // specs 로드 완료 후 initialValues.specId 매칭
   useEffect(() => {
-    if (initialValues?.specId && specs.length > 0 && !selectedSpec) {
+    if (initialValues?.specId && specs.length > 0) {
       const matched = specs.find(s => s.id === initialValues.specId)
-      if (matched) setSelectedSpec(matched)
+      if (matched) {
+        setSelectedSpec(matched)
+        setFields({})
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [specs])
+  }, [specs, initialValues?.specId])
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -116,8 +118,8 @@ export function NewJobDialog({
   function addFiles(newFiles: FileList | null) {
     if (!newFiles) return
     setAttachedFiles(prev => {
-      const existing = new Set(prev.map(f => f.name))
-      const toAdd = Array.from(newFiles).filter(f => !existing.has(f.name))
+      const existing = new Set(prev.map(f => `${f.name}:${f.size}`))
+      const toAdd = Array.from(newFiles).filter(f => !existing.has(`${f.name}:${f.size}`))
       return [...prev, ...toAdd]
     })
   }
@@ -207,11 +209,10 @@ export function NewJobDialog({
                 <div key={field}>
                   <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
                     {field}
-                    {!requiredFields.includes(field) && (
+                    {requiredFields.includes(field) ? (
+                      <span className="text-red-400 ml-1">(필수)</span>
+                    ) : (
                       <span className="text-gray-400 ml-1">(선택)</span>
-                    )}
-                    {requiredFields.includes(field) && (
-                      <span className="text-red-400 ml-1">*</span>
                     )}
                   </label>
                   <textarea

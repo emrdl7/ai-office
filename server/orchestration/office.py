@@ -123,6 +123,11 @@ class Office:
     self._autonomous_running = False
     self._autonomous_task: asyncio.Task[None] | None = None
 
+    # receive() 중복 실행 방지
+    self._receive_lock: asyncio.Lock = asyncio.Lock()
+    # _context_summary 동시 쓰기 방지
+    self._context_lock: asyncio.Lock = asyncio.Lock()
+
     # 팀장 배치 리뷰 (main.py 기동 시 주입)
     self._review_running = False
     self._review_lock: asyncio.Lock | None = None
@@ -235,8 +240,10 @@ class Office:
     )
 
     try:
-      summary = await run_claude_isolated(f'{system}\n\n---\n\n{prompt}', model='claude-haiku-4-5-20251001', timeout=60.0)
-      self._context_summary = summary.strip()
+      from runners.model_router import run as router_run
+      summary, _ = await router_run(tier='nano', prompt=f'{system}\n\n---\n\n{prompt}', timeout=60.0)
+      async with self._context_lock:
+        self._context_summary = summary.strip()
       # 각 에이전트의 대화 기록도 초기화
       for agent in self.agents.values():
         agent._conversation_history = []
@@ -251,8 +258,7 @@ class Office:
 
     existing = self._context_summary.split('\n') if self._context_summary else []
     updated = existing + new_lines
-    # 최근 15줄만 유지
-    self._context_summary = '\n'.join(updated[-15:])
+    self._context_summary = '\n'.join(updated[-15:])  # GIL 보호 — CPython 단일 바인딩은 atomic
 
 
   async def receive(self, user_input: str) -> dict[str, Any]:
@@ -261,6 +267,18 @@ class Office:
     Returns:
       {'state': str, 'response': str, 'artifacts': list[str]}
     '''
+    if self._receive_lock.locked():
+      await self._emit(
+        'teamlead',
+        '현재 다른 요청을 처리 중입니다. 잠시 후 다시 말씀해 주세요.',
+        'response',
+      )
+      return {'state': self._state.value, 'response': '', 'artifacts': []}
+
+    async with self._receive_lock:
+      return await self._receive_inner(user_input)
+
+  async def _receive_inner(self, user_input: str) -> dict[str, Any]:
     # 의도 분류 전에는 typing만 표시 (작업중 X)
     await self._emit('teamlead', '', 'typing')
 
@@ -296,7 +314,7 @@ class Office:
         if original_task_id:
           ws_root = str(paths.WORKSPACE_ROOT)
           self.workspace = WorkspaceManager(task_id=original_task_id, workspace_root=ws_root)
-        return await self.receive(original)
+        return await self._receive_inner(original)
       else:
         # 다른 입력이면 중단 작업 폐기
         self._interrupted_instruction = None

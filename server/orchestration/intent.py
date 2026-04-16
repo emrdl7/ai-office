@@ -1,6 +1,7 @@
 # 팀장 의도 분류기 — 입력을 대화/단순요청/프로젝트로 분류
 from __future__ import annotations
 from enum import Enum
+import os
 from pathlib import Path
 
 from runners.claude_runner import run_claude_isolated
@@ -345,19 +346,33 @@ async def generate_teamlead_reply(
       full = f'{teamlead_persona}\n\n---\n\n{prompt}'
       return await run_claude_isolated(
         full,
-        model='claude-opus-4-6',
+        model='claude-opus-4-7',
         timeout=90.0,
         max_turns=1,
       )
     else:
-      return await run_gemini(prompt, system=teamlead_persona, timeout=60.0)
+      # GOOGLE_API_KEY 있으면 Gemini REST API, 없으면 바로 Sonnet
+      if os.environ.get('GOOGLE_API_KEY'):
+        logger.info('[intent] Gemini REST API 호출')
+        return await run_gemini(prompt, system=teamlead_persona, timeout=20.0)
+      else:
+        raise Exception('GOOGLE_API_KEY 미설정 — Sonnet 경로로 직행')
   except Exception as e:
-    logger.warning('[intent] generate_teamlead_reply 실패, Haiku 폴백: %s', e)
-    # 최후 폴백 — Haiku로 짧게
-    fallback_prompt = f'{teamlead_persona}\n\n[사용자]\n{user_input}'
-    return await run_claude_isolated(
-      fallback_prompt,
-      model='claude-haiku-4-5-20251001',
-      timeout=30.0,
-      max_turns=1,
-    )
+    logger.info('[intent] Gemini 불가, Sonnet 폴백: %s', e)
+    # Sonnet: Haiku보다 품질이 높은 1차 폴백
+    sonnet_prompt = f'{teamlead_persona}\n\n{prompt}'
+    try:
+      return await run_claude_isolated(
+        sonnet_prompt,
+        model='claude-sonnet-4-6',
+        timeout=45.0,
+        max_turns=1,
+      )
+    except Exception as e2:
+      logger.warning('[intent] Sonnet 폴백도 실패, Haiku 재폴백: %s', e2)
+      return await run_claude_isolated(
+        sonnet_prompt,
+        model='claude-haiku-4-5-20251001',
+        timeout=30.0,
+        max_turns=1,
+      )

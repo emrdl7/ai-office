@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Any
 import logging
 
-from runners.gemini_runner import run_gemini
-from runners.claude_runner import run_claude_isolated
+from runners.model_router import run as router_run
 from log_bus.event_bus import EventBus, LogEvent
 from memory.agent_memory import AgentMemory, MemoryRecord
 from memory.team_memory import TeamMemory
@@ -448,8 +447,8 @@ class Agent:
       )
 
     try:
-      result = await run_gemini(prompt=prompt, system=system)
-      text = result.strip()
+      _result, _ = await router_run(tier='research', prompt=prompt, system=system, agent_id=self.name)
+      text = _result.strip()
       if '[PASS]' in text.upper() or text.upper() == 'PASS':
         return ''
       first_line = text.split('\n')[0].strip()
@@ -549,45 +548,32 @@ class Agent:
       logger.debug("자발적 발언 생성 실패: %s", self.name, exc_info=True)
       return ''
 
-  async def _run_with_runner(self, prompt: str, system: str = '') -> str:
-    '''에이전트 역할에 맞는 러너를 선택해 텍스트를 생성한다.
+  async def _run_with_runner(self, prompt: str, system: str = '', timeout: float = 0.0) -> str:
+    '''에이전트 역할에 맞는 tier로 model_router를 통해 텍스트를 생성한다.
 
-    모든 역할이 Claude 실패 시 Gemini로 폴백한다 (qa/designer도 포함).
-    러너 매핑 (1차 → 폴백):
-    - qa: Haiku → Gemini
-    - planner, developer: Gemini → Claude
-    - designer: Sonnet → Gemini
-    - 그 외: Sonnet → Gemini
+    tier 매핑:
+    - qa: nano (Haiku → Gemini)
+    - planner, developer: research (Gemini → Sonnet)
+    - designer: standard (Sonnet → Gemini)
+    - 그 외: standard
     '''
-    full = f'{system}\n\n---\n\n{prompt}' if system else prompt
+    _TIER_MAP = {
+      'qa': ('nano', 120.0),
+      'planner': ('research', 600.0),
+      'developer': ('research', 600.0),
+      'designer': ('standard', 300.0),
+    }
+    tier, default_timeout = _TIER_MAP.get(self.name, ('standard', 300.0))
+    t = timeout if timeout > 0 else default_timeout
 
-    if self.name == 'qa':
-      try:
-        return await run_claude_isolated(full, model='claude-haiku-4-5-20251001', timeout=120.0)
-      except Exception as e:
-        logger.warning("QA Claude 실패 → Gemini 폴백: %s", e)
-        return await run_gemini(prompt=prompt, system=system)
-
-    if self.name in ('developer', 'planner'):
-      try:
-        return await run_gemini(prompt=prompt, system=system)
-      except Exception as e:
-        logger.warning("%s Gemini 실패 → Claude 폴백: %s", self.name, e)
-        return await run_claude_isolated(full)
-
-    if self.name == 'designer':
-      try:
-        return await run_claude_isolated(full)
-      except Exception as e:
-        logger.warning("Designer Claude 실패 → Gemini 폴백: %s", e)
-        return await run_gemini(prompt=prompt, system=system)
-
-    # 그 외: Sonnet → Gemini 폴백
-    try:
-      return await run_claude_isolated(full)
-    except Exception as e:
-      logger.warning("%s Claude 실패 → Gemini 폴백: %s", self.name, e)
-      return await run_gemini(prompt=prompt, system=system)
+    text, _ = await router_run(
+      tier=tier,
+      prompt=prompt,
+      system=system,
+      timeout=t,
+      agent_id=self.name,
+    )
+    return text
 
   async def _generate(self, prompt: str, system: str = '') -> str:
     '''_run_with_runner() 래퍼 — 기존 호출부 호환성 유지.'''

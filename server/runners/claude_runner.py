@@ -55,7 +55,10 @@ async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = 
     raise ClaudeTimeoutError(f'Claude CLI 타임아웃 ({timeout}초)')
 
   stdout_text = stdout.decode(errors='replace')
+  stderr_text = stderr.decode(errors='replace').strip() if stderr else ''
   LOG.open('a').write(f'[CLAUDE] exit={proc.returncode} len={len(stdout_text)}\n')
+  if stderr_text and proc.returncode != 0:
+    LOG.open('a').write(f'[CLAUDE] stderr: {stderr_text[:500]}\n')
 
   # stdout에서 텍스트 추출 + 에러 플래그 감지
   last_result = ''

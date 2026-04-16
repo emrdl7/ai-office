@@ -1,11 +1,11 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
-# 기존 프로세스 정리 (serve.sh 루프부터 종료해야 좀비 방지)
-pkill -f 'serve\.sh' 2>/dev/null
-sleep 1
-lsof -ti:8000 | xargs kill -9 2>/dev/null
-lsof -ti:3100 | xargs kill -9 2>/dev/null
+# 기존 프로세스 정리 — 포트 기준으로 죽여서 서로 간섭 없게
+{ lsof -ti:8000 | xargs kill -9; } 2>/dev/null; true
+{ lsof -ti:3100 | xargs kill -9; } 2>/dev/null; true
+pkill -f 'server/serve\.sh' 2>/dev/null; true
+pkill -f 'dashboard/serve\.sh' 2>/dev/null; true
 sleep 1
 
 # 백엔드 (자동 재시작)

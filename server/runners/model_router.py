@@ -19,6 +19,9 @@ from runners.gemini_runner import run_gemini, GeminiRunnerError
 
 logger = logging.getLogger(__name__)
 
+# deep tier (Opus) 일일 호출 한도
+_DEEP_TIER_DAILY_LIMIT = 10
+
 # Tier 정의: (primary_runner, primary_model_or_None, fallback_runner)
 # fallback_runner: 'gemini' | 'sonnet' | None
 _TIER: dict[str, dict[str, Any]] = {
@@ -43,7 +46,7 @@ _TIER: dict[str, dict[str, Any]] = {
   # 크리티컬 판단 (Gate 검수·IA 감사·최종 리뷰) — Job당 최대 2회
   'deep': {
     'runner': 'claude',
-    'model': 'claude-opus-4-6',
+    'model': 'claude-opus-4-7',
     'fallback': 'gemini',
   },
   # 리서치·레퍼런스 큐레이션·긴 문서 처리 — Gemini가 primary
@@ -83,6 +86,22 @@ async def run(
   if not spec:
     raise ValueError(f'알 수 없는 tier: {tier!r}. 가능한 값: {list(_TIER)}')
 
+  # deep tier 일일 한도 초과 시 standard로 강등
+  if tier == 'deep':
+    try:
+      from runners.cost_tracker import get_today_stats
+      stats = get_today_stats()
+      opus_calls = sum(m['calls'] for m in stats['by_model'] if 'opus' in (m.get('model') or ''))
+      if opus_calls >= _DEEP_TIER_DAILY_LIMIT:
+        logger.warning(
+          '[model_router] deep tier 일일 한도 초과 (%d/%d) → standard 강등',
+          opus_calls, _DEEP_TIER_DAILY_LIMIT,
+        )
+        tier = 'standard'
+        spec = _TIER['standard']
+    except Exception:
+      pass
+
   full_prompt = f'{system}\n\n---\n\n{prompt}' if system else prompt
 
   # ── Primary 호출 ──────────────────────────────────────────────
@@ -105,7 +124,8 @@ async def run(
     # CLI 인수 오류 — 폴백해도 동일 결과이므로 즉시 실패
     raise
 
-  except (ClaudeRunnerError, ClaudeTimeoutError, GeminiRunnerError, Exception) as primary_err:
+  except (ClaudeRunnerError, ClaudeTimeoutError, GeminiRunnerError) as primary_err:
+    _primary_err_str = str(primary_err)  # except 블록 종료 후 primary_err는 삭제되므로 미리 저장
     fallback = spec.get('fallback')
     logger.warning(
       '[model_router] %s(%s) 실패 → fallback=%s | %s',
@@ -120,14 +140,14 @@ async def run(
         event_type='model_fallback',
         message=(
           f'[모델 폴백] {spec["runner"]}({spec.get("model","")}) 실패 '
-          f'→ {fallback} 폴백 | {str(primary_err)[:120]}'
+          f'→ {fallback} 폴백 | {_primary_err_str[:120]}'
         ),
         data={
           'tier': tier,
           'primary': spec['runner'],
           'primary_model': spec.get('model'),
           'fallback': fallback,
-          'reason': str(primary_err)[:300],
+          'reason': _primary_err_str[:300],
         },
       ))
     except Exception:
@@ -156,7 +176,7 @@ async def run(
   except Exception as fallback_err:
     raise RuntimeError(
       f'[model_router] {tier} primary+fallback 모두 실패 — '
-      f'primary: {primary_err}, fallback: {fallback_err}'  # type: ignore[possibly-undefined]
+      f'primary: {_primary_err_str}, fallback: {fallback_err}'
     ) from fallback_err
 
 

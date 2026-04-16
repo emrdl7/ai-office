@@ -87,14 +87,18 @@ function linkify(text: string) {
   })
 }
 
+const AGENT_IDS_SET = new Set(['planner', 'designer', 'developer', 'qa'])
+
 // 채널별 로그 필터
 function filterLogs(logs: LogEntry[], channel: ChannelId): LogEntry[] {
   if (channel === 'all') {
-    return logs.filter((log) => !log.data?.dm && log.data?.to !== 'planner' && log.data?.to !== 'designer' && log.data?.to !== 'developer' && log.data?.to !== 'qa')
+    return logs.filter((log) => !log.data?.dm && !AGENT_IDS_SET.has(log.data?.to as string))
   }
   return logs.filter((log) => {
     if (log.agent_id === channel && log.data?.dm) return true
     if (log.agent_id === 'user' && log.data?.to === channel) return true
+    // typing/autonomous/system_notice 등 채널 대상 이벤트
+    if (log.agent_id === channel && ['typing', 'autonomous', 'system_notice', 'autonomous_pass', 'autonomous_stuck'].includes(log.event_type)) return true
     return false
   })
 }
@@ -113,10 +117,9 @@ async function fetchAgents(): Promise<Agent[]> {
   return res.json()
 }
 
-const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '👀']
 
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
-  const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery, updateLogReactions } = useStore()
+  const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
@@ -138,6 +141,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const wsRef = useRef<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   // WebSocket
   const connect = useCallback(() => {
@@ -168,10 +172,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       try {
         const log = JSON.parse(event.data) as LogEntry
         if (log.event_type === 'reaction_update') {
-          const d = (log.data ?? {}) as Record<string, unknown>
-          const log_id = d.log_id as string | undefined
-          const reactions = d.reactions as Record<string, string[]> | undefined
-          if (log_id && reactions) updateLogReactions(log_id, reactions)
           return
         }
         if (log.event_type === 'project_update') {
@@ -182,15 +182,17 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           return
         }
         if (log.event_type === 'typing') {
-          // 입력 중 표시 → 5초 후 자동 해제
+          // 입력 중 표시 → 15초 후 자동 해제 (이전 타이머 교체)
+          clearTimeout(typingTimers.current.get(log.agent_id))
           setTypingAgents((prev) => new Set(prev).add(log.agent_id))
-          setTimeout(() => {
+          typingTimers.current.set(log.agent_id, setTimeout(() => {
             setTypingAgents((prev) => {
               const next = new Set(prev)
               next.delete(log.agent_id)
               return next
             })
-          }, 15000)
+            typingTimers.current.delete(log.agent_id)
+          }, 15000))
         } else {
           // 실제 메시지 도착 시 typing 해제
           setTypingAgents((prev) => {
@@ -207,7 +209,12 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
   useEffect(() => {
     connect()
-    return () => { clearTimeout(reconnectTimer.current); wsRef.current?.close() }
+    return () => {
+      clearTimeout(reconnectTimer.current)
+      typingTimers.current.forEach(clearTimeout)
+      typingTimers.current.clear()
+      wsRef.current?.close()
+    }
   }, [connect])
 
   // 히스토리 복구는 WebSocket onopen에서 처리 (재연결 시 누락 메시지 자동 복구)
@@ -423,9 +430,9 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
       )}
 
-      {/* 대화 영역 */}
+      {/* 대화 영역 — 입력창이 아래에 떠있으므로 pb로 공간 확보 */}
       <div
-        className={`flex-1 overflow-y-auto py-3 min-h-0 relative
+        className={`flex-1 overflow-y-auto min-h-0 relative
           bg-gray-50 dark:bg-gray-900/50
           ${isDragging ? 'ring-2 ring-inset ring-blue-400' : ''}`}
         role="log" aria-live="polite" aria-label="대화"
@@ -444,7 +451,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           </div>
         )}
-        <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1">
+        <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1 pt-3 pb-32">
           {channelLogs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 py-40">
               <p className="text-sm">
@@ -461,91 +468,111 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </>
           )}
         </div>
-      </div>
 
-      {/* 하단 입력창 */}
-      <div className="py-3 md:py-4 bg-white dark:bg-gray-900
-        border-t border-gray-200 dark:border-gray-800">
-        <div className="max-w-3xl mx-auto px-3 md:px-5">
+        {/* 입력창 — 메시지 위에 떠있는 글래스 박스 */}
+        <div className="sticky bottom-0 px-3 md:px-5 pb-4 pt-2">
+          <div className="max-w-3xl mx-auto">
+            <input ref={fileInputRef} type="file" multiple accept="*/*"
+              onChange={handleFileChange} className="hidden" />
 
-        {/* 첨부파일 미리보기 */}
-        {files.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {files.map((f, i) => (
-              <div key={`${f.name}-${i}`} className="relative group">
-                {isImageFile(f.name) && previews[i] ? (
-                  // 이미지 썸네일
-                  <div className="w-20 h-20 md:w-24 md:h-24 rounded-lg overflow-hidden
-                    border border-gray-200 dark:border-gray-700 relative">
-                    <img src={previews[i]} alt={f.name}
-                      className="w-full h-full object-cover" />
-                    <button onClick={() => removeFile(i)}
-                      className="absolute top-1 right-1 w-5 h-5 rounded-full
-                        bg-black/60 text-white text-xs flex items-center justify-center
-                        opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
-                      aria-label={`${f.name} 제거`}><MatIcon name="close" className="text-[12px]" /></button>
-                  </div>
-                ) : (
-                  // 일반 파일
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg
-                    bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                    <MatIcon name={fileIcon(f.name)} className="text-[20px] text-gray-500" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[120px]">{f.name}</p>
-                      <p className="text-[10px] text-gray-400">{formatSize(f.size)}</p>
+            <div className={`rounded-2xl px-4 pt-3 pb-2
+              backdrop-blur-xl shadow-lg transition-all duration-200
+              border
+              ${message.trim() || files.length > 0
+                ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
+                : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
+              }`}>
+
+              {/* 첨부파일 미리보기 */}
+              {files.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2.5">
+                  {files.map((f, i) => (
+                    <div key={`${f.name}-${i}`} className="relative group">
+                      {isImageFile(f.name) && previews[i] ? (
+                        <div className="w-20 h-20 rounded-xl overflow-hidden
+                          border border-gray-200/60 dark:border-gray-700/60 relative shadow-sm">
+                          <img src={previews[i]} alt={f.name} className="w-full h-full object-cover" />
+                          <button onClick={() => removeFile(i)}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full
+                              bg-black/60 text-white flex items-center justify-center
+                              opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                            aria-label={`${f.name} 제거`}>
+                            <MatIcon name="close" className="text-[11px]" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl
+                          bg-black/5 dark:bg-white/5 border border-gray-200/50 dark:border-gray-700/50">
+                          <MatIcon name={fileIcon(f.name)} className="text-[18px] text-gray-500" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[110px]">{f.name}</p>
+                            <p className="text-[10px] text-gray-400">{formatSize(f.size)}</p>
+                          </div>
+                          <button onClick={() => removeFile(i)}
+                            className="text-gray-400 hover:text-red-400 cursor-pointer ml-1 transition-colors"
+                            aria-label={`${f.name} 제거`}>
+                            <MatIcon name="close" className="text-[13px]" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <button onClick={() => removeFile(i)}
-                      className="text-gray-400 hover:text-red-400 cursor-pointer text-sm ml-1"
-                      aria-label={`${f.name} 제거`}><MatIcon name="close" className="text-[12px]" /></button>
-                  </div>
-                )}
+                  ))}
+                </div>
+              )}
+
+              {/* textarea */}
+              <textarea ref={inputRef} value={message}
+                onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder={activeChannel === 'all'
+                  ? '팀에게 메시지 보내기...'
+                  : `${profile?.character || profile?.name}에게 메시지 보내기...`}
+                rows={1}
+                className="w-full text-sm resize-none bg-transparent
+                  text-gray-900 dark:text-gray-100 placeholder-gray-400/60 dark:placeholder-gray-500/70
+                  focus:outline-none min-h-[32px] max-h-[200px] leading-relaxed"
+                aria-label="메시지 입력" disabled={sending} />
+
+              {/* 툴바 */}
+              <div className="flex items-center justify-between pt-1">
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600
+                    dark:hover:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10
+                    cursor-pointer transition-colors"
+                  aria-label="파일 첨부" disabled={sending}>
+                  <MatIcon name="attach_file" className="text-[18px]" />
+                </button>
+
+                <div className="flex items-center gap-2.5">
+                  {message.length >= 100 && (
+                    <span className={`text-[10px] tabular-nums
+                      ${message.length > 1500 ? 'text-red-400' : 'text-gray-400/60'}`}>
+                      {message.length.toLocaleString()}
+                    </span>
+                  )}
+                  <button onClick={handleSend}
+                    disabled={sending || (!message.trim() && files.length === 0)}
+                    aria-label="전송"
+                    className={`flex items-center justify-center w-8 h-8 rounded-xl
+                      transition-all duration-200 cursor-pointer
+                      ${message.trim() || files.length > 0
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 hover:scale-105 active:scale-95'
+                        : 'text-gray-400/40 dark:text-gray-600 cursor-not-allowed'
+                      } disabled:opacity-60`}>
+                    {sending
+                      ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                      : <MatIcon name="send" className="text-[15px]" />
+                    }
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* 입력 영역 */}
-        <div className="relative rounded-2xl bg-gray-100 dark:bg-gray-800
-          border border-gray-200 dark:border-gray-700
-          focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-shadow">
-
-          <input ref={fileInputRef} type="file" multiple accept="*/*"
-            onChange={handleFileChange} className="hidden" />
-
-          <textarea ref={inputRef} value={message}
-            onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={activeChannel === 'all'
-              ? '팀에게 메시지 보내기...'
-              : `${profile?.character || profile?.name}에게 메시지 보내기...`}
-            rows={1}
-            className="w-full px-4 pt-3 pb-10 text-sm resize-none bg-transparent
-              text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500
-              focus:outline-none min-h-[56px] max-h-[200px]"
-            aria-label="메시지 입력" disabled={sending} />
-
-          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-            <div className="flex items-center gap-0.5">
-            <button onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
-                dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700
-                cursor-pointer transition-colors" aria-label="파일 첨부" disabled={sending}>
-              <MatIcon name="attach_file" className="text-[20px]" />
-            </button>
             </div>
-            <button onClick={handleSend}
-              disabled={sending || (!message.trim() && files.length === 0)}
-              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-30
-                text-white transition-colors cursor-pointer disabled:cursor-not-allowed" aria-label="전송">
-              <MatIcon name="send" className="text-[16px]" />
-            </button>
-          </div>
-        </div>
 
-        <p className="text-[10px] text-gray-400 text-center mt-1.5 hidden md:block">
-          Enter로 전송 · Shift+Enter로 줄바꿈
-        </p>
+            <p className="text-[10px] text-gray-400/40 text-center mt-1 hidden md:block select-none">
+              Enter 전송 · Shift+Enter 줄바꿈
+            </p>
+          </div>
         </div>
       </div>
     </>
@@ -787,35 +814,16 @@ const COLLAPSE_THRESHOLD = 400  // 이 글자 수 이상이면 초기 축약
 const COLLAPSED_PREVIEW = 280   // 축약 시 보여줄 글자 수
 
 function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isResponse: boolean; onImageClick: (url: string) => void }) {
-  const [showReactions, setShowReactions] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const { updateLogReactions } = useStore()
   const isAutonomous = log.event_type === 'autonomous'
   const isColleagueQ = log.event_type === 'colleague_question'
   const content = log.message.replace(/^\[.*?\]\s*/, '')
   const needsInput = !!log.data?.needs_input
-  const reactions = (log.data?.reactions as Record<string, string[]>) ?? {}
-
   // 긴 메시지는 접기/펴기 대상
   const isLong = content.length > COLLAPSE_THRESHOLD
   const displayContent = isLong && !expanded
     ? content.slice(0, COLLAPSED_PREVIEW).replace(/\s+\S*$/, '') + '…'
     : content
-
-  async function handleReact(emoji: string) {
-    try {
-      const res = await fetch(`/api/logs/${log.id}/react`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emoji, user: 'user' }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        updateLogReactions(log.id, data.reactions)
-      }
-    } catch { /* 무시 */ }
-    setShowReactions(false)
-  }
 
   return (
     <div className="group relative">
@@ -870,44 +878,6 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
         )}
       </div>
 
-      {/* 리액션 버튼 — 호버 시 표시 */}
-      <button
-        onClick={() => setShowReactions(!showReactions)}
-        className="absolute -top-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity
-          p-1 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
-          shadow-sm cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-      >
-        <MatIcon name="add_reaction" className="text-[14px]" />
-      </button>
-
-      {/* 리액션 팔레트 */}
-      {showReactions && (
-        <div className="absolute -top-8 right-0 flex gap-1 p-1 rounded-lg
-          bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg z-10">
-          {REACTION_EMOJIS.map((emoji) => (
-            <button key={emoji} onClick={() => handleReact(emoji)}
-              className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100
-                dark:hover:bg-gray-700 cursor-pointer text-sm transition-colors">
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* 리액션 뱃지 */}
-      {Object.keys(reactions).length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1">
-          {Object.entries(reactions).map(([emoji, users]) => (
-            <button key={emoji} onClick={() => handleReact(emoji)}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs
-                bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600
-                hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <span>{emoji}</span>
-              <span className="text-gray-500 dark:text-gray-400">{users.length}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
     </div>
   )

@@ -24,6 +24,7 @@ from log_bus.event_bus import LogEvent
 from memory.team_memory import SharedLesson, TeamDynamic
 from runners.claude_runner import run_claude_isolated
 from runners.gemini_runner import run_gemini
+from runners.model_router import run as router_run
 
 logger = logging.getLogger(__name__)
 
@@ -761,8 +762,8 @@ async def _qa_pushback_round(
   )
   try:
     await office._emit('teamlead', '', 'typing')
-    arb_response = await run_claude_isolated(
-      arbitrate_prompt, model='claude-haiku-4-5-20251001', timeout=30.0,
+    arb_response, _ = await router_run(
+      tier='standard', prompt=arbitrate_prompt, timeout=60.0, agent_id='teamlead',
     )
     match = re.search(r'\{.*\}', arb_response, re.DOTALL)
     if not match:
