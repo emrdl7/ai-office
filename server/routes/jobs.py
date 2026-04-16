@@ -122,8 +122,9 @@ async def pending_gates() -> list[dict[str, Any]]:
 async def submit_job(
     spec_id: str = Form(...),
     title: str = Form(default=''),
-    input: str = Form(default='{}'),          # JSON 직렬화된 dict
-    source_job_id: str = Form(default=''),    # 이전 Job ID (체이닝 시)
+    input: str = Form(default='{}'),             # JSON 직렬화된 dict
+    source_job_id: str = Form(default=''),       # 이전 Job ID (체이닝 시)
+    depends_on: str = Form(default='[]'),        # JSON array of job IDs (DAG, 2-1)
     files: list[UploadFile] = File(default=[]),
 ) -> dict[str, Any]:
     """Job을 제출하고 백그라운드 실행을 시작한다. 파일 첨부·Job 체이닝 지원."""
@@ -192,7 +193,15 @@ async def submit_job(
             else:
                 attachments_text += f'\n[첨부파일: {f.filename}] (바이너리 파일, 텍스트 추출 불가)\n'
 
-    job = await submit(spec, input_data, title, attachments_text=attachments_text)
+    # DAG 의존 Job IDs 파싱 (2-1)
+    try:
+        depends_on_ids: list[str] = json.loads(depends_on) if depends_on.strip() else []
+    except Exception:
+        depends_on_ids = []
+
+    job = await submit(spec, input_data, title,
+                       attachments_text=attachments_text,
+                       depends_on_job_ids=depends_on_ids)
     return {'job_id': job.id, 'status': job.status, 'title': job.title}
 
 

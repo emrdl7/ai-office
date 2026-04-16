@@ -40,6 +40,7 @@ class JobSpec:
     gates: list[GateSpec] = field(default_factory=list)
     input_fields: list[str] = field(default_factory=list)   # 전체 입력 필드 (UI 표시용)
     required_fields: list[str] = field(default_factory=list) # 필수 입력 필드 (검증용)
+    depends_on: list[str] = field(default_factory=list)     # 선행 spec_id 목록 (DAG, 2-1)
 
 
 @dataclass

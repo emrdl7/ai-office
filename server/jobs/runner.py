@@ -28,8 +28,13 @@ async def submit(
     input_data: dict[str, Any],
     title: str = '',
     attachments_text: str = '',
+    depends_on_job_ids: list[str] | None = None,
 ) -> JobRun:
-    """Job을 DB에 등록하고 백그라운드 실행 태스크를 시작한다."""
+    """Job을 DB에 등록하고 백그라운드 실행 태스크를 시작한다.
+
+    Args:
+        depends_on_job_ids: 완료를 기다려야 하는 선행 Job ID 목록 (DAG, 2-1)
+    """
     job_id = uuid.uuid4().hex[:12]
     job = JobRun(
         id=job_id,
@@ -39,7 +44,11 @@ async def submit(
         input=input_data,
     )
     create_job(job)
-    task = asyncio.create_task(_execute(job, spec, attachments_text=attachments_text))
+    task = asyncio.create_task(_execute(
+        job, spec,
+        attachments_text=attachments_text,
+        depends_on_job_ids=depends_on_job_ids or [],
+    ))
     _running[job_id] = task
     task.add_done_callback(lambda _: _running.pop(job_id, None))
     return job
@@ -135,12 +144,14 @@ async def _execute(
     attachments_text: str = '',
     resume_context: dict[str, str] | None = None,
     resume_steps_done: dict[str, Any] | None = None,
+    depends_on_job_ids: list[str] | None = None,
 ) -> None:
     """Job의 모든 Step을 순서대로 실행한다.
 
     Args:
         resume_context: 재시작 복구 시 이전 context (없으면 입력 데이터로 초기화)
         resume_steps_done: 재시작 복구 시 이미 완료된 step 집합
+        depends_on_job_ids: 완료를 기다려야 하는 선행 Job ID 목록 (DAG, 2-1)
     """
     from log_bus.event_bus import event_bus, LogEvent
 
@@ -157,6 +168,34 @@ async def _execute(
 
     is_resume = resume_context is not None
     steps_done = resume_steps_done or {}
+
+    # DAG 의존 Job 완료 대기 (2-1)
+    if depends_on_job_ids:
+        update_job(job.id, status='queued')
+        await emit(f'⏳ 선행 Job 완료 대기: {depends_on_job_ids}', 'job_dag_waiting')
+        max_dag_wait = 7200.0
+        dag_waited = 0.0
+        while dag_waited < max_dag_wait:
+            all_done = True
+            attachments_parts: list[str] = []
+            for dep_id in depends_on_job_ids:
+                dep = get_job(dep_id)
+                if not dep:
+                    continue
+                if dep['status'] not in ('done',):
+                    all_done = False
+                    break
+                # 완료된 선행 Job 산출물을 attachments에 추가
+                arts = dep.get('artifacts') or {}
+                for k, v in arts.items():
+                    if v:
+                        attachments_parts.append(f'[선행 Job {dep_id} — {k}]\n{str(v)[:1000]}')
+            if all_done:
+                if attachments_parts and not attachments_text:
+                    attachments_text = '\n\n'.join(attachments_parts)[:3000]
+                break
+            await asyncio.sleep(5.0)
+            dag_waited += 5.0
 
     now = datetime.now(timezone.utc).isoformat()
     update_job(job.id, status='running', started_at=now if not is_resume else job.id)

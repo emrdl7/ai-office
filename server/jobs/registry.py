@@ -80,4 +80,5 @@ def _parse(data: dict[str, Any]) -> JobSpec:
         gates=gates,
         input_fields=input_fields,
         required_fields=required_fields,
+        depends_on=data.get('depends_on', []),
     )
