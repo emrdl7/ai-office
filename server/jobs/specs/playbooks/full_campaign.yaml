@@ -1,0 +1,26 @@
+id: full_campaign
+title: 풀 캠페인
+description: 리서치 → 디자인 방향 → 기획 → 퍼블리싱 전 과정을 자동 체이닝합니다.
+input_fields:
+  - topic
+  - product
+
+steps:
+  - spec_id: research
+    title: "{topic} 리서치"
+    input_map:
+      topic: "{topic}"
+      scope: "시장 및 UX 전반"
+      depth: "표준"
+
+  - spec_id: design_direction
+    title: "{topic} 디자인 방향"
+    input_map:
+      project: "{product}"
+      goals: "{topic} 중심 디자인 개선"
+
+  - spec_id: planning
+    title: "{topic} 기획"
+    input_map:
+      product: "{product}"
+      goals: "{topic} 서비스 기획"

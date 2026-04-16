@@ -211,6 +211,7 @@ from routes.suggestion_branch import router as suggestion_branch_router
 from routes.suggestions import router as suggestions_router, auto_triage_new_suggestion
 from routes.topics import router as topics_router
 from routes.jobs import router as jobs_router
+from routes.playbooks import router as playbooks_router
 app.include_router(admin_router)
 app.include_router(team_router)
 app.include_router(search_router)
@@ -221,6 +222,7 @@ app.include_router(suggestion_branch_router)
 app.include_router(suggestions_router)
 app.include_router(topics_router)
 app.include_router(jobs_router)
+app.include_router(playbooks_router)
 
 
 def _validate_upload(f: UploadFile, content: bytes) -> str | None:

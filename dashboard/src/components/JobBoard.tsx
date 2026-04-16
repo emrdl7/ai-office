@@ -5,6 +5,7 @@ import type { Job } from '../types'
 import { MatIcon } from './icons'
 import { JobDetailView } from './JobDetailView'
 import { NewJobDialog } from './NewJobDialog'
+import { PlaybookDialog } from './PlaybookDialog'
 
 const DELETABLE_STATUSES = new Set(['done', 'cancelled', 'failed'])
 
@@ -133,6 +134,7 @@ export function JobBoard() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [showNewJob, setShowNewJob] = useState(false)
   const [newJobValues, setNewJobValues] = useState<NewJobValues | null>(null)
+  const [showPlaybook, setShowPlaybook] = useState(false)
 
   const { data: jobs = [], isLoading } = useQuery({
     queryKey: ['jobs'],
@@ -168,14 +170,26 @@ export function JobBoard() {
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Job Board</h2>
-            <button
-              onClick={() => setShowNewJob(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white
-                bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
-            >
-              <MatIcon name="add" className="text-[14px]" />
-              새 Job
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setShowPlaybook(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
+                  text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30
+                  hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
+                title="Playbook — 여러 Job을 순서대로 자동 실행"
+              >
+                <MatIcon name="play_circle" className="text-[14px]" />
+                Playbook
+              </button>
+              <button
+                onClick={() => setShowNewJob(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white
+                  bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+              >
+                <MatIcon name="add" className="text-[14px]" />
+                새 Job
+              </button>
+            </div>
           </div>
 
           {/* 상태 필터 탭 */}
@@ -294,6 +308,11 @@ export function JobBoard() {
           onClose={() => { setShowNewJob(false); setNewJobValues(null) }}
           initialValues={newJobValues ?? undefined}
         />
+      )}
+
+      {/* Playbook 다이얼로그 */}
+      {showPlaybook && (
+        <PlaybookDialog onClose={() => setShowPlaybook(false)} />
       )}
     </div>
   )

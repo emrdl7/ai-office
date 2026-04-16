@@ -1,0 +1,21 @@
+id: research_to_planning
+title: 리서치 → 기획
+description: UX 리서치를 완료한 후 결과를 자동으로 기획 Job에 주입해 기획서를 생성합니다.
+input_fields:
+  - topic
+  - product
+
+steps:
+  - spec_id: research
+    title: "{topic} 리서치"
+    input_map:
+      topic: "{topic}"
+      scope: "UX 트렌드 및 경쟁사 분석"
+      depth: "깊이 있게"
+
+  - spec_id: planning
+    title: "{topic} 기획"
+    input_map:
+      product: "{product}"
+      goals: "{topic} 기반 서비스 개선"
+      # 이전 리서치 산출물 자동 참조 (research.report)
