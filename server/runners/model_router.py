@@ -22,6 +22,28 @@ logger = logging.getLogger(__name__)
 # deep tier (Opus) 일일 호출 한도
 _DEEP_TIER_DAILY_LIMIT = 10
 
+# 에이전트별 허용 tier 목록 (meta-router가 이 범위 내에서 선택)
+AGENT_ALLOWED_TIERS: dict[str, list[str]] = {
+  'qa':        ['nano', 'fast', 'standard'],
+  'planner':   ['standard', 'deep', 'research'],
+  'developer': ['standard', 'deep', 'research'],
+  'designer':  ['fast', 'standard', 'deep'],
+}
+_DEFAULT_ALLOWED = ['fast', 'standard', 'deep']
+
+_CLASSIFY_SYSTEM = (
+  'You are a routing classifier. '
+  'Given a task prompt, output exactly ONE tier name from this list: '
+  'nano, fast, standard, deep, research\n\n'
+  'Definitions:\n'
+  '- nano: simple yes/no, single-fact lookup, trivial classification\n'
+  '- fast: short list, brief summary, quick generation (< 1 paragraph)\n'
+  '- standard: typical analysis, code writing, document section, design brief\n'
+  '- deep: critical judgment, final gate review, complex architectural decision\n'
+  '- research: multi-source research, long document processing, reference curation\n\n'
+  'Output the tier name only. No explanation.'
+)
+
 # Tier 정의: (primary_runner, primary_model_or_None, fallback_runner)
 # fallback_runner: 'gemini' | 'sonnet' | None
 _TIER: dict[str, dict[str, Any]] = {
@@ -178,6 +200,34 @@ async def run(
       f'[model_router] {tier} primary+fallback 모두 실패 — '
       f'primary: {_primary_err_str}, fallback: {fallback_err}'
     ) from fallback_err
+
+
+async def classify_tier(prompt: str, agent_id: str = '') -> str:
+  '''Haiku로 프롬프트 복잡도를 분류해 에이전트 허용 범위 내 tier를 반환한다.
+
+  분류 실패 시 에이전트 allowed 목록의 첫 번째 tier(가장 낮은 비용)로 폴백.
+  '''
+  allowed = AGENT_ALLOWED_TIERS.get(agent_id, _DEFAULT_ALLOWED)
+  preview = prompt[:600]
+  try:
+    raw = await run_claude_isolated(
+      f'{_CLASSIFY_SYSTEM}\n\n---\n\n{preview}',
+      model='claude-haiku-4-5-20251001',
+      timeout=15.0,
+      max_turns=1,
+    )
+    candidate = raw.strip().lower().split()[0]
+    if candidate in allowed:
+      return candidate
+    # 허용 범위 밖이면 allowed 목록에서 가장 가까운 tier로 조정
+    _ORDER = ['nano', 'fast', 'standard', 'deep', 'research']
+    c_idx = _ORDER.index(candidate) if candidate in _ORDER else 2
+    closest = min(allowed, key=lambda t: abs(_ORDER.index(t) - c_idx))
+    logger.debug('[classify_tier] %s → %s (조정: %s)', agent_id, closest, candidate)
+    return closest
+  except Exception as e:
+    logger.debug('[classify_tier] 분류 실패 → 폴백 | %s', e)
+    return allowed[0]
 
 
 def _record(

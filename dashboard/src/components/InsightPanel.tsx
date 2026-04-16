@@ -1,5 +1,4 @@
 // 인사이트 패널 — Job 파이프라인 통계
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { MatIcon } from './icons'

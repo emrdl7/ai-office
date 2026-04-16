@@ -551,23 +551,25 @@ class Agent:
       logger.debug("자발적 발언 생성 실패: %s", self.name, exc_info=True)
       return ''
 
-  async def _run_with_runner(self, prompt: str, system: str = '', timeout: float = 0.0) -> str:
-    '''에이전트 역할에 맞는 tier로 model_router를 통해 텍스트를 생성한다.
+  async def _run_with_runner(
+    self, prompt: str, system: str = '', timeout: float = 0.0, tier: str = '',
+  ) -> str:
+    '''Haiku 사전 분류(meta-router)로 적합한 tier를 선택해 model_router를 호출한다.
 
-    tier 매핑:
-    - qa: nano (Haiku → Gemini)
-    - planner, developer: research (Gemini → Sonnet)
-    - designer: standard (Sonnet → Gemini)
-    - 그 외: standard
+    tier 인수를 직접 넘기면 분류를 건너뛴다 (내부 고정 tier 호출용).
+    에이전트별 허용 범위는 model_router.AGENT_ALLOWED_TIERS에 정의.
     '''
-    _TIER_MAP = {
-      'qa': ('nano', 120.0),
-      'planner': ('research', 600.0),
-      'developer': ('research', 600.0),
-      'designer': ('standard', 300.0),
+    from runners.model_router import classify_tier
+
+    if not tier:
+      tier = await classify_tier(prompt, agent_id=self.name)
+
+    # tier별 기본 타임아웃
+    _TIMEOUT_MAP = {
+      'nano': 120.0, 'fast': 180.0, 'standard': 300.0,
+      'deep': 600.0, 'research': 600.0,
     }
-    tier, default_timeout = _TIER_MAP.get(self.name, ('standard', 300.0))
-    t = timeout if timeout > 0 else default_timeout
+    t = timeout if timeout > 0 else _TIMEOUT_MAP.get(tier, 300.0)
 
     text, _ = await router_run(
       tier=tier,

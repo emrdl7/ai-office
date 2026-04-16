@@ -1,115 +1,15 @@
 // 채팅방 — 메신저 대화 UI + 파일첨부 + 이미지 썸네일 + 링크 프리뷰
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from '../config/team'
-import { AGENT_IDS } from '../config/team'
 import { MatIcon } from './icons'
-import type { Agent, LogEntry, ChannelId } from '../types'
-import Markdown from 'react-markdown'
-
-// 아바타 이미지 — config/team.ts 중앙 관리
-const AVATAR_IMG: Record<string, string> = Object.fromEntries(
-  AGENT_IDS.map((id) => [id, `/avatars/${id}.png`])
-)
-
-const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs`
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'])
-
-function formatTime(ts: string): string {
-  return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-}
-
-function isSystemEvent(e: LogEntry): boolean {
-  // 채팅창에 렌더링하지 말아야 할 이벤트 타입들
-  const hidden = [
-    'status_change', 'meeting_start', 'meeting_end',
-    'task_start', 'task_end', 'internal',
-    'reaction_update',  // 👍 리액션은 배지만 업데이트, 새 메시지 X
-  ]
-  if (hidden.includes(e.event_type)) return true
-  // 빈 메시지는 숨김 (타이핑, 상태 신호 등)
-  if (!e.message || e.message.trim() === '') return true
-  return false
-}
-
-function fileIcon(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (['pdf'].includes(ext)) return 'picture_as_pdf'
-  if (['doc', 'docx'].includes(ext)) return 'article'
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'table_chart'
-  if (IMAGE_EXTS.has(ext)) return 'image'
-  if (['zip', 'tar', 'gz'].includes(ext)) return 'folder_zip'
-  return 'description'
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
-}
-
-function isImageFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return IMAGE_EXTS.has(ext)
-}
-
-// URL 감지 + 링크화
-function linkify(text: string) {
-  // URL + @멘션 동시 처리
-  const combinedRegex = /(https?:\/\/[^\s<]+|@[가-힣A-Za-z]+(?:님)?)/g
-  const parts = text.split(combinedRegex)
-  return parts.map((part, i) => {
-    if (/^https?:\/\//.test(part)) {
-      return (
-        <a
-          key={i}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:text-blue-300 underline break-all"
-        >
-          {part.length > 60 ? part.slice(0, 60) + '...' : part}
-        </a>
-      )
-    }
-    if (/^@/.test(part)) {
-      return (
-        <span
-          key={i}
-          className="mention-highlight font-semibold rounded px-0.5"
-        >
-          {part}
-        </span>
-      )
-    }
-    return <span key={i}>{part}</span>
-  })
-}
-
-const AGENT_IDS_SET = new Set(['planner', 'designer', 'developer', 'qa'])
-
-// 채널별 로그 필터
-function filterLogs(logs: LogEntry[], channel: ChannelId): LogEntry[] {
-  if (channel === 'all') {
-    return logs.filter((log) => !log.data?.dm && !AGENT_IDS_SET.has(log.data?.to as string))
-  }
-  return logs.filter((log) => {
-    if (log.agent_id === channel && log.data?.dm) return true
-    if (log.agent_id === 'user' && log.data?.to === channel) return true
-    // typing/autonomous/system_notice 등 채널 대상 이벤트
-    if (log.agent_id === channel && ['typing', 'autonomous', 'system_notice', 'autonomous_pass', 'autonomous_stuck'].includes(log.event_type)) return true
-    return false
-  })
-}
-
-// 첨부파일 정보 타입
-interface FileInfo {
-  name: string
-  url: string
-  size: number
-  isImage: boolean
-}
+import type { Agent } from '../types'
+import { useChatWebSocket } from '../hooks/useChatWebSocket'
+import { useFileAttachment } from '../hooks/useFileAttachment'
+import { MessageList } from './chat/MessageList'
+import { WorkingIndicator } from './chat/WorkingIndicator'
+import { filterLogs, fileIcon, formatSize, isImageFile, AVATAR_IMG } from './chat/chatUtils'
 
 async function fetchAgents(): Promise<Agent[]> {
   const res = await fetch('/api/agents')
@@ -117,10 +17,8 @@ async function fetchAgents(): Promise<Agent[]> {
   return res.json()
 }
 
-
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
-  const qc = useQueryClient()
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
@@ -128,105 +26,21 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     staleTime: 10000,
   })
   const workingAgents = agents.filter((a) => a.status === 'working' || a.status === 'meeting')
+
+  const { connected, typingAgents } = useChatWebSocket({ addLog, setLogs })
+  const { files, previews, fileInputRef, addFiles, handleFileChange, handlePaste, removeFile, clearFiles } = useFileAttachment()
+
   const [message, setMessage] = useState('')
-  const [files, setFiles] = useState<File[]>([])
-  const [previews, setPreviews] = useState<string[]>([])
   const [sending, setSending] = useState(false)
-  const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
   const [isDragging, setIsDragging] = useState(false)
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const [showSearch, setShowSearch] = useState(false)
   const sendLock = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const wsRef = useRef<WebSocket | null>(null)
-  const [connected, setConnected] = useState(false)
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-
-  // WebSocket
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
-    fetch('/api/ws-token').then(r => r.json()).then(({ token }) => {
-    const ws = new WebSocket(`${WS_BASE}?token=${token}`)
-    wsRef.current = ws
-    ws.onopen = () => {
-      setConnected(true)
-      // 재연결 시 누락된 메시지 복구
-      fetch('/api/logs/history?limit=200')
-        .then((r) => r.json())
-        .then((data: LogEntry[]) => {
-          if (!Array.isArray(data) || data.length === 0) return
-          const hiddenBefore = localStorage.getItem('logsHiddenBefore') || ''
-          const filtered = hiddenBefore
-            ? data.filter((l) => (l.timestamp || '') > hiddenBefore)
-            : data
-          if (filtered.length > 0) setLogs(filtered)
-        })
-        .catch(() => {})
-    }
-    ws.onclose = () => {
-      setConnected(false)
-      reconnectTimer.current = setTimeout(connect, 2000)
-    }
-    ws.onmessage = (event) => {
-      try {
-        const log = JSON.parse(event.data) as LogEntry
-        if (log.event_type === 'status_change') {
-          qc.invalidateQueries({ queryKey: ['agents'] })
-          return
-        }
-        if (log.event_type === 'reaction_update') {
-          return
-        }
-        if (log.event_type === 'project_update') {
-          addLog(log)
-          return
-        }
-        if (log.event_type === 'project_close') {
-          return
-        }
-        if (log.event_type === 'typing') {
-          // 입력 중 표시 → 15초 후 자동 해제 (이전 타이머 교체)
-          clearTimeout(typingTimers.current.get(log.agent_id))
-          setTypingAgents((prev) => new Set(prev).add(log.agent_id))
-          typingTimers.current.set(log.agent_id, setTimeout(() => {
-            setTypingAgents((prev) => {
-              const next = new Set(prev)
-              next.delete(log.agent_id)
-              return next
-            })
-            typingTimers.current.delete(log.agent_id)
-          }, 15000))
-        } else {
-          // 실제 메시지 도착 시 typing 해제
-          setTypingAgents((prev) => {
-            const next = new Set(prev)
-            next.delete(log.agent_id)
-            return next
-          })
-          addLog(log)
-        }
-      } catch { /* 무시 */ }
-    }
-    }).catch(() => {})
-  }, [addLog, qc])
-
-  useEffect(() => {
-    connect()
-    return () => {
-      clearTimeout(reconnectTimer.current)
-      typingTimers.current.forEach(clearTimeout)
-      typingTimers.current.clear()
-      wsRef.current?.close()
-    }
-  }, [connect])
-
-  // 히스토리 복구는 WebSocket onopen에서 처리 (재연결 시 누락 메시지 자동 복구)
 
   const isInitialLoad = useRef(true)
   useEffect(() => {
-    // 초기 로드 시에는 즉시 스크롤, 이후 새 메시지는 부드럽게
     bottomRef.current?.scrollIntoView({ behavior: isInitialLoad.current ? 'instant' : 'smooth' })
     if (isInitialLoad.current && logs.length > 0) isInitialLoad.current = false
   }, [logs, activeChannel])
@@ -236,40 +50,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     el.style.height = Math.min(el.scrollHeight, 200) + 'px'
   }
 
-  // 파일 추가 공통 헬퍼
-  function addFiles(incoming: File[]) {
-    if (incoming.length === 0) return
-    setFiles((prev) => [...prev, ...incoming])
-    const newPreviews = incoming.map((f) =>
-      isImageFile(f.name) ? URL.createObjectURL(f) : ''
-    )
-    setPreviews((prev) => [...prev, ...newPreviews])
-  }
-
-  // 파일 선택
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(e.target.files ?? [])
-    addFiles(selected)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  // 붙여넣기 — 이미지 감지 시 파일로 추가
-  function handlePaste(e: React.ClipboardEvent) {
-    const imageFiles = Array.from(e.clipboardData.items)
-      .filter((item) => item.type.startsWith('image/'))
-      .map((item, i) => {
-        const raw = item.getAsFile()
-        if (!raw) return null
-        const ext = item.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
-        return new File([raw], `paste_${Date.now()}_${i}.${ext}`, { type: item.type })
-      })
-      .filter((f): f is File => f !== null)
-    if (imageFiles.length === 0) return
-    e.preventDefault()
-    addFiles(imageFiles)
-  }
-
-  // 드래그앤드롭
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault()
     setIsDragging(true)
@@ -280,17 +60,9 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setIsDragging(false)
-    const dropped = Array.from(e.dataTransfer.files)
-    addFiles(dropped)
+    addFiles(Array.from(e.dataTransfer.files))
   }
 
-  function removeFile(idx: number) {
-    if (previews[idx]) URL.revokeObjectURL(previews[idx])
-    setFiles((prev) => prev.filter((_, i) => i !== idx))
-    setPreviews((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  // 전송
   async function handleSend() {
     if (sendLock.current) return
     if (!message.trim() && files.length === 0) return
@@ -303,9 +75,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       for (const f of files) form.append('files', f)
       await fetch('/api/chat', { method: 'POST', body: form })
       setMessage('')
-      setFiles([])
-      previews.forEach((p) => { if (p) URL.revokeObjectURL(p) })
-      setPreviews([])
+      clearFiles()
       if (inputRef.current) inputRef.current.style.height = 'auto'
     } catch { /* 에러 */ }
     finally {
@@ -319,8 +89,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
-  const [showSearch, setShowSearch] = useState(false)
-
   const channelLogs = filterLogs(logs, activeChannel).filter(
     (log) => !searchQuery || log.message.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -333,22 +101,13 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     <>
       {/* 이미지 라이트박스 */}
       {lightbox && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
-          onClick={() => setLightbox(null)}
-        >
-          <img
-            src={lightbox}
-            alt="확대 이미지"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="확대 이미지"
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl cursor-pointer"
-            onClick={() => setLightbox(null)}
-          >
-            &times;
-          </button>
+            onClick={(e) => e.stopPropagation()} />
+          <button className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl cursor-pointer"
+            onClick={() => setLightbox(null)}>&times;</button>
         </div>
       )}
 
@@ -356,13 +115,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       <header className="flex items-center justify-between px-4 md:px-5 py-3
         bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-3">
-          {/* 모바일 햄버거 */}
-          <button
-            onClick={onMenuClick}
+          <button onClick={onMenuClick}
             className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
               dark:hover:bg-gray-800 cursor-pointer"
-            aria-label="메뉴"
-          >
+            aria-label="메뉴">
             <MatIcon name="menu" className="text-[20px]" />
           </button>
           {activeChannel !== 'all' && AVATAR_IMG[activeChannel] && (
@@ -384,58 +140,45 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery('') }}
             className={`p-1.5 rounded-lg transition-colors cursor-pointer
               ${showSearch ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-            aria-label="검색"
-            title="대화 검색"
-          >
+            aria-label="검색" title="대화 검색">
             <MatIcon name="search" className="text-[16px]" />
           </button>
           <button
             onClick={() => {
-              // 서버 DB는 보존 (에이전트가 과거 대화 참고) — 화면에서만 숨김
               localStorage.setItem('logsHiddenBefore', new Date().toISOString())
               setLogs([])
             }}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
               cursor-pointer transition-colors"
-            aria-label="대화 지우기"
-            title="화면에서 대화 숨기기 (서버 기록은 보존)"
-          >
+            aria-label="대화 지우기" title="화면에서 대화 숨기기 (서버 기록은 보존)">
             <MatIcon name="delete_sweep" className="text-[16px]" />
           </button>
-          <button
-            onClick={() => window.location.reload()}
+          <button onClick={() => window.location.reload()}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600
               dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800
               cursor-pointer transition-colors"
-            aria-label="새로고침"
-            title="새로고침"
-          >
+            aria-label="새로고침" title="새로고침">
             <MatIcon name="refresh" className="text-[16px]" />
           </button>
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
         </div>
       </header>
 
-
       {/* 검색 바 */}
       {showSearch && (
         <div className="px-4 py-2 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="대화 검색..."
             className="w-full px-3 py-1.5 text-sm rounded-lg
               bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700
               focus:outline-none focus:ring-2 focus:ring-blue-500
               text-gray-800 dark:text-gray-200 placeholder-gray-400"
-            autoFocus
-          />
+            autoFocus />
         </div>
       )}
 
-      {/* 대화 영역 — 입력창이 아래에 떠있으므로 pb로 공간 확보 */}
+      {/* 대화 영역 */}
       <div
         className={`flex-1 overflow-y-auto min-h-0 relative
           bg-gray-50 dark:bg-gray-900/50
@@ -443,9 +186,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         role="log" aria-live="polite" aria-label="대화"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {/* 드래그 오버레이 */}
+        onDrop={handleDrop}>
         {isDragging && (
           <div className="absolute inset-0 z-20 flex items-center justify-center
             bg-blue-500/10 pointer-events-none">
@@ -467,22 +208,21 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           ) : (
             <>
-              {renderMessages(channelLogs, setLightbox)}
+              <MessageList logs={channelLogs} onImageClick={setLightbox} />
               <WorkingIndicator workingAgents={workingAgents} typingAgents={typingAgents} />
               <div ref={bottomRef} />
             </>
           )}
         </div>
 
-        {/* 입력창 — 메시지 위에 떠있는 글래스 박스 */}
+        {/* 입력창 */}
         <div className="sticky bottom-0 px-3 md:px-5 pb-4 pt-2">
           <div className="max-w-3xl mx-auto">
             <input ref={fileInputRef} type="file" multiple accept="*/*"
               onChange={handleFileChange} className="hidden" />
 
             <div className={`rounded-2xl px-4 pt-3 pb-2
-              backdrop-blur-xl shadow-lg transition-all duration-200
-              border
+              backdrop-blur-xl shadow-lg transition-all duration-200 border
               ${message.trim() || files.length > 0
                 ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
                 : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
@@ -525,7 +265,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                 </div>
               )}
 
-              {/* textarea */}
               <textarea ref={inputRef} value={message}
                 onChange={(e) => { setMessage(e.target.value); autoResize(e.target) }}
                 onKeyDown={handleKeyDown}
@@ -539,7 +278,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                   focus:outline-none min-h-[32px] max-h-[200px] leading-relaxed"
                 aria-label="메시지 입력" disabled={sending} />
 
-              {/* 툴바 */}
               <div className="flex items-center justify-between pt-1">
                 <button onClick={() => fileInputRef.current?.click()}
                   className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600
@@ -548,7 +286,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                   aria-label="파일 첨부" disabled={sending}>
                   <MatIcon name="attach_file" className="text-[18px]" />
                 </button>
-
                 <div className="flex items-center gap-2.5">
                   {message.length >= 100 && (
                     <span className={`text-[10px] tabular-nums
@@ -581,387 +318,5 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
       </div>
     </>
-  )
-}
-
-
-// --- 메시지 렌더링 ---
-
-// thread_id → 색상 인덱스 매핑 (간단한 해시)
-function threadColorClass(threadId: string): string {
-  if (!threadId) return ''
-  const palette = [
-    'border-l-pink-400', 'border-l-purple-400', 'border-l-indigo-400',
-    'border-l-cyan-400', 'border-l-emerald-400', 'border-l-amber-400',
-    'border-l-rose-400', 'border-l-violet-400',
-  ]
-  let h = 0
-  for (let i = 0; i < threadId.length; i++) h = (h * 31 + threadId.charCodeAt(i)) | 0
-  return palette[Math.abs(h) % palette.length]
-}
-
-function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
-  const elements: React.ReactNode[] = []
-  let prevAgent = ''
-  let prevTime = ''
-  let prevDate = ''
-  let prevThread = ''
-
-  for (let i = 0; i < logs.length; i++) {
-    const log = logs[i]
-    const threadId = (log.data as Record<string, unknown>)?.thread_id as string ?? ''
-    const threadColor = threadColorClass(threadId)
-    const sameThread = threadId && threadId === prevThread
-    const threadClasses = threadId ? `border-l-2 ${threadColor} pl-2` : ''
-    const profile = AGENT_PROFILE[log.agent_id] ?? {
-      name: log.agent_id, character: log.agent_id, color: 'from-gray-500 to-gray-600', role: '',
-    }
-    const time = formatTime(log.timestamp)
-    const isNewGroup = log.agent_id !== prevAgent || time !== prevTime
-
-    // 시스템/내부 이벤트 — 숨김
-    if (isSystemEvent(log)) {
-      continue
-    }
-
-    // 날짜 구분선
-    const currentDate = new Date(log.timestamp).toLocaleDateString('ko-KR', {
-      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
-    })
-    if (currentDate !== prevDate) {
-      elements.push(
-        <div key={`date-${currentDate}`} className="flex items-center gap-3 py-4">
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-          <span className="text-xs text-gray-400 whitespace-nowrap">{currentDate}</span>
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-        </div>
-      )
-      prevDate = currentDate
-    }
-
-    // 사용자 메시지 (오른쪽)
-    if (log.agent_id === 'user') {
-      elements.push(<UserMessage key={log.id ?? i} log={log} time={time} onImageClick={onImageClick} />)
-      prevAgent = log.agent_id
-      prevTime = time
-      continue
-    }
-
-    // 에이전트 메시지 (왼쪽)
-    const isResponse = log.event_type === 'response' || log.event_type === 'autonomous' || log.event_type === 'colleague_question'
-    const isAutonomousMsg = log.event_type === 'autonomous'
-    if (isNewGroup) {
-      elements.push(
-        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined}
-          className={`flex gap-2 md:gap-3 py-1.5 transition-shadow rounded ${threadClasses}`}
-          title={threadId ? `토론 스레드 ${threadId}` : undefined}>
-        {sameThread && <div className="hidden" />}
-          <div className="flex-shrink-0 mt-0.5 relative self-start w-8 h-8 md:w-9 md:h-9">
-            <div className={`w-full h-full rounded-full bg-gradient-to-br ${profile.color}
-              flex items-center justify-center shadow-sm overflow-hidden`}>
-              {AVATAR_IMG[log.agent_id]
-                ? <img src={AVATAR_IMG[log.agent_id]} alt={profile.character}
-                    className="w-full h-full object-cover" loading="lazy" />
-                : <span className="text-white text-xs font-bold">{profile.name[0]}</span>}
-            </div>
-            {isAutonomousMsg && (
-              <span
-                title="자발적 발언"
-                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full
-                  bg-white dark:bg-gray-900 border border-indigo-300
-                  dark:border-indigo-600 flex items-center justify-center
-                  text-[10px] leading-none shadow-sm select-none"
-              >
-                <span className="scale-75">💭</span>
-              </span>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
-            <div className="flex items-baseline gap-2 mb-0.5">
-              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                {profile.character || profile.name}</span>
-              <span className="text-[10px] text-gray-400">{profile.role}</span>
-              <span className="text-[10px] text-gray-400">{time}</span>
-            </div>
-            <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
-          </div>
-        </div>
-      )
-    } else {
-      elements.push(
-        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined}
-          className={`flex gap-3 py-0.5 pl-10 md:pl-12 transition-shadow rounded ${threadClasses}`}
-          title={threadId ? `토론 스레드 ${threadId}` : undefined}>
-          <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
-            <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
-          </div>
-        </div>
-      )
-    }
-    prevAgent = log.agent_id
-    prevTime = time
-    prevThread = threadId
-  }
-  return elements
-}
-
-// 사용자 메시지 컴포넌트
-function UserMessage({ log, time, onImageClick }: { log: LogEntry; time: string; onImageClick: (url: string) => void }) {
-  const fileInfos = (log.data?.files as FileInfo[]) ?? []
-  const fileNames = (log.data?.attachments as string[]) ?? []
-  const baseTaskId = (log.data?.base_task_id as string) ?? ''
-  const baseTaskInstruction = (log.data?.base_task_instruction as string) ?? ''
-
-  return (
-    <div className="flex justify-end py-1">
-      <div className="max-w-[85%] md:max-w-[70%]">
-        <div className="flex items-baseline gap-2 justify-end mb-0.5">
-          <span className="text-[10px] text-gray-400">{time}</span>
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">나</span>
-        </div>
-
-        {/* 이전 작업 참조 태그 */}
-        {baseTaskId && (
-          <div className="flex justify-end mb-1.5">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg
-              bg-purple-500/80 text-white text-xs">
-              <MatIcon name="link" className="text-[14px]" /> {baseTaskInstruction ? baseTaskInstruction.slice(0, 30) + '...' : '이전 작업 참조'}
-            </span>
-          </div>
-        )}
-
-        {/* 이미지 썸네일 */}
-        {fileInfos.filter((f) => f.isImage).map((f, i) => {
-          const isGif = f.name.toLowerCase().endsWith('.gif')
-          return (
-            <div key={`img-${i}`} className="mb-1.5 flex justify-end">
-              <button
-                onClick={() => onImageClick(f.url)}
-                className="block max-w-[280px] rounded-xl overflow-hidden
-                  border border-gray-200 dark:border-gray-700 cursor-zoom-in
-                  hover:opacity-90 transition-opacity"
-              >
-                <img src={f.url} alt={f.name}
-                  className={`w-full max-h-[300px] ${isGif ? 'object-contain' : 'object-cover'}`}
-                  loading="lazy" />
-              </button>
-            </div>
-          )
-        })}
-
-        {/* 일반 파일 첨부 */}
-        {fileInfos.filter((f) => !f.isImage).length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
-            {fileInfos.filter((f) => !f.isImage).map((f, i) => (
-              <a key={`file-${i}`} href={f.url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
-                  bg-blue-500/80 text-white text-xs hover:bg-blue-500 transition-colors">
-                <MatIcon name={fileIcon(f.name)} className="text-[14px]" />
-                <span className="truncate max-w-[120px]">{f.name}</span>
-                <span className="text-blue-200 text-[10px]">{formatSize(f.size)}</span>
-              </a>
-            ))}
-          </div>
-        )}
-
-        {/* fileInfos가 없으면 fileNames 폴백 */}
-        {fileInfos.length === 0 && fileNames.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
-            {fileNames.map((name, i) => (
-              <div key={`fn-${i}`} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
-                bg-blue-500/80 text-white text-xs">
-                <MatIcon name={fileIcon(name)} className="text-[14px]" />
-                <span className="truncate max-w-[120px]">{name}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 텍스트 메시지 */}
-        {log.message && <UserMessageText text={log.message} />}
-      </div>
-    </div>
-  )
-}
-
-function UserMessageText({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const THRESHOLD = 400
-  const PREVIEW = 280
-  const isLong = text.length > THRESHOLD
-  const display = isLong && !expanded
-    ? text.slice(0, PREVIEW).replace(/\s+\S*$/, '') + '…'
-    : text
-  return (
-    <div className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-md
-      text-sm leading-relaxed">
-      {linkify(display)}
-      {isLong && (
-        <div className="flex justify-center mt-3 pt-2 border-t border-white/15">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="inline-flex items-center gap-1 px-3 py-1 rounded-full
-            bg-blue-500/40 hover:bg-blue-400/60 backdrop-blur-sm
-            text-[11px] font-medium text-blue-50 hover:text-white
-            cursor-pointer transition-all duration-150"
-        >
-          <span>{expanded ? '접기' : `${text.length - PREVIEW}자 더 보기`}</span>
-          <MatIcon name="expand_more" className={`text-[14px] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
-        </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// 에이전트 메시지 버블
-const COLLAPSE_THRESHOLD = 400  // 이 글자 수 이상이면 초기 축약
-const COLLAPSED_PREVIEW = 280   // 축약 시 보여줄 글자 수
-
-function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isResponse: boolean; onImageClick: (url: string) => void }) {
-  const [expanded, setExpanded] = useState(false)
-  const isAutonomous = log.event_type === 'autonomous'
-  const isColleagueQ = log.event_type === 'colleague_question'
-  const content = log.message.replace(/^\[.*?\]\s*/, '')
-  const needsInput = !!log.data?.needs_input
-  // 긴 메시지는 접기/펴기 대상
-  const isLong = content.length > COLLAPSE_THRESHOLD
-  const displayContent = isLong && !expanded
-    ? content.slice(0, COLLAPSED_PREVIEW).replace(/\s+\S*$/, '') + '…'
-    : content
-
-  return (
-    <div className="group relative">
-      <div className={`px-3 md:px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed
-        ${needsInput
-          ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 shadow-sm'
-          : isAutonomous
-            ? 'bg-indigo-50/60 dark:bg-indigo-900/15 border border-indigo-200/50 dark:border-indigo-700/30 shadow-sm'
-            : isColleagueQ
-              ? 'bg-teal-50/60 dark:bg-teal-900/15 border border-teal-200/50 dark:border-teal-700/30 shadow-sm'
-              : isResponse
-                ? 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm'
-                : 'bg-gray-100 dark:bg-gray-800/60'
-        }`}>
-        {needsInput && (
-          <div className="flex items-center gap-1.5 mb-2 text-amber-600 dark:text-amber-400">
-            <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800/50">
-              답변 필요
-            </span>
-          </div>
-        )}
-        {isColleagueQ && (
-          <div className="flex items-center gap-1 mb-1.5 text-teal-500 dark:text-teal-400">
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-800/40">
-              <MatIcon name="record_voice_over" className="text-[12px]" /> 동료 질문
-            </span>
-          </div>
-        )}
-        {isResponse ? (
-          <div className="prose dark:prose-invert prose-sm max-w-none">
-            <Markdown>{displayContent}</Markdown>
-          </div>
-        ) : (
-          <span className="text-gray-700 dark:text-gray-300">{linkify(displayContent)}</span>
-        )}
-        {isLong && (
-          <div className="flex justify-center mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="inline-flex items-center gap-1 px-3 py-1 rounded-full
-              bg-gray-100 hover:bg-gray-200 dark:bg-gray-700/60 dark:hover:bg-gray-700
-              text-[11px] font-medium text-gray-600 hover:text-gray-800
-              dark:text-gray-300 dark:hover:text-gray-100
-              cursor-pointer transition-all duration-150"
-          >
-            <span>
-              {expanded ? '접기' : `${content.length - COLLAPSED_PREVIEW}자 더 보기`}
-            </span>
-            <MatIcon name="expand_more" className={`text-[14px] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
-          </button>
-          </div>
-        )}
-      </div>
-
-
-    </div>
-  )
-}
-
-// 작업 중 / 입력 중 인디케이터
-function WorkingIndicator({ workingAgents, typingAgents }: { workingAgents: Agent[]; typingAgents: Set<string> }) {
-  const [now, setNow] = useState(Date.now())
-
-  const hasWorking = workingAgents.length > 0
-  const hasTyping = typingAgents.size > 0
-
-  useEffect(() => {
-    if (!hasWorking) return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [workingAgents.length])
-
-  if (!hasWorking && !hasTyping) return null
-
-  // 작업 중 표시 (업무 모드)
-  if (hasWorking) {
-    const names = workingAgents.map((a) => {
-      const p = AGENT_PROFILE[a.agent_id]
-      return p?.character || p?.name || a.agent_id
-    })
-
-    const startedAt = workingAgents[0]?.work_started_at
-    const elapsed = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : 0
-    const min = Math.floor(elapsed / 60)
-    const sec = elapsed % 60
-    const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`
-
-    const statusText = workingAgents[0]?.status === 'meeting' ? '회의 중' : '작업 중'
-
-    let text = ''
-    if (names.length === 1) {
-      text = `${names[0]} ${statusText}`
-    } else if (names.length <= 3) {
-      text = `${names.join(', ')} ${statusText}`
-    } else {
-      text = `${names[0]} 외 ${names.length - 1}명 ${statusText}`
-    }
-
-    return (
-      <div className="flex items-center gap-2 py-2 pl-12">
-        <div className="flex gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-        <span className="text-xs text-gray-400">{text} ({timeStr})</span>
-      </div>
-    )
-  }
-
-  // 입력 중 표시 (대화 모드)
-  const typingNames = Array.from(typingAgents).map((id) => {
-    const p = AGENT_PROFILE[id]
-    return p?.character || p?.name || id
-  })
-
-  let typingText = ''
-  if (typingNames.length === 1) {
-    typingText = `${typingNames[0]} 입력 중`
-  } else if (typingNames.length <= 3) {
-    typingText = `${typingNames.join(', ')} 입력 중`
-  } else {
-    typingText = `${typingNames[0]} 외 ${typingNames.length - 1}명 입력 중`
-  }
-
-  return (
-    <div className="flex items-center gap-2 py-2 pl-12">
-      <div className="flex gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-      </div>
-      <span className="text-xs text-gray-400">{typingText}...</span>
-    </div>
   )
 }
