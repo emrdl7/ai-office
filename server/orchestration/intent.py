@@ -31,6 +31,7 @@ class IntentResult:
     analysis: str = '',
     job_spec_id: str = '',
     job_input: dict | None = None,
+    confidence: float = 1.0,
   ):
     self.intent = intent
     self.target_agent = target_agent      # QUICK_TASK일 때 담당 에이전트
@@ -38,6 +39,7 @@ class IntentResult:
     self.analysis = analysis              # PROJECT일 때 분석 내용
     self.job_spec_id = job_spec_id        # JOB일 때 spec id
     self.job_input = job_input or {}      # JOB일 때 추출된 입력 필드
+    self.confidence = confidence          # 분류 신뢰도 0.0~1.0 (2-4)
 
 
 def _build_specs_context() -> str:
@@ -188,7 +190,7 @@ def _parse_intent_response(response: str) -> IntentResult:
   if not m:
     # 파싱 실패 — CONVERSATION 폴백 (로그에 원본 기록)
     logger.debug('[intent] 파싱 실패, CONVERSATION 폴백. 원본: %.200s', text)
-    return IntentResult(intent=IntentType.CONVERSATION, direct_response=text)
+    return IntentResult(intent=IntentType.CONVERSATION, direct_response=text, confidence=0.0)
 
   tag = m.group(1).upper()
   # 태그 이후 텍스트를 body로 사용
@@ -241,10 +243,13 @@ def _parse_intent_response(response: str) -> IntentResult:
           job_input = _json.loads(json_match.group())
         except Exception:
           pass
+    # 신뢰도: spec_id 있으면 0.9, 없으면 0.5; input도 있으면 +0.05 보정 (2-4)
+    job_confidence = (0.9 if spec_id else 0.5) + (0.05 if job_input else 0.0)
     return IntentResult(
       intent=IntentType.JOB,
       job_spec_id=spec_id,
       job_input=job_input,
+      confidence=min(job_confidence, 1.0),
     )
 
   # 알 수 없는 태그 — CONVERSATION 폴백

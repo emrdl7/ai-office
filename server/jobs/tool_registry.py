@@ -36,6 +36,20 @@ class ToolSpec:
 # ── 내장 도구 목록 ─────────────────────────────────────────────────────────────
 
 _BUILTIN_TOOLS: dict[str, ToolSpec] = {
+    'current_date': ToolSpec(
+        id='current_date',
+        name='현재 날짜',
+        description='오늘 날짜와 현재 시각을 반환한다. 시의성 있는 리서치/기획 step에 추가하면 좋다.',
+        category='general',
+        params=[],
+    ),
+    'job_context': ToolSpec(
+        id='job_context',
+        name='이전 Job 산출물 참조',
+        description='최근 완료된 Job의 산출물을 가져온다. Job 체이닝 시 이전 결과를 참조하려면 추가하라.',
+        category='general',
+        params=['source_job_id'],
+    ),
     'web_search': ToolSpec(
         id='web_search',
         name='웹 검색',
@@ -106,6 +120,10 @@ def list_tools() -> list[dict[str, Any]]:
 def execute_tool(tool_id: str, context: dict[str, str]) -> str:
     """동기 도구 실행 — runner의 _execute_tool 대체 가능."""
     # 내장 도구
+    if tool_id == 'current_date':
+        return _current_date(context)
+    if tool_id == 'job_context':
+        return _job_context(context)
     if tool_id == 'web_search':
         return _web_search(context)
     if tool_id == 'url_fetch':
@@ -137,6 +155,34 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
 
 
 # ── 내장 도구 구현 ─────────────────────────────────────────────────────────────
+
+def _current_date(context: dict[str, str]) -> str:
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    return f'오늘 날짜: {now.strftime("%Y년 %m월 %d일")} ({now.strftime("%A")}, UTC 기준)'
+
+
+def _job_context(context: dict[str, str]) -> str:
+    """이전 Job 산출물 참조 — context의 source_job_id를 사용한다."""
+    source_job_id = context.get('source_job_id', '')
+    if not source_job_id:
+        return ''
+    try:
+        from db.job_store import get_job as _get_job
+        job = _get_job(source_job_id)
+        if not job:
+            return f'[Job {source_job_id} 없음]'
+        arts = job.get('artifacts') or {}
+        if not arts:
+            return f'[Job {source_job_id} 산출물 없음]'
+        parts = [f'[이전 Job: {job.get("title", source_job_id)}]']
+        for k, v in arts.items():
+            if v:
+                parts.append(f'\n## {k}\n{str(v)[:1500]}')
+        return '\n'.join(parts)[:4000]
+    except Exception as e:
+        return f'[job_context 실패: {e}]'
+
 
 def _web_search(context: dict[str, str]) -> str:
     from harness.file_reader import web_search
