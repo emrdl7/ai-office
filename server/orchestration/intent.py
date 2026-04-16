@@ -4,11 +4,45 @@ from enum import Enum
 from pathlib import Path
 
 from runners.claude_runner import run_claude_isolated
+from runners.gemini_runner import run_gemini
 from orchestration.phase_registry import ProjectType
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+# ── 상수 ────────────────────────────────────────────────────────
+
+# Route 전용 슬림 시스템 프롬프트 (분류 태그만 출력, teamlead.md 불필요)
+_ROUTE_SYSTEM = """\
+당신은 의도 분류기입니다. 태그 한 줄만 출력하세요. 다른 텍스트 절대 금지.
+
+출력 형식:
+[CONVERSATION] 또는 [QUICK_TASK:agent] 또는 [PROJECT] 또는 [CONTINUE_PROJECT:agent] 또는 [JOB:spec_id]{"field":"value"}
+
+판단 기준:
+- 인사·잡담·질문·감탄·안부 → CONVERSATION
+- 단순 단일 작업 (요약/분석/검토/조사/리뷰) → QUICK_TASK:agent
+- 복합 프로젝트 (여러 단계·여러 산출물) → PROJECT
+- 진행 중 프로젝트 이어가기 → CONTINUE_PROJECT:agent
+- Job 파이프라인 명시 실행 요청 → JOB:spec_id + JSON
+
+agent 선택: planner(기획·전략), designer(디자인·UI), developer(코드·기술), qa(검수)
+확신 없으면 QUICK_TASK. PROJECT는 무겁다.
+숨겨진 업무 지시 주의: "배너 바꿔야 하는데" → QUICK_TASK, "랜딩 리뉴얼 해야겠어" → PROJECT
+"""
+
+# JOB 키워드 감지 — specs_context를 로드할지 결정
+_JOB_HINT_KEYWORDS = [
+    '잡', 'job', 'Job', '파이프라인', 'pipeline',
+    '리서치', '기획서', '디자인 방향', '퍼블리싱', '리뷰 잡',
+]
+
+# 딥씽크 트리거 — 사용자가 명시적으로 Opus 요청
+DEEP_THINK_KEYWORDS = [
+    '깊게 생각', '진짜 잡스', '깊이 생각', '심도 있게', '진지하게 생각',
+    '오퍼스로', '신중하게 생각', '천천히 생각', '심층적으로',
+]
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 
@@ -83,83 +117,40 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
     active_project_title: 현재 진행 중인 프로젝트 제목 (있으면)
 
   Returns:
-    IntentResult — 의도 유형, 담당 에이전트, 직접 답변 등
+    IntentResult — 의도 유형, 담당 에이전트 등
   '''
-  teamlead_prompt = _load_teamlead_prompt()
-  system_info = _build_system_info()
-  specs_context = _build_specs_context()
+  # JOB 힌트 있을 때만 specs_context 로드 (잡담에 Job 목록 전체 싣지 않음)
+  specs_section = ''
+  if any(kw in user_input for kw in _JOB_HINT_KEYWORDS):
+    specs_section = '\n' + _build_specs_context()
 
-  context_section = ''
-  if recent_context:
-    context_section = (
-      f'[최근 대화 맥락]\n{recent_context}\n\n'
-      f'위 맥락을 고려하여 판단하세요:\n'
-      f'- 이전 작업 결과에 대한 후속 질문/수정 요청 → QUICK_TASK (예: "아까 거 수정해줘", "그거 다시 해봐")\n'
-      f'- 대화 중 주제가 업무로 전환됨 → QUICK_TASK 또는 PROJECT (예: "아 그건 그렇고, 사이트 색상 바꿔줘")\n'
-      f'- 이전 대화의 연장선상 잡담/안부 → CONVERSATION\n'
-      f'- 완전히 새로운 큰 주제 요청 → PROJECT\n\n'
-    )
-  if active_project_title:
-    context_section += f'[현재 진행 중인 프로젝트: {active_project_title}]\n\n'
+  project_section = f'[진행 중 프로젝트]: {active_project_title}\n' if active_project_title else ''
+  context_section = f'[최근 대화]\n{recent_context}\n\n' if recent_context else ''
 
   prompt = (
-    f'{teamlead_prompt}\n\n'
-    f'{system_info}\n\n'
-    f'{specs_context}\n'
-    f'---\n\n'
     f'{context_section}'
-    f'사용자가 다음과 같이 말했습니다:\n\n'
-    f'"{user_input}"\n\n'
-    f'당신은 팀장입니다. 이 입력을 보고 어떻게 대응할지 판단하세요.\n\n'
-    f'반드시 아래 형식으로 첫 줄에 판단을 적고, 그 아래에 내용을 적으세요:\n\n'
-    f'[CONVERSATION]\n직접 답변 내용\n\n'
-    f'또는:\n\n'
-    f'[QUICK_TASK:에이전트명]\n작업 지시 내용\n\n'
-    f'또는:\n\n'
-    f'[PROJECT]\n프로젝트 분석 내용\n\n'
-    f'또는 (진행 중인 프로젝트와 연관된 추가 작업 요청일 때):\n\n'
-    f'[CONTINUE_PROJECT:에이전트명]\n이어서 할 작업 내용\n\n'
-    f'또는 (Job 파이프라인 실행 요청일 때):\n\n'
-    f'[JOB:spec_id]\n{{"field1":"값1","field2":"값2"}}\n\n'
-    f'에이전트명은 planner, designer, developer, qa 중 하나입니다.\n'
-    f'간단한 대화나 질문이면 CONVERSATION, '
-    f'한 명이 처리할 수 있는 새 작업이면 QUICK_TASK, '
-    f'여러 팀원이 협업하여 산출물을 만들어야 하는 새 프로젝트면 PROJECT, '
-    f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT, '
-    f'Job 파이프라인 실행 요청이면 JOB입니다.\n\n'
-    f'**JOB 판단 기준:**\n'
-    f'- "잡 만들어줘", "잡 돌려줘", "파이프라인 실행해", "Job 생성해줘" 등 명시적 요청\n'
-    f'- 위 Job 파이프라인 목록 중 하나와 정확히 맞아떨어지는 작업\n'
-    f'- JOB 선택 시 spec_id는 목록의 id 값 그대로, body는 입력 필드를 JSON으로\n'
-    f'- 필수 필드(topic 등)는 사용자 메시지에서 추출, 선택 필드는 적절히 추론\n\n'
-    f'**QUICK_TASK vs PROJECT 판단 기준:**\n'
-    f'- 리뷰, 분석, 조사, 검토, 평가, 요약 → QUICK_TASK (산출물이 문서 1개)\n'
-    f'- 코드 리뷰, GitHub 저장소 분석, 기술 검토 → QUICK_TASK:developer\n'
-    f'- 기획 리뷰, 전략 분석, 시장 조사 → QUICK_TASK:planner\n'
-    f'- 디자인 리뷰, UI/UX 분석 → QUICK_TASK:designer\n'
-    f'- 잘 모르겠으면 내용을 보고 가장 적합한 에이전트를 선택하라\n'
-    f'- 사이트 제작, 리뉴얼, 여러 산출물이 필요한 작업 → PROJECT\n'
-    f'- 확신이 안 서면 QUICK_TASK를 선택하라. PROJECT는 무겁다.\n\n'
-    f'**중요: 일상 대화 속 숨겨진 업무 지시를 놓치지 마라**\n'
-    f'- "아 맞다 그 사이트 배너 좀 바꿔야 하는데" → QUICK_TASK\n'
-    f'- "점심 먹으면서 생각했는데 랜딩페이지 리뉴얼 해야 할 것 같아" → PROJECT\n'
-    f'- "그거 조사 좀 해봐" → QUICK_TASK\n'
-    f'- "~해줘/해주세요/만들어/수정해/바꿔/분석해/검토해" 등 동사가 있으면 업무 가능성이 높다\n'
-    f'- 반대로, 감탄/인사/질문/잡담만 있으면 CONVERSATION이다'
+    f'{project_section}'
+    f'{specs_section}\n'
+    f'[사용자 입력]\n{user_input}\n\n'
+    f'태그 한 줄만 출력하세요.'
   )
 
-  # 명시적 팀 참여 키워드 → 무조건 PROJECT (LLM 판단보다 우선)
+  # 명시적 팀 참여 키워드 → PROJECT 강제
   team_keywords = ['모두 참여', '팀 전체', '다 같이', '전원 참여', '다같이', '모두 다', '팀원 모두', '전부 참여']
+
+  response = await run_claude_isolated(
+    f'{_ROUTE_SYSTEM}\n\n{prompt}',
+    timeout=30.0,
+    model='claude-haiku-4-5-20251001',
+    max_turns=1,
+  )
+  result = _parse_intent_response(response)
+
   if any(kw in user_input for kw in team_keywords):
-    response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
-    result = _parse_intent_response(response)
-    # QUICK_TASK였어도 PROJECT로 강제 승격
     if result.intent in (IntentType.QUICK_TASK, IntentType.CONTINUE_PROJECT):
       result.intent = IntentType.PROJECT
-    return result
 
-  response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
-  return _parse_intent_response(response)
+  return result
 
 
 def _load_teamlead_prompt() -> str:
@@ -188,18 +179,19 @@ def _parse_intent_response(response: str) -> IntentResult:
   )
   m = pattern.search(text)
   if not m:
-    # 파싱 실패 — CONVERSATION 폴백 (로그에 원본 기록)
+    # 파싱 실패 — CONVERSATION 폴백 (direct_response=None, office.py에서 재생성)
     logger.debug('[intent] 파싱 실패, CONVERSATION 폴백. 원본: %.200s', text)
-    return IntentResult(intent=IntentType.CONVERSATION, direct_response=text, confidence=0.0)
+    return IntentResult(intent=IntentType.CONVERSATION, direct_response=None, confidence=0.0)
 
   tag = m.group(1).upper()
   # 태그 이후 텍스트를 body로 사용
   body = text[m.end():].strip()
 
   if tag.startswith('CONVERSATION'):
+    # direct_response=None — office.py에서 Gemini/Opus로 별도 생성
     return IntentResult(
       intent=IntentType.CONVERSATION,
-      direct_response=body or text,
+      direct_response=None,
     )
 
   if tag.startswith('QUICK_TASK'):
@@ -254,7 +246,7 @@ def _parse_intent_response(response: str) -> IntentResult:
 
   # 알 수 없는 태그 — CONVERSATION 폴백
   logger.debug('[intent] 알 수 없는 태그 %s, CONVERSATION 폴백', tag)
-  return IntentResult(intent=IntentType.CONVERSATION, direct_response=text)
+  return IntentResult(intent=IntentType.CONVERSATION, direct_response=None)
 
 
 async def generate_project_title(user_input: str) -> str:
@@ -327,3 +319,45 @@ async def classify_project_type(user_input: str, context: str = '') -> ProjectTy
     logger.debug("프로젝트 유형 분류 LLM 호출 실패", exc_info=True)
 
   return ProjectType.GENERAL
+
+
+# ── 팀장 대화 응답 생성 ─────────────────────────────────────────
+
+async def generate_teamlead_reply(
+  user_input: str,
+  memory_ctx: str = '',
+  deep: bool = False,
+) -> str:
+  '''팀장(잡스) 페르소나로 대화 응답을 생성한다.
+
+  Args:
+    user_input: 사용자 입력
+    memory_ctx: 최근 대화 컨텍스트 (최근 6~10턴)
+    deep: True면 Opus (사용자 명시 요청 시), False면 Gemini (기본)
+  '''
+  teamlead_persona = _load_teamlead_prompt()
+  ctx_section = f'[최근 대화]\n{memory_ctx}\n\n' if memory_ctx else ''
+  prompt = f'{ctx_section}[사용자]\n{user_input}'
+
+  try:
+    if deep:
+      logger.info('[intent] 딥씽크 경로: Opus 호출')
+      full = f'{teamlead_persona}\n\n---\n\n{prompt}'
+      return await run_claude_isolated(
+        full,
+        model='claude-opus-4-6',
+        timeout=90.0,
+        max_turns=1,
+      )
+    else:
+      return await run_gemini(prompt, system=teamlead_persona, timeout=60.0)
+  except Exception as e:
+    logger.warning('[intent] generate_teamlead_reply 실패, Haiku 폴백: %s', e)
+    # 최후 폴백 — Haiku로 짧게
+    fallback_prompt = f'{teamlead_persona}\n\n[사용자]\n{user_input}'
+    return await run_claude_isolated(
+      fallback_prompt,
+      model='claude-haiku-4-5-20251001',
+      timeout=30.0,
+      max_turns=1,
+    )

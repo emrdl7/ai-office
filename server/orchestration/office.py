@@ -317,6 +317,7 @@ class Office:
 
     # 2. 팀장 판단 — 최근 대화 맥락을 함께 전달 ("그거 조사해봐" 같은 지시어 해석용)
     recent_context = ''
+    recent_logs: list = []
     try:
       from db.log_store import load_logs
       recent_logs = load_logs(limit=20)
@@ -388,16 +389,21 @@ class Office:
 
     # 3. 의도별 분기
     if intent_result.intent == IntentType.CONVERSATION:
-      response = intent_result.direct_response or ''
+      from orchestration.intent import generate_teamlead_reply, DEEP_THINK_KEYWORDS
+
+      # 딥씽크 키워드 감지 → Opus, 아니면 Gemini
+      deep = any(kw in user_input for kw in DEEP_THINK_KEYWORDS)
+
+      # 최근 대화를 메모리 컨텍스트로 전달 (최근 6턴, 각 150자)
+      memory_ctx = '\n'.join(
+        f'[{l["agent_id"]}] {l["message"][:150]}'
+        for l in recent_logs[-6:]
+        if l.get('event_type') in ('response', 'message') and l.get('agent_id') != 'system'
+      )
+
+      response = await generate_teamlead_reply(user_input, memory_ctx, deep=deep)
 
       await self._emit('teamlead', response, 'response')
-
-      # 팀장 응답 완료 → 팀원 대화로 전환 (UI에서 "팀장 작업중" 표시 제거)
-      self._active_agent = ''
-      self._work_started_at = ''
-      self._current_phase = ''
-
-      # 대화 맥락 실시간 갱신 — 후속 메시지에서 주제 변경 감지 가능
       self._update_context(user_input, response)
 
       self._state = OfficeState.COMPLETED
