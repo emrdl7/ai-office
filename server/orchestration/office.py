@@ -299,7 +299,7 @@ class Office:
 
     # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
-      return await self._continue_project(user_input)
+      return await project_runner._continue_project(self, user_input)
 
     # 0-1. 중단된 작업이 있고 사용자가 재개를 요청하면 바로 재실행
     if hasattr(self, '_interrupted_instruction') and self._interrupted_instruction:
@@ -435,7 +435,8 @@ class Office:
       }
 
     if intent_result.intent in (IntentType.QUICK_TASK, IntentType.CONTINUE_PROJECT):
-      return await self._handle_quick_task(
+      return await project_runner._handle_quick_task(
+        self,
         user_input,
         intent_result.target_agent or 'developer',
         intent_result.analysis,
@@ -443,7 +444,8 @@ class Office:
       )
 
     if intent_result.intent == IntentType.PROJECT:
-      return await self._handle_project(
+      return await project_runner._handle_project(
+        self,
         user_input,
         intent_result.analysis,
         reference_context,
@@ -527,69 +529,6 @@ class Office:
     self._work_started_at = ''
     return {'state': self._state.value, 'response': '', 'artifacts': []}
 
-  async def _handle_quick_task(
-    self,
-    user_input: str,
-    agent_name: str,
-    analysis: str,
-    reference_context: str,
-  ) -> dict[str, Any]:
-    return await project_runner._handle_quick_task(
-      self, user_input, agent_name, analysis, reference_context,
-    )
-
-  async def _handle_project(
-    self,
-    user_input: str,
-    analysis: str,
-    reference_context: str,
-    pre_project_type: str = '',
-  ) -> dict[str, Any]:
-    return await project_runner._handle_project(self, user_input, analysis, reference_context, pre_project_type)
-
-  async def _continue_project(self, user_answer: str) -> dict[str, Any]: return await project_runner._continue_project(self, user_answer)
-
-  async def _plan_project_phases(
-    self,
-    user_input: str,
-    analysis: str,
-    meeting_summary: str,
-  ) -> list[dict] | None:
-    return await project_runner._plan_project_phases(self, user_input, analysis, meeting_summary)
-
-  def _default_phases(self, user_input: str) -> tuple[list[dict], str]: return project_runner._default_phases(self, user_input)
-
-  async def _execute_project(
-    self,
-    user_input: str,
-    analysis: str,
-    meeting_summary: str,
-    reference_context: str,
-    briefing: str,
-    phases: list[dict] | None = None,
-  ) -> dict[str, Any]:
-    return await project_runner._execute_project(
-      self, user_input, analysis, meeting_summary, reference_context, briefing, phases,
-    )
-
-  async def _auto_export(self, phase_artifacts: list[str]) -> None: return await project_runner._auto_export(self, phase_artifacts)
-
-  async def _cross_review(self, group_name: str, all_results: dict[str, str]) -> None: return await project_runner._cross_review(self, group_name, all_results)
-
-  async def _extract_user_questions(self, user_input: str, meeting_summary: str) -> str: return await project_runner._extract_user_questions(self, user_input, meeting_summary)
-
-  async def _check_user_directive(self) -> dict | None: return await project_runner._check_user_directive(self)
-
-  async def _team_reaction(self, worker: str, phase_name: str, content_summary: str = '') -> None: return await agent_interactions._team_reaction(self, worker, phase_name, content_summary)
-
-  async def _consult_peers(
-    self,
-    worker_name: str,
-    content: str,
-    phase: dict,
-    all_results: dict[str, str],
-  ) -> str:
-    return await agent_interactions._consult_peers(self, worker_name, content, phase, all_results)
 
   def _record_dynamic(
     self,
@@ -624,65 +563,3 @@ class Office:
     'developer': ['designer', 'planner'],
   }
 
-  async def _peer_review(self, worker_name: str, phase_name: str, content: str, user_input: str) -> list[dict]:
-    return await agent_interactions._peer_review(self, worker_name, phase_name, content, user_input)
-
-  async def _handoff_comment(self, from_agent: str, to_agent: str, phase_name: str) -> None: return await agent_interactions._handoff_comment(self, from_agent, to_agent, phase_name)
-
-  async def _task_acknowledgment(self, agent_name: str, phase_name: str) -> None: return await agent_interactions._task_acknowledgment(self, agent_name, phase_name)
-
-  async def _contextual_reaction(self, reactor: str, phase_name: str, worker: str) -> str: return await agent_interactions._contextual_reaction(self, reactor, phase_name, worker)
-
-  def _resolve_reviewer(self, worker: str, prompt: str) -> tuple[str, str] | None: return agent_interactions._resolve_reviewer(self, worker, prompt)
-
-  async def _quick_task_second_opinion(
-    self,
-    worker: str,
-    prompt: str,
-    result: str,
-    worker_agent: Agent | None = None,
-    ctx_parts: list[str] | None = None,
-  ) -> str:
-    return await project_runner._quick_task_second_opinion(
-      self, worker, prompt, result, worker_agent, ctx_parts,
-    )
-
-  async def _work_commentary(self, worker: str, phase_name: str, result_preview: str) -> None: return await agent_interactions._work_commentary(self, worker, phase_name, result_preview)
-
-  async def _phase_intro(self, agent_name: str, phase_name: str) -> None: return await agent_interactions._phase_intro(self, agent_name, phase_name)
-
-  async def handle_mid_work_input(self, user_input: str) -> None:
-    from orchestration import user_input as _ui
-    return await _ui.handle_mid_work_input(self, user_input)
-
-  async def _create_handoff_guide(self, group_name: str, group_results: dict[str, str], target_phase: str) -> str:
-    return await project_runner._create_handoff_guide(self, group_name, group_results, target_phase)
-
-  async def _generate_stitch_mockup(self, all_results: dict, user_input: str) -> None: return await project_runner._generate_stitch_mockup(self, all_results, user_input)
-
-  async def _run_qa_check(self, qa_agent: Agent, node: TaskNode, content: str) -> bool: return await project_runner._run_qa_check(self, qa_agent, node, content)
-
-  async def _run_planner_synthesize(
-    self,
-    user_input: str,
-    worker_results: dict[str, str],
-    revision_feedback: str = '',
-  ) -> None:
-    return await project_runner._run_planner_synthesize(
-      self, user_input, worker_results, revision_feedback,
-    )
-
-  async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool: return await project_runner._teamlead_final_review(self, user_input, task_graph)
-
-  async def _route_agent_mentions(self, speaker: str, content: str) -> None: return await agent_interactions._route_agent_mentions(self, speaker, content)
-
-  async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None: return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message, source_log_id)
-
-  async def _auto_file_suggestion(self, agent_id: str, message: str, source_log_id: str = '', mode: str = '') -> None:
-    return await suggestion_filer._auto_file_suggestion(self, agent_id, message, source_log_id, mode=mode)
-
-  async def _file_commitment_suggestion(self, committer_id: str, message: str, source_speaker: str = '', source_message: str = '', source_log_id: str = '', mode: str = '') -> None:
-    return await suggestion_filer._file_commitment_suggestion(self, committer_id, message, source_speaker, source_message, source_log_id, mode=mode)
-
-  async def _file_capability_gap_suggestion(self, speaker_id: str, message: str, source_log_id: str = '', mode: str = '') -> None:
-    return await suggestion_filer._file_capability_gap_suggestion(self, speaker_id, message, source_log_id, mode=mode)

@@ -25,6 +25,7 @@ from orchestration.state import OfficeState
 from orchestration.intent import IntentType, classify_intent, classify_project_type
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
+from orchestration import agent_interactions
 from orchestration.meeting import Meeting
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
 from memory.team_memory import SharedLesson, TeamDynamic, ProjectSummary
@@ -63,7 +64,7 @@ async def _handle_quick_task(
   # 업무 수신 확인    await office._emit('teamlead', f'알겠습니다. {display_name(agent_name)}에게 맡기겠습니다.', 'response')
 
   # 담당자 업무 수령 확인
-  await office._task_acknowledgment(agent_name, analysis or user_input)
+  await agent_interactions._task_acknowledgment(office, agent_name, analysis or user_input)
 
   prompt = analysis or user_input
   # 사용자 중간 피드백이 있으면 프롬프트에 주입
@@ -96,7 +97,7 @@ async def _handle_quick_task(
   result = await agent.handle(prompt, context='\n\n'.join(ctx_parts))
 
   # 보완 전문 기여 — 관련 역할 에이전트가 전문 내용 제공 후 담당자가 결과물 보강
-  result = await office._quick_task_second_opinion(agent_name, prompt, result, agent, ctx_parts)
+  result = await _quick_task_second_opinion(office, agent_name, prompt, result, agent, ctx_parts)
 
   # QA 검수 (최대 3회: 초기 + 2회 보완)
   qa_agent = office.agents.get('qa')
@@ -355,14 +356,14 @@ async def _handle_project(
   meeting_summary = meeting.get_summary()
 
   # 2. 팀장이 회의 결과를 바탕으로 프로젝트 단계를 동적 설계
-  dynamic_phases = await office._plan_project_phases(user_input, analysis, meeting_summary)
+  dynamic_phases = await _plan_project_phases(office, user_input, analysis, meeting_summary)
   if dynamic_phases:
     phases = dynamic_phases
     await office._emit('teamlead', f'프로젝트를 {len(phases)}단계로 진행하겠습니다.', 'response')
   # dynamic_phases가 None이면 기존 get_phases() 결과를 그대로 사용
 
   # 3. 팀장이 회의 결과에서 확인 필요한 사항을 사용자에게 질문
-  questions = await office._extract_user_questions(user_input, meeting_summary)
+  questions = await _extract_user_questions(office, user_input, meeting_summary)
   if questions:
     # @마스터가 안 붙어 있으면 앞에 추가
     if not questions.startswith('@마스터'):
@@ -396,7 +397,7 @@ async def _handle_project(
     }
 
   # 질문 없으면 바로 전체 진행
-  result: dict[str, Any] = await office._execute_project(
+  result: dict[str, Any] = await _execute_project(office, 
     user_input, analysis, meeting_summary, reference_context, briefing,
     phases=phases,
   )
@@ -418,7 +419,7 @@ async def _continue_project(office: Any, user_answer: str) -> dict[str, Any]:
 
   office._pending_project = None
 
-  result: dict[str, Any] = await office._execute_project(
+  result: dict[str, Any] = await _execute_project(office, 
     pending['user_input'],
     pending['analysis'],
     meeting_summary,
@@ -579,7 +580,7 @@ async def _check_existing_phase_output(
             has_stitch = True
             break
         if not has_stitch and office._current_project_type in ('web_development', 'website'):
-          await office._generate_stitch_mockup(all_results, user_input)
+          await _generate_stitch_mockup(office, all_results, user_input)
         elif has_stitch:
           await office._emit('designer', '이전에 생성된 Stitch 시안이 있습니다. 그대로 사용합니다. 🎨', 'response')
       return existing_content
@@ -648,7 +649,7 @@ async def _build_phase_prompt(
     if g != current_group and g not in other_groups:
       other_groups.add(g)
       group_results = {key: val for key, val in all_results.items() if key.startswith(g)}
-      guide = await office._create_handoff_guide(g, group_results, phase_name)
+      guide = await _create_handoff_guide(office, g, group_results, phase_name)
       phase_prompt += f'[{g} 단계 참조 가이드]\n{guide}\n\n'
 
   if reference_context and current_group == '기획':
@@ -735,7 +736,7 @@ async def _run_phase_with_qa(
   )
   node.artifact_paths = [filename]
 
-  qa_passed = await office._run_qa_check(qa_agent, node, group_content)
+  qa_passed = await _run_qa_check(office, qa_agent, node, group_content)
   revision_delta = 0
   if qa_passed:
     await office._emit('qa', f'{current_group} 검수 통과 ✅', 'response')
@@ -801,7 +802,7 @@ async def _run_phase_with_qa(
     message=f'{current_group} 보완 완료했습니다.',
     data={'artifacts': [f'{office.workspace.task_id}/{filename}']},
   ))
-  await office._team_reaction(agent_name, f'{current_group}-보완')
+  await agent_interactions._team_reaction(office, agent_name, f'{current_group}-보완')
   return qa_passed, revision_delta
 
 
@@ -920,7 +921,7 @@ async def _execute_project(
         project_type = 'document'
         break
   else:
-    PHASES, project_type = office._default_phases(user_input)
+    PHASES, project_type = _default_phases(office, user_input)
   office._current_project_type = project_type
 
   # 팀원 피드백 초기화
@@ -970,15 +971,15 @@ async def _execute_project(
 
     # 그룹 전환 시 인수인계 코멘트
     if _prev_group and current_group != _prev_group and _prev_agent != agent_name:
-      await office._handoff_comment(_prev_agent, agent_name, phase_name)
+      await agent_interactions._handoff_comment(office, _prev_agent, agent_name, phase_name)
     _prev_group = current_group
     _prev_agent = agent_name
 
     # 담당자 포부 한마디 + 착수 메시지
-    await office._phase_intro(agent_name, phase_name)
+    await agent_interactions._phase_intro(office, agent_name, phase_name)
 
     # 업무 수령 확인
-    await office._task_acknowledgment(agent_name, phase_name)
+    await agent_interactions._task_acknowledgment(office, agent_name, phase_name)
 
     # 사용자 중간 피드백이 있으면 프롬프트에 주입
     if office._user_mid_feedback:
@@ -995,7 +996,7 @@ async def _execute_project(
 
     # 에이전트 간 @멘션 자동 라우팅 — 산출물에서 다른 에이전트에게 질문 감지
     try:
-      await office._route_agent_mentions(agent_name, content[:3000])
+      await agent_interactions._route_agent_mentions(office, agent_name, content[:3000])
     except Exception:
       logger.debug("에이전트 간 멘션 라우팅 실패: %s", phase_name, exc_info=True)
 
@@ -1020,14 +1021,14 @@ async def _execute_project(
       group_content = '\n\n'.join(v for k, v in all_results.items() if current_group in k)
 
       # 1) 타 팀원 자문
-      consultation_feedback = await office._consult_peers(agent_name, group_content, phase, all_results)
+      consultation_feedback = await agent_interactions._consult_peers(office, agent_name, group_content, phase, all_results)
       if consultation_feedback:
         # 자문 결과를 담당자에게 전달하여 보완 기회 제공
         await office._emit('teamlead', '자문 결과를 반영합니다.', 'response')
         office._user_mid_feedback.append(f'[팀원 자문 결과]\n{consultation_feedback}')
 
       # 2) 피어 리뷰 (실질적 피드백)
-      peer_reviews = await office._peer_review(agent_name, phase_name, group_content, user_input)
+      peer_reviews = await agent_interactions._peer_review(office, agent_name, phase_name, group_content, user_input)
 
       # 피어 리뷰에서 보완된 결과가 있으면 반영
       for review in peer_reviews:
@@ -1043,10 +1044,10 @@ async def _execute_project(
       # ── 소단계 중간: 경량 리액션 유지 ──
       await office._work_commentary(agent_name, phase_name, content)
       content_summary = '\n'.join(content.strip().split('\n')[:5])
-      await office._team_reaction(agent_name, phase_name, content_summary=content_summary)
+      await agent_interactions._team_reaction(office, agent_name, phase_name, content_summary=content_summary)
 
     # 사용자 중간 지시 확인 — 최근 채팅에서 사용자 메시지 체크
-    user_directive = await office._check_user_directive()
+    user_directive = await _check_user_directive(office, )
     if user_directive:
       if user_directive.get('action') == 'stop':
         await office._emit('teamlead', '작업을 중단합니다. 여기까지의 산출물은 저장되어 있습니다.', 'response')
@@ -1120,12 +1121,12 @@ async def _execute_project(
       ))
 
       # ── 크로스리뷰 — 다른 역할이 해당 그룹 산출물을 간단히 검토 ──
-      await office._cross_review(current_group, all_results)
+      await _cross_review(office, current_group, all_results)
 
       # 디자인 그룹 완료 시 → 웹 개발 프로젝트만 Stitch 시안 생성
       _has_design_phases = any(p.get('group') == '디자인' for p in PHASES)
       if _has_design_phases and current_group == '디자인' and office._current_project_type in ('web_development', 'website'):
-        await office._generate_stitch_mockup(all_results, user_input)
+        await _generate_stitch_mockup(office, all_results, user_input)
 
       # ── 그룹 경계 확인 — 다음 그룹이 있으면 사용자에게 진행 여부 확인 ──
       _remaining_phases = PHASES[PHASES.index(phase) + 1:]
@@ -1252,19 +1253,19 @@ async def _emit_final_report(
   await office._emit('teamlead', '기획자에게 최종 보고서 작성을 요청합니다.', 'response')
   office._active_agent = 'planner'
   await office._emit('planner', '', 'typing')
-  await office._run_planner_synthesize(user_input, all_results)
+  await _run_planner_synthesize(office, user_input, all_results)
 
   # 팀장 최종 검수 + 보완 루프
   office._state = OfficeState.TEAMLEAD_REVIEW
   office._active_agent = 'teamlead'
-  passed = await office._teamlead_final_review(user_input, None)
+  passed = await _teamlead_final_review(office, user_input, None)
   if not passed:
     for _ in range(office.MAX_REVISION_ROUNDS):
       office._revision_count += 1
-      await office._run_planner_synthesize(
+      await _run_planner_synthesize(office, 
         user_input, all_results, revision_feedback=office._last_review_feedback,
       )
-      passed = await office._teamlead_final_review(user_input, None)
+      passed = await _teamlead_final_review(office, user_input, None)
       if passed:
         break
 
@@ -1308,7 +1309,7 @@ async def _finalize_project(
   )
 
   try:
-    await office._auto_export(phase_artifacts)
+    await _auto_export(office, phase_artifacts)
   except Exception:
     logger.warning("자동 내보내기 실패", exc_info=True)
 
@@ -1415,7 +1416,7 @@ async def _quick_task_second_opinion(
     2. 의미 있는 내용이면 담당자에게 전달 → 담당자가 결과물에 반영
     3. 보강된 결과물 반환 (변경 없으면 원본 반환)
   '''
-  config = office._resolve_reviewer(worker, prompt)
+  config = agent_interactions._resolve_reviewer(office, worker, prompt)
   if not config:
     return result
 
@@ -1741,7 +1742,7 @@ async def _generate_stitch_mockup(office: Any, all_results: dict, user_input: st
         message='디자인 시안이 생성되었습니다! 개발자에게 전달합니다. 🎉',
         data={'artifacts': stitch_artifacts},
       ))
-      await office._team_reaction('designer', '시안 생성')
+      await agent_interactions._team_reaction(office, 'designer', '시안 생성')
     else:
       error = stitch_result.get('error', '알 수 없는 오류')[:200]
       await office._emit('designer', f'시안 생성을 건너뜁니다 (Stitch: {error})', 'response')

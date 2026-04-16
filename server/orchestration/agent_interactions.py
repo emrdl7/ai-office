@@ -24,6 +24,7 @@ from log_bus.event_bus import LogEvent
 from memory.team_memory import SharedLesson, TeamDynamic
 from runners.claude_runner import run_claude_isolated
 from runners.gemini_runner import run_gemini
+from orchestration import suggestion_filer
 from runners.model_router import run as router_run
 
 logger = logging.getLogger(__name__)
@@ -309,7 +310,7 @@ async def _team_reaction(office: Any, worker: str, phase_name: str, content_summ
       })
     if has_suggestion_label:
       try:
-        await office._file_reaction_suggestion(
+        await suggestion_filer._file_reaction_suggestion(office, 
           reactor_name, phase_name, text, source_log_id=reactor_event.id,
         )
       except Exception:
@@ -1093,7 +1094,7 @@ async def _route_agent_mentions(office: Any, speaker: str, content: str) -> None
       answer_event = await office._emit(target_id, answer[:200], 'response')
 
       try:
-        await office._file_commitment_suggestion(
+        await suggestion_filer._file_commitment_suggestion(office, 
           committer_id=target_id,
           message=answer,
           source_speaker=speaker,
@@ -1104,7 +1105,7 @@ async def _route_agent_mentions(office: Any, speaker: str, content: str) -> None
         logger.debug('멘션 응답 다짐 등록 실패', exc_info=True)
 
       try:
-        await office._file_capability_gap_suggestion(
+        await suggestion_filer._file_capability_gap_suggestion(office, 
           speaker_id=target_id,
           message=answer,
           source_log_id=answer_event.id,
