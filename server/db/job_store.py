@@ -135,7 +135,7 @@ def upsert_step(step: StepRun) -> None:
         'error=excluded.error, model_used=excluded.model_used, cost_usd=excluded.cost_usd',
         (step.job_id, step.step_id, step.status,
          step.started_at, step.finished_at,
-         step.output[:8000] if step.output else '',  # 너무 길면 잘라 저장
+         step.output or '',
          step.error, step.model_used, step.cost_usd),
     )
     c.commit()

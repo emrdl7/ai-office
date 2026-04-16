@@ -62,7 +62,7 @@ async def run(
   timeout: float = 120.0,
   max_turns: int = 3,
   agent_id: str = '',
-) -> str:
+) -> tuple[str, str]:
   '''Tier 이름으로 LLM을 호출한다. 실패 시 자동 폴백.
 
   Args:
@@ -74,7 +74,7 @@ async def run(
     agent_id: 비용 추적용 에이전트 식별자
 
   Returns:
-    LLM 응답 텍스트
+    (LLM 응답 텍스트, 실제 사용된 모델명)
 
   Raises:
     RuntimeError: primary + fallback 모두 실패
@@ -94,10 +94,12 @@ async def run(
         timeout=timeout,
         max_turns=max_turns,
       )
+      model_used = spec['model']
     else:
       text = await run_gemini(prompt=prompt, system=system, timeout=timeout)
+      model_used = 'gemini'
     _record(tier, spec, agent_id, prompt, text)
-    return text
+    return text, model_used
 
   except PermanentClaudeRunnerError:
     # CLI 인수 오류 — 폴백해도 동일 결과이므로 즉시 실패
@@ -138,6 +140,7 @@ async def run(
   try:
     if fallback == 'gemini':
       text = await run_gemini(prompt=prompt, system=system, timeout=timeout)
+      fb_model = 'gemini'
     else:
       # 'sonnet' — Gemini primary가 실패할 때 Claude Sonnet으로
       text = await run_claude_isolated(
@@ -146,8 +149,9 @@ async def run(
         timeout=timeout,
         max_turns=max_turns,
       )
+      fb_model = 'claude-sonnet-4-6'
     _record(tier, {'runner': fallback, 'model': fallback}, agent_id, prompt, text)
-    return text
+    return text, fb_model
 
   except Exception as fallback_err:
     raise RuntimeError(

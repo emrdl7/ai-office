@@ -44,6 +44,8 @@ export interface JobStep {
   error: string
   started_at: string
   finished_at: string
+  model_used: string
+  cost_usd: number
 }
 
 export interface JobGate {

@@ -1,7 +1,8 @@
-// Job 상세 뷰 — 스텝 타임라인 + Gate 컨트롤 + 아티팩트
-import { useState } from 'react'
+// Job 상세 뷰 — 스텝 타임라인 + 출력물 뷰어 + Gate 컨트롤 + 아티팩트
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Job } from '../types'
+import ReactMarkdown from 'react-markdown'
+import type { Job, JobStep } from '../types'
 import { MatIcon } from './icons'
 
 async function fetchJob(id: string): Promise<Job> {
@@ -11,19 +12,19 @@ async function fetchJob(id: string): Promise<Job> {
 }
 
 const STATUS_LABEL: Record<string, { text: string; cls: string; icon: string }> = {
-  queued: { text: '대기', cls: 'bg-gray-500/20 text-gray-400', icon: 'schedule' },
-  running: { text: '실행 중', cls: 'bg-blue-500/20 text-blue-400', icon: 'play_circle' },
+  queued:       { text: '대기',      cls: 'bg-gray-500/20 text-gray-400',   icon: 'schedule' },
+  running:      { text: '실행 중',   cls: 'bg-blue-500/20 text-blue-400',   icon: 'play_circle' },
   waiting_gate: { text: 'Gate 대기', cls: 'bg-yellow-500/20 text-yellow-500', icon: 'pending' },
-  done: { text: '완료', cls: 'bg-green-500/20 text-green-500', icon: 'check_circle' },
-  failed: { text: '실패', cls: 'bg-red-500/20 text-red-500', icon: 'error' },
-  cancelled: { text: '취소됨', cls: 'bg-gray-500/20 text-gray-500', icon: 'cancel' },
+  done:         { text: '완료',      cls: 'bg-green-500/20 text-green-500', icon: 'check_circle' },
+  failed:       { text: '실패',      cls: 'bg-red-500/20 text-red-500',     icon: 'error' },
+  cancelled:    { text: '취소됨',    cls: 'bg-gray-500/20 text-gray-500',   icon: 'cancel' },
 }
 
 const STEP_STATUS_ICON: Record<string, { icon: string; cls: string }> = {
-  queued: { icon: 'radio_button_unchecked', cls: 'text-gray-400' },
-  running: { icon: 'pending', cls: 'text-blue-400 animate-pulse' },
-  done: { icon: 'check_circle', cls: 'text-green-500' },
-  failed: { icon: 'cancel', cls: 'text-red-500' },
+  queued:  { icon: 'radio_button_unchecked', cls: 'text-gray-400' },
+  running: { icon: 'pending',                cls: 'text-blue-400 animate-pulse' },
+  done:    { icon: 'check_circle',           cls: 'text-green-500' },
+  failed:  { icon: 'cancel',                 cls: 'text-red-500' },
 }
 
 function elapsed(start: string, end?: string): string {
@@ -36,21 +37,126 @@ function elapsed(start: string, end?: string): string {
   return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
 }
 
-function ArtifactPanel({ artifact }: { artifact: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const preview = artifact.slice(0, 300)
-  const needsExpand = artifact.length > 300
+// 마크다운 출력 패널 — prose 스타일
+function MarkdownViewer({ content }: { content: string }) {
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none
+      prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100
+      prose-p:text-gray-700 dark:prose-p:text-gray-300
+      prose-code:text-pink-600 dark:prose-code:text-pink-400
+      prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800
+      prose-table:text-xs prose-th:bg-gray-100 dark:prose-th:bg-gray-800
+      prose-a:text-blue-500">
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  )
+}
+
+// 스텝 카드 — 클릭하면 출력 내용 열림
+function StepCard({
+  step,
+  isActive,
+  isLast,
+}: {
+  step: JobStep
+  isActive: boolean
+  isLast: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const s = STEP_STATUS_ICON[step.status] ?? STEP_STATUS_ICON.queued
+  const hasOutput = step.status === 'done' && step.output
+  const isCode = step.output?.includes('```html') || step.output?.includes('```css')
+
+  // 다운로드 — step 출력물을 .md 파일로
+  const download = useCallback(() => {
+    const blob = new Blob([step.output], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${step.step_id}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [step])
 
   return (
-    <div className="mt-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-      {expanded ? artifact : preview}
-      {needsExpand && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="block mt-1 text-blue-500 hover:underline cursor-pointer"
-        >
-          {expanded ? '접기' : `... 더 보기 (${artifact.length}자)`}
-        </button>
+    <div className={`rounded-xl border transition-all
+      ${isActive ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10'
+        : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'}`}>
+
+      {/* 헤더 행 */}
+      <button
+        onClick={() => hasOutput && setOpen(!open)}
+        className={`w-full flex items-center gap-3 px-3 py-2.5
+          ${hasOutput ? 'cursor-pointer' : 'cursor-default'}`}
+      >
+        <div className="flex flex-col items-center self-stretch">
+          <MatIcon name={s.icon} className={`text-[20px] ${s.cls} shrink-0`} />
+          {!isLast && <div className="w-px flex-1 mt-1 bg-gray-200 dark:bg-gray-700 min-h-[12px]" />}
+        </div>
+
+        <div className="flex-1 min-w-0 text-left">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">
+              {step.step_id}
+            </span>
+            {step.model_used && (
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0
+                ${step.model_used.includes('gemini') ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  : step.model_used.includes('opus') ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                  : step.model_used.includes('sonnet') ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                }`}>
+                {step.model_used.replace('claude-', '').replace('-4-5-20251001', '').replace('-4-6', '')}
+              </span>
+            )}
+            {step.started_at && (
+              <span className="text-[10px] text-gray-400 shrink-0">
+                {elapsed(step.started_at, step.finished_at || undefined)}
+              </span>
+            )}
+            {hasOutput && (
+              <span className="text-[9px] text-gray-400 shrink-0">
+                {(step.output.length / 1000).toFixed(1)}k자
+              </span>
+            )}
+          </div>
+          {step.status === 'failed' && step.error && (
+            <p className="text-[11px] text-red-500 mt-0.5">{step.error}</p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {hasOutput && (
+            <span
+              onClick={e => { e.stopPropagation(); download() }}
+              className="p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              title="다운로드"
+            >
+              <MatIcon name="download" className="text-[14px]" />
+            </span>
+          )}
+          {hasOutput && (
+            <MatIcon
+              name={open ? 'expand_less' : 'expand_more'}
+              className="text-[18px] text-gray-400"
+            />
+          )}
+        </div>
+      </button>
+
+      {/* 출력 내용 */}
+      {open && hasOutput && (
+        <div className="border-t border-gray-100 dark:border-gray-800 px-3 pb-3 pt-2 overflow-x-auto">
+          {isCode ? (
+            <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words overflow-auto max-h-[60vh]">
+              {step.output}
+            </pre>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto">
+              <MarkdownViewer content={step.output} />
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -115,14 +221,17 @@ function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[
           승인
         </button>
         <button
-          onClick={() => { setShowFeedback(true); if (feedback) decide.mutate('revised') }}
+          onClick={() => {
+            if (!showFeedback) { setShowFeedback(true); return }
+            if (feedback.trim()) decide.mutate('revised')
+          }}
           disabled={decide.isPending}
           className="flex-1 px-3 py-1.5 text-xs font-medium text-yellow-700 dark:text-yellow-400
             bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50
             rounded-lg transition-colors cursor-pointer disabled:opacity-50"
         >
           <MatIcon name="edit" className="text-[14px] mr-1" />
-          {showFeedback && feedback ? '수정 요청' : '피드백'}
+          {showFeedback && feedback.trim() ? '수정 요청' : '피드백'}
         </button>
         <button
           onClick={() => decide.mutate('rejected')}
@@ -143,9 +252,50 @@ function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[
   )
 }
 
+// 최종 리포트 전체 뷰 (모달)
+function ReportModal({ title, content, onClose }: { title: string; content: string; onClose: () => void }) {
+  const download = () => {
+    const blob = new Blob([content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-800">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">{title}</h3>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={download}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+                text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white
+                bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700
+                rounded-lg transition-colors cursor-pointer">
+              <MatIcon name="download" className="text-[14px]" />
+              다운로드
+            </button>
+            <button onClick={onClose}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white
+                hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+              <MatIcon name="close" className="text-[18px]" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <MarkdownViewer content={content} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   const qc = useQueryClient()
-  const [showArtifacts, setShowArtifacts] = useState(false)
+  const [reportKey, setReportKey] = useState<string | null>(null)
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['job', jobId],
@@ -180,6 +330,9 @@ export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () =
 
   const status = STATUS_LABEL[job.status] ?? STATUS_LABEL.queued
   const pendingGate = job.gates?.find(g => g.status === 'pending')
+  // 최종 리포트 키 찾기 (output_key='report'인 스텝)
+  const reportKeys = ['report', 'brief', 'final_markup', 'insights']
+  const finalKey = reportKeys.find(k => job.artifacts?.[k])
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-950">
@@ -205,15 +358,18 @@ export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () =
             )}
           </div>
         </div>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setShowArtifacts(!showArtifacts)}
-            className={`p-1.5 rounded-lg text-sm transition-colors cursor-pointer
-              ${showArtifacts ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-            title="아티팩트 보기"
-          >
-            <MatIcon name="description" className="text-[18px]" />
-          </button>
+        <div className="flex gap-1 shrink-0">
+          {finalKey && job.status === 'done' && (
+            <button
+              onClick={() => setReportKey(finalKey)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white
+                bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+              title="최종 산출물 보기"
+            >
+              <MatIcon name="article" className="text-[14px]" />
+              리포트
+            </button>
+          )}
           {(job.status === 'running' || job.status === 'queued' || job.status === 'waiting_gate') && (
             <button
               onClick={() => cancel.mutate()}
@@ -240,54 +396,34 @@ export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () =
         <div className="p-4 space-y-5">
           {/* Steps 타임라인 */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-              실행 단계
-            </h3>
-            <div className="space-y-2">
-              {job.steps?.map((step, idx) => {
-                const s = STEP_STATUS_ICON[step.status] ?? STEP_STATUS_ICON.queued
-                const isActive = job.current_step === step.step_id && step.status === 'running'
-                return (
-                  <div key={step.step_id}
-                    className={`flex gap-3 p-3 rounded-xl transition-colors
-                      ${isActive ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-gray-50 dark:bg-gray-800/50'}`}>
-                    {/* 연결선 */}
-                    <div className="flex flex-col items-center">
-                      <MatIcon name={s.icon} className={`text-[20px] ${s.cls}`} />
-                      {idx < (job.steps?.length ?? 0) - 1 && (
-                        <div className="w-px flex-1 mt-1 bg-gray-200 dark:bg-gray-700 min-h-[8px]" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
-                          {step.step_id}
-                        </span>
-                        {step.started_at && (
-                          <span className="text-[10px] text-gray-400 shrink-0">
-                            {elapsed(step.started_at, step.finished_at || undefined)}
-                          </span>
-                        )}
-                      </div>
-                      {step.status === 'failed' && step.error && (
-                        <p className="text-[11px] text-red-500 mt-1">{step.error}</p>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                실행 단계
+              </h3>
+              <span className="text-[10px] text-gray-400">
+                클릭하면 출력 내용 확인
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {job.steps?.map((step, idx) => (
+                <StepCard
+                  key={step.step_id}
+                  step={step}
+                  isActive={job.current_step === step.step_id && step.status === 'running'}
+                  isLast={idx === (job.steps?.length ?? 0) - 1}
+                />
+              ))}
             </div>
           </div>
 
-          {/* Gates 목록 */}
-          {job.gates && job.gates.length > 0 && (
+          {/* Gate 상태 목록 (pending 제외 — 위에서 처리) */}
+          {job.gates && job.gates.some(g => g.status !== 'pending') && (
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                검토 게이트
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                게이트 이력
               </h3>
-              <div className="space-y-2">
-                {job.gates.map(gate => {
-                  if (gate.status === 'pending') return <GateControl key={gate.gate_id} job={job} gate={gate} />
+              <div className="space-y-1.5">
+                {job.gates.filter(g => g.status !== 'pending').map(gate => {
                   const gIcon = gate.status === 'approved' ? 'check_circle'
                     : gate.status === 'rejected' ? 'cancel'
                     : gate.status === 'not_reached' ? 'radio_button_unchecked'
@@ -297,35 +433,17 @@ export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () =
                     : 'text-gray-400'
                   return (
                     <div key={gate.gate_id}
-                      className="flex items-start gap-2 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-                      <MatIcon name={gIcon} className={`text-[18px] mt-0.5 ${gCls}`} />
+                      className="flex items-start gap-2 p-2.5 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+                      <MatIcon name={gIcon} className={`text-[17px] mt-0.5 ${gCls}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{gate.gate_id}</p>
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{gate.prompt}</p>
                         {gate.feedback && (
-                          <p className="text-[11px] text-blue-500 mt-1 italic">"{gate.feedback}"</p>
+                          <p className="text-[11px] text-blue-500 mt-0.5 italic">"{gate.feedback}"</p>
                         )}
                       </div>
                     </div>
                   )
                 })}
-              </div>
-            </div>
-          )}
-
-          {/* 아티팩트 */}
-          {showArtifacts && job.artifacts && Object.keys(job.artifacts).length > 0 && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                산출물
-              </h3>
-              <div className="space-y-3">
-                {Object.entries(job.artifacts).map(([key, value]) => (
-                  <div key={key}>
-                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">{key}</p>
-                    <ArtifactPanel artifact={value} />
-                  </div>
-                ))}
               </div>
             </div>
           )}
@@ -351,11 +469,20 @@ export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () =
           {job.status === 'failed' && job.error && (
             <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3">
               <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-1">오류</p>
-              <p className="text-xs text-red-500">{job.error}</p>
+              <p className="text-xs text-red-500 font-mono">{job.error}</p>
             </div>
           )}
         </div>
       </div>
+
+      {/* 리포트 모달 */}
+      {reportKey && job.artifacts?.[reportKey] && (
+        <ReportModal
+          title={`${job.title} — ${reportKey}`}
+          content={job.artifacts[reportKey]}
+          onClose={() => setReportKey(null)}
+        />
+      )}
     </div>
   )
 }

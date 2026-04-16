@@ -98,7 +98,7 @@ async def _execute(job: JobRun, spec: JobSpec) -> None:
 
             # artifact 저장
             artifacts = json_loads(get_job(job.id) or {}, 'artifacts')
-            artifacts[step.output_key or step.id] = step_run.output[:2000]
+            artifacts[step.output_key or step.id] = step_run.output
             update_job(job.id, artifacts=artifacts)
 
             await emit(f'✅ Step 완료: {step.id}', 'job_step_done',
@@ -158,7 +158,7 @@ async def _execute(job: JobRun, spec: JobSpec) -> None:
                         upsert_step(step_run)
                         if step.output_key:
                             context[step.output_key] = step_run.output
-                        artifacts[step.output_key or step.id] = step_run.output[:2000]
+                        artifacts[step.output_key or step.id] = step_run.output
                         update_job(job.id, artifacts=artifacts)
                         # 다시 gate 오픈
                         gate_run2 = GateRun(job_id=job.id, gate_id=gate.id, status='pending')
@@ -216,7 +216,7 @@ async def _run_step(job_id: str, step: StepSpec, context: dict[str, str]) -> Ste
             if tool_results:
                 prompt = prompt + '\n\n[수집된 참고 자료]\n' + tool_results
 
-        text = await model_router.run(
+        text, model_used = await model_router.run(
             tier=step.tier,
             prompt=prompt,
             agent_id=f'{step.agent}:{step.id}',
@@ -225,6 +225,7 @@ async def _run_step(job_id: str, step: StepSpec, context: dict[str, str]) -> Ste
 
         step_run.status = 'done'
         step_run.output = text
+        step_run.model_used = model_used
         step_run.finished_at = datetime.now(timezone.utc).isoformat()
         return step_run
 
