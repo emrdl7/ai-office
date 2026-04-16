@@ -120,24 +120,40 @@ def _detect_topic_stuck(recent_context: str) -> tuple[bool, list[str]]:
 def _gather_recent_topic_blocklist(office: Any) -> list[str]:
   '''최근 5시간 autonomous 발언 + pending 건의 제목에서 재발 주제 추출.
 
-  - autonomous 12건 + pending suggestion 전체 제목에서 3+글자 키워드 빈도 집계
-  - 2회 이상 등장한 키워드를 "이미 다뤄진 주제"로 반환 (최대 12개)
-  - stuck 여부 무관하게 _choose_topic에 전달되어 발화에서 제외됨
+  - autonomous 40건에서 3+글자 키워드 빈도 집계
+  - 커밋 해시 + 파일 경로도 추적: 2+ 에이전트가 언급한 엔티티는 블록
+  - pending suggestion 제목은 가중치 2배
+  - 2회 이상 등장한 키워드를 "이미 다뤄진 주제"로 반환 (최대 15개)
   '''
+  import re as _re_block
   from orchestration.office import _extract_keywords
   from collections import Counter
   bag: Counter[str] = Counter()
+
+  # 커밋/파일 엔티티별 언급 에이전트 추적
+  entity_agents: dict[str, set[str]] = {}
+
   try:
     from db.log_store import load_logs
     logs = load_logs(limit=40)
     for log in logs:
       if log.get('event_type') != 'autonomous':
         continue
-      for kw in _extract_keywords(log.get('message', '')):
+      msg = log.get('message', '')
+      agent_id = log.get('agent_id', '')
+      for kw in _extract_keywords(msg):
         if len(kw) >= 3:
           bag[kw] += 1
+
+      # 커밋 해시 추출 (7자리+)
+      for h in _re_block.findall(r'\b[0-9a-f]{7,}\b', msg):
+        entity_agents.setdefault(h, set()).add(agent_id)
+      # 파일 경로 추출
+      for fp in _re_block.findall(r'[\w/]+\.(py|tsx|ts|css|md|json|html)', msg):
+        entity_agents.setdefault(fp, set()).add(agent_id)
   except Exception:
     pass
+
   try:
     from db.suggestion_store import list_suggestions
     for s in list_suggestions(status='pending')[:20]:
@@ -146,15 +162,22 @@ def _gather_recent_topic_blocklist(office: Any) -> list[str]:
           bag[kw] += 2  # 건의는 가중치 2배 — 이미 공식화된 주제
   except Exception:
     pass
-  return [kw for kw, n in bag.most_common(30) if n >= 2][:12]
+
+  # 2+ 에이전트가 언급한 커밋/파일도 블록리스트에 추가
+  for entity, agents in entity_agents.items():
+    if len(agents) >= 2:
+      bag[entity] += 3  # 높은 가중치 — 이미 다각도 논평됨
+
+  return [kw for kw, n in bag.most_common(30) if n >= 2][:15]
 
 
 def _team_recent_lines(
-  recent: list[dict], speaker_name: str, own_limit: int = 5, peer_limit: int = 2,
+  recent: list[dict], speaker_name: str, own_limit: int = 3, peer_limit: int = 4,
 ) -> list[str]:
   '''speaker 본인 own_limit건 + 동료별 peer_limit건씩 autonomous 발언 라인.
 
-  같은 기법/주제를 동료가 이미 얘기했는지 speaker가 인지하도록 프롬프트에 주입.
+  동료 맥락을 넓게 제공하여 이미 나온 관점 반복을 차단한다.
+  (own 3건 / peer 각 4건 = 최대 3+16=19건, 12건 캡)
   '''
   from collections import defaultdict
   buckets: dict[str, list[str]] = defaultdict(list)
@@ -308,8 +331,35 @@ def _pick_speakers(recent: list[dict]) -> tuple[list[str], list[str]]:
   return speakers, candidates
 
 
-def _load_code_context() -> str:
-  '''최근 커밋 로그 + diff stat (개선 모드 시드용, 한 iteration당 1회).'''
+# 커밋 변경 파일 → 담당 에이전트 매핑 (4명이 같은 커밋 돌려 논평 방지)
+_DOMAIN_EXT_MAP: dict[str, set[str]] = {
+  'developer': {'.py', '.sh', '.json', '.toml', '.cfg', '.ini', '.yml', '.yaml'},
+  'designer': {'.tsx', '.css', '.scss', '.html', '.svg'},
+  'planner': {'.md'},
+  'qa': set(),  # 파일명 패턴으로 별도 판정
+}
+_QA_FILE_PATTERNS = ('test_', '_test.', '.test.', 'spec.')
+
+
+def _classify_file_domain(filepath: str) -> str:
+  '''파일 경로 → 담당 에이전트 ID.'''
+  base = filepath.rsplit('/', 1)[-1].lower()
+  if any(p in base for p in _QA_FILE_PATTERNS):
+    return 'qa'
+  for agent, exts in _DOMAIN_EXT_MAP.items():
+    if agent == 'qa':
+      continue
+    if any(base.endswith(ext) for ext in exts):
+      return agent
+  return 'developer'  # 기본
+
+
+def _load_code_context(speaker_name: str = '') -> str:
+  '''최근 커밋 로그 + diff stat (개선 모드 시드용).
+
+  speaker_name이 있으면 해당 에이전트 영역의 변경을 상세로,
+  타 영역은 커밋 제목 1줄만 제공 — 4명 돌려 논평 방지.
+  '''
   try:
     import subprocess as _sp
     from pathlib import Path as _P
@@ -318,12 +368,42 @@ def _load_code_context() -> str:
       ['git', 'log', '--oneline', '-n', '8'],
       cwd=str(root), capture_output=True, text=True, timeout=3,
     ).stdout.strip()
+
+    if not speaker_name:
+      # 영역 필터링 없이 전체 반환 (하위 호환)
+      diff_out = _sp.run(
+        ['git', 'diff', '--stat', 'HEAD~5..HEAD'],
+        cwd=str(root), capture_output=True, text=True, timeout=3,
+      ).stdout.strip()
+      if log_out or diff_out:
+        return f'[최근 커밋]\n{log_out}\n\n[최근 5커밋 변경 파일]\n{diff_out[:2000]}'
+      return ''
+
+    # 영역별 필터링
     diff_out = _sp.run(
       ['git', 'diff', '--stat', 'HEAD~5..HEAD'],
       cwd=str(root), capture_output=True, text=True, timeout=3,
     ).stdout.strip()
-    if log_out or diff_out:
-      return f'[최근 커밋]\n{log_out}\n\n[최근 5커밋 변경 파일]\n{diff_out[:2000]}'
+
+    my_files: list[str] = []
+    other_files: list[str] = []
+    for line in diff_out.split('\n'):
+      if '|' not in line:
+        continue
+      fpath = line.split('|')[0].strip()
+      if _classify_file_domain(fpath) == speaker_name:
+        my_files.append(line.strip())
+      else:
+        other_files.append(fpath)
+
+    parts: list[str] = []
+    if log_out:
+      parts.append(f'[최근 커밋]\n{log_out}')
+    if my_files:
+      parts.append(f'[내 영역 변경 — 상세 분석 대상]\n' + '\n'.join(my_files))
+    if other_files:
+      parts.append(f'[타 영역 변경 — 참고만]\n' + ', '.join(other_files[:8]))
+    return '\n\n'.join(parts) if parts else ''
   except Exception:
     pass
   return ''
@@ -339,11 +419,14 @@ async def _run_speaker_chain(
 ) -> tuple[str, str]:
   '''한 speaker의 발화 → 1단 반응 → 2단 결론 체인 실행.
 
-  반환: (first_reactor 이름, 사용된 mode) 튜플. 체인 안 돌면 ('', mode).
+  반환: (first_reactor 이름, 사용된 mode, thread_id) 튜플.
   '''
+  import uuid as _uuid
+  thread_id = _uuid.uuid4().hex[:8]
+
   agent = office.agents.get(speaker_name)
   if not agent:
-    return '', 'improvement'
+    return '', 'improvement', thread_id
 
   # 본인 5개 + 동료 각 2개 — 같은 주제 반복 방지용. recent_logs 있으면 재사용.
   own_recent: list[str] = []
@@ -382,7 +465,7 @@ async def _run_speaker_chain(
       from orchestration import trend_research
       did = await trend_research.maybe_research(office, speaker_name)
       if did:
-        return '', mode
+        return '', mode, thread_id
     except Exception:
       logger.debug('trend_research 실패: %s', speaker_name, exc_info=True)
 
@@ -392,16 +475,43 @@ async def _run_speaker_chain(
     try:
       await office.event_bus.publish(LogEvent(
         agent_id=speaker_name, event_type='autonomous_pass',
-        message='', data={'mode': mode},
+        message='', data={'autonomous_mode': mode},
       ))
     except Exception:
       pass
-    return '', mode
+    return '', mode, thread_id
+
+  # ── 신선도 게이트: 최근 10건 autonomous와 50%+ 키워드 겹침 시 드랍 ──
+  try:
+    from orchestration.office import _extract_keywords
+    recent_auto_msgs = [
+      l.get('message', '') for l in (recent_logs or [])
+      if l.get('event_type') == 'autonomous' and l.get('agent_id') != speaker_name
+    ][:10]
+    if recent_auto_msgs:
+      recent_kws: set[str] = set()
+      for m in recent_auto_msgs:
+        recent_kws.update(kw for kw in _extract_keywords(m) if len(kw) >= 3)
+      new_kws = {kw for kw in _extract_keywords(message) if len(kw) >= 3}
+      if new_kws:
+        novelty_overlap = len(new_kws & recent_kws) / len(new_kws)
+        if novelty_overlap > 0.50:
+          logger.info('신선도 게이트 드랍 [%s]: overlap=%.2f', speaker_name, novelty_overlap)
+          try:
+            await office.event_bus.publish(LogEvent(
+              agent_id=speaker_name, event_type='autonomous_pass',
+              message='', data={'autonomous_mode': mode, 'drop_reason': 'novelty_gate'},
+            ))
+          except Exception:
+            pass
+          return '', mode, thread_id
+  except Exception:
+    logger.debug('신선도 게이트 오류', exc_info=True)
 
   # autonomous_mode를 LogEvent.data에 표기 — 건의 등록/검색/UI에서 모드 필터 가능
   speaker_event = LogEvent(
     agent_id=speaker_name, event_type='autonomous', message=message,
-    data={'autonomous_mode': mode},
+    data={'autonomous_mode': mode, 'thread_id': thread_id},
   )
   await office.event_bus.publish(speaker_event)
 
@@ -443,7 +553,7 @@ async def _run_speaker_chain(
       if first_reply:
         reactor_event = LogEvent(
           agent_id=first_reactor, event_type='autonomous', message=first_reply,
-          data={'autonomous_mode': 'reaction'},
+          data={'autonomous_mode': 'reaction', 'thread_id': thread_id},
         )
         await office.event_bus.publish(reactor_event)
         try:
@@ -463,6 +573,22 @@ async def _run_speaker_chain(
           )
         except Exception:
           logger.debug('리액터 능력 부족 등록 실패', exc_info=True)
+        # 2번째 반응자 (30%) — 다각도 토론 확장
+        if random.random() < 0.30:
+          second_pool = [n for n in candidates if n not in (speaker_name, first_reactor)]
+          if second_pool:
+            second_reactor = random.choice(second_pool)
+            second_reply = await autonomous_react(
+              reactor_name=second_reactor, prior_speaker=speaker_name,
+              prior_message=f'{message}\n\n[{display_name(first_reactor)}의 반응] {first_reply}',
+              conversation_mode=mode,
+            )
+            if second_reply:
+              await office.event_bus.publish(LogEvent(
+                agent_id=second_reactor, event_type='autonomous', message=second_reply,
+                data={'autonomous_mode': 'reaction_2nd', 'thread_id': thread_id},
+              ))
+
         # 2단 결론 — 외부 동향(50%) vs 기존(30%). 원 발언자의 재반론/수용.
         closing_chance = 0.50 if mode == 'external_trend' else 0.30
         if random.random() < closing_chance:
@@ -474,7 +600,7 @@ async def _run_speaker_chain(
           if closing:
             closing_event = LogEvent(
               agent_id=speaker_name, event_type='autonomous', message=closing,
-              data={'autonomous_mode': 'closing'},
+              data={'autonomous_mode': 'closing', 'thread_id': thread_id},
             )
             await office.event_bus.publish(closing_event)
             try:
@@ -494,12 +620,12 @@ async def _run_speaker_chain(
               logger.debug('클로징 능력 부족 등록 실패', exc_info=True)
       else:
         first_reactor = ''
-  return first_reactor, mode
+  return first_reactor, mode, thread_id
 
 
 async def _maybe_teamlead_closing(
   office: Any, recent_context: str, speaker_name: str, first_reactor: str,
-  conversation_mode: str = 'improvement',
+  conversation_mode: str = 'improvement', thread_id: str = '',
 ) -> None:
   '''체인이 돌았으면 50%, 아니면 10% 확률로 팀장 관찰 한 문장.'''
   teamlead_chance = 0.5 if first_reactor else 0.1
@@ -560,6 +686,7 @@ async def _maybe_teamlead_closing(
     ):
       await office.event_bus.publish(LogEvent(
         agent_id='teamlead', event_type='autonomous', message=text,
+        data={'autonomous_mode': 'teamlead_closing', 'thread_id': thread_id},
       ))
     elif is_declarative:
       logger.info('팀장 선언형 발언 드랍: %s', first_line[:80])
@@ -620,7 +747,6 @@ async def run_loop(office: Any) -> None:
       )
 
       speakers, candidates = _pick_speakers(recent)
-      code_ctx = _load_code_context()
 
       # speaker chain에서 팀 발언 참조용으로 더 깊은 로그 1회 로딩
       deep_logs: list[dict] = []
@@ -633,15 +759,18 @@ async def run_loop(office: Any) -> None:
       first_reactor = ''
       speaker_name = ''
       last_mode = 'improvement'
+      last_thread_id = ''
       for speaker_name in speakers:
-        first_reactor, last_mode = await _run_speaker_chain(
+        # speaker 영역에 맞는 코드 컨텍스트 — 돌려 논평 방지
+        code_ctx = _load_code_context(speaker_name)
+        first_reactor, last_mode, last_thread_id = await _run_speaker_chain(
           office, speaker_name, topic, candidates, code_ctx,
           recent_logs=deep_logs,
         )
 
       await _maybe_teamlead_closing(
         office, recent_context, speaker_name, first_reactor,
-        conversation_mode=last_mode,
+        conversation_mode=last_mode, thread_id=last_thread_id,
       )
 
     except Exception:
@@ -727,7 +856,8 @@ async def react_to_received_reactions(office: Any) -> None:
         await office.event_bus.publish(LogEvent(
           agent_id=agent_id,
           event_type='autonomous',
-          message=text,  # 전체 보존
+          message=text,
+          data={'autonomous_mode': 'reaction_thanks'},
         ))
       # 답례 마킹 (성공/스킵 모두 마킹하여 루프 방지)
       conn = sqlite3.connect(str(DB_PATH))

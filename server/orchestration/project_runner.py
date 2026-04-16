@@ -1557,7 +1557,14 @@ async def _run_planner_synthesize(
 
 
 async def _teamlead_final_review(office: Any, user_input: str, task_graph: TaskGraph) -> bool:
-  '''팀장(Claude)이 최종 산출물을 검수한다.'''
+  '''팀장(Claude)이 최종 산출물을 검수한다.
+
+  3단계 검증:
+    1. 하드코딩 가드 — 파일 존재, 본문 길이, 빈 산출물 탐지
+    2. 요구사항 분해 체크리스트 (Haiku) — 원본 요구사항 → 검증 항목
+    3. LLM 기반 체크리스트 대조 검수 — 항목별 O/X 판정
+  '''
+  import re as _re_review
   final_path = office.workspace.task_dir / 'final' / 'result.md'
   if not final_path.exists():
     office._last_review_feedback = '최종 산출물 파일이 없습니다.'
@@ -1568,16 +1575,65 @@ async def _teamlead_final_review(office: Any, user_input: str, task_graph: TaskG
     office._last_review_feedback = f'산출물이 너무 짧습니다 ({len(final_content)}자). 최소 3000자 이상 필요.'
     return False
 
+  # ── 하드코딩 가드: 빈 산출물 / 외부 링크만 있는 패턴 탐지 ──
+  content_lines = [l for l in final_content.split('\n') if l.strip() and not l.startswith('#')]
+  if len(content_lines) < 10:
+    office._last_review_feedback = f'산출물 본문이 {len(content_lines)}줄 — 제목/헤더 제외 실질 내용 10줄 미만.'
+    return False
+
+  external_refs = _re_review.findall(r'https?://|figma\.com|drive\.google|notion\.so', final_content)
+  if external_refs and len(content_lines) < 20:
+    office._last_review_feedback = (
+      f'외부 링크 {len(external_refs)}개가 있으나 인라인 본문이 {len(content_lines)}줄뿐 — '
+      f'외부 참조만으로 산출물을 대체할 수 없습니다.'
+    )
+    return False
+
+  # ── 요구사항 분해 체크리스트 생성 ──
+  checklist_items: list[str] = []
+  try:
+    import json as _json_review
+    checklist_raw = await run_claude_isolated(
+      prompt=(
+        f'[원본 요구사항]\n{user_input}\n\n'
+        f'위 요구사항을 산출물에서 확인 가능한 체크리스트로 분해하세요.\n'
+        f'각 항목은 "산출물에 ~가 존재한다" 또는 "~가 구체적으로 기술되어 있다" 형태.\n'
+        f'5-12개. JSON 문자열 배열로만 출력. 다른 텍스트 금지.\n'
+        f'예: ["모바일 반응형 레이아웃 섹션이 존재한다", "API 엔드포인트 목록이 포함되어 있다"]'
+      ),
+      timeout=30.0, model='claude-haiku-4-5-20251001',
+    )
+    # JSON 배열 추출
+    m = _re_review.search(r'\[[\s\S]*?\]', checklist_raw)
+    if m:
+      parsed = _json_review.loads(m.group())
+      if isinstance(parsed, list) and len(parsed) >= 3:
+        checklist_items = [str(item) for item in parsed[:12]]
+  except Exception:
+    logger.debug('체크리스트 분해 실패 — 기본 체크리스트 사용', exc_info=True)
+
+  # 체크리스트 생성 실패 시 기본 4항목 폴백
+  if not checklist_items:
+    checklist_items = [
+      '요구사항의 핵심 항목이 모두 반영되었다',
+      '산출물이 실무에서 바로 활용 가능한 수준이다',
+      '내용이 충분히 구체적이고 상세하다',
+      '논리적 비약이나 누락된 부분이 없다',
+    ]
+
+  # ── LLM 기반 체크리스트 대조 검수 ──
+  checklist_text = '\n'.join(f'{i+1}. [ ] {item}' for i, item in enumerate(checklist_items))
   prompt = (
     f'[사용자 원본 요구사항]\n{user_input}\n\n'
     f'[최종 산출물]\n{final_content[:12000]}\n\n'
-    f'위 요구사항 대비 산출물의 완성도를 검수하세요.\n\n'
-    f'[체크리스트]\n'
-    f'1. 요구사항의 핵심 항목이 모두 반영되었는가?\n'
-    f'2. 산출물이 실무에서 바로 활용 가능한 수준인가?\n'
-    f'3. 내용이 충분히 구체적이고 상세한가?\n'
-    f'4. 논리적 비약이나 누락된 부분이 없는가?\n\n'
-    f'합격이면 첫 줄에 [PASS]를, 불합격이면 [FAIL]을 적고 이유를 적으세요.'
+    f'위 요구사항 대비 산출물을 아래 체크리스트로 검수하세요.\n\n'
+    f'[산출물 검증 체크리스트 — 각 항목 O/X 판정]\n{checklist_text}\n\n'
+    f'[추가 검증]\n'
+    f'- "완료", "작성했습니다" 등 선언만 있고 실질 내용이 없으면 [FAIL]\n'
+    f'- 외부 링크만 있고 인라인 내용이 부족하면 [FAIL]\n'
+    f'- 코드가 요구되었으나 코드 블록이 없으면 [FAIL]\n\n'
+    f'각 항목별 O/X를 표기한 뒤,\n'
+    f'모두 O면 첫 줄에 [PASS]를, X가 하나라도 있으면 [FAIL]과 미충족 항목 번호를 적으세요.'
   )
 
   response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')

@@ -160,11 +160,27 @@ _DEDUP_STOPWORDS = {
 }
 
 
+# 한국어 동의어 정규화 — dedup 시 "도입"과 "적용"을 같은 토큰으로 취급
+_SYNONYM_MAP: dict[str, str] = {
+  '도입': '적용', '채택': '적용', '반영': '적용', '접목': '적용',
+  '구축': '구현', '개발': '구현', '제작': '구현',
+  '검토': '확인', '점검': '확인', '검증': '확인',
+  '삭제': '제거', '없애': '제거',
+  '수정': '변경', '교체': '변경', '대체': '변경',
+}
+
+
 def _kw_set(s: str) -> set[str]:
-  '''의미 키워드 set — stop word 제외.'''
+  '''의미 키워드 set — stop word 제외 + 동의어 정규화.'''
   import re as _re
   toks = set(_re.findall(r'[A-Za-z][A-Za-z0-9]{2,}|[가-힣]{2,}', s or ''))
-  return {t for t in toks if t.lower() not in {x.lower() for x in _DEDUP_STOPWORDS}}
+  stopwords_lower = {x.lower() for x in _DEDUP_STOPWORDS}
+  normalized: set[str] = set()
+  for t in toks:
+    if t.lower() in stopwords_lower:
+      continue
+    normalized.add(_SYNONYM_MAP.get(t, t))
+  return normalized
 
 
 def is_title_duplicate_48h(title: str) -> tuple[bool, str]:
