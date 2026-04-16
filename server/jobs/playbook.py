@@ -290,27 +290,60 @@ async def _execute_playbook(
         await emit(f'❌ Playbook 오류: {e!s:.200}')
 
 
-async def _wait_job(job_id: str, poll_interval: float = 5.0,
-                    max_wait: float = 7200.0) -> bool:
-    """Job이 done/failed/cancelled 상태가 될 때까지 폴링한다.
+async def _wait_job(job_id: str, max_wait: float = 7200.0) -> bool:
+    """Job 완료를 event-bus 구독으로 대기한다. (4-2 Runner 통합)
 
-    Gate 대기 포함 — 사람이 승인하면 자동 진행.
-    Returns True if done, False if failed/cancelled.
+    runner가 job_done / job_failed / job_cancelled 이벤트를 발행하면
+    즉시 깨어나 결과를 반환합니다.
+    Gate 대기(waiting_gate)는 runner 내부에서 처리되므로 여기서는 무시합니다.
+
+    Returns True if done, False if failed/cancelled or timeout.
     """
     from db.job_store import get_job
-    waited = 0.0
-    while waited < max_wait:
-        row = get_job(job_id)
-        if not row:
-            return False
+    from log_bus.event_bus import event_bus
+
+    # 먼저 현재 상태 확인 — 이미 완료된 경우 즉시 반환
+    row = get_job(job_id)
+    if row:
         status = row.get('status', '')
         if status == 'done':
             return True
         if status in ('failed', 'cancelled'):
             return False
-        await asyncio.sleep(poll_interval)
-        waited += poll_interval
-    return False  # 타임아웃
+
+    # event-bus 큐 구독으로 완료 대기
+    q = event_bus.subscribe()
+    try:
+        deadline = asyncio.get_event_loop().time() + max_wait
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                logger.warning('[playbook] Job 완료 대기 타임아웃: %s', job_id)
+                return False
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=min(remaining, 30.0))
+            except asyncio.TimeoutError:
+                # 타임아웃마다 DB 상태 확인 (이벤트 누락 방지)
+                row = get_job(job_id)
+                if row:
+                    status = row.get('status', '')
+                    if status == 'done':
+                        return True
+                    if status in ('failed', 'cancelled'):
+                        return False
+                continue
+
+            # 이벤트 필터링
+            data = getattr(event, 'data', {}) or {}
+            if data.get('job_id') != job_id:
+                continue
+            event_type = getattr(event, 'event_type', '')
+            if event_type == 'job_done':
+                return True
+            if event_type in ('job_failed', 'job_cancelled'):
+                return False
+    finally:
+        event_bus.unsubscribe(q)
 
 
 def _fill_template(template: str, context: dict[str, str]) -> str:

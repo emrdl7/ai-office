@@ -426,30 +426,9 @@ class Office:
       )
 
     if intent_result.intent == IntentType.JOB:
-      # 신뢰도 낮음 → spec 목록 제시하며 확인 (2-4)
-      if intent_result.confidence < 0.6 or not intent_result.job_spec_id:
-        try:
-          from jobs.registry import all_specs as _all_specs
-          spec_list = '\n'.join(
-            f'- **{s.id}**: {s.title} — {s.description}' for s in _all_specs()
-          )
-        except Exception:
-          spec_list = ''
-        clarify_msg = (
-          '어떤 Job 파이프라인을 실행할까요?\n\n'
-          f'{spec_list}\n\n'
-          'Job Board에서 직접 선택하거나, 구체적인 Job 이름을 알려주세요.'
-        )
-        await self._emit('teamlead', clarify_msg, 'response')
-        self._state = OfficeState.COMPLETED
-        self._active_agent = ''
-        return {'state': self._state.value, 'response': '', 'artifacts': []}
-
-      return await self._handle_job(
-        intent_result.job_spec_id,
-        intent_result.job_input,
-        user_input,
-      )
+      # JOB 처리 로직 → job_handler 모듈로 위임 (4-1)
+      from orchestration.job_handler import dispatch as _job_dispatch
+      return await _job_dispatch(self, intent_result, user_input)
 
     # 기본값
     self._state = OfficeState.COMPLETED
