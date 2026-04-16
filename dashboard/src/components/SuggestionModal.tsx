@@ -1,7 +1,7 @@
 // 건의게시판 모달 — 팀원 건의 목록 + 상태 관리
 import { useState, useEffect } from 'react'
 import { useStore } from '../store'
-import { AGENT_PROFILE } from './Sidebar'
+import { AGENT_PROFILE } from '../config/team'
 import { MatIcon } from './icons'
 
 interface Suggestion {

@@ -5,7 +5,6 @@ import { useStore } from './store'
 import { Sidebar } from './components/Sidebar'
 import { ChatRoom } from './components/ChatRoom'
 import { ArtifactModal } from './components/ArtifactModal'
-import { SuggestionModal } from './components/SuggestionModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { JobBoard } from './components/JobBoard'
 import { GateInbox } from './components/GateInbox'
@@ -79,8 +78,6 @@ function MessengerApp() {
       {/* 산출물 모달 */}
       {showArtifacts && <ArtifactModal />}
 
-      {/* 건의게시판 모달 */}
-      <SuggestionModal />
     </div>
   )
 }

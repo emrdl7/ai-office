@@ -25,10 +25,8 @@ from config.team import (
 from orchestration.task_graph import TaskGraph, TaskNode, TaskStatus
 from orchestration import (
   agent_interactions,
-  autonomous_loop,
   project_runner,
   suggestion_filer,
-  teamlead_review,
 )
 from runners.claude_runner import run_claude_isolated
 from runners.gemini_runner import run_gemini
@@ -256,8 +254,6 @@ class Office:
     # 최근 15줄만 유지
     self._context_summary = '\n'.join(updated[-15:])
 
-  async def _team_chat(self, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
-    return await agent_interactions._team_chat(self, user_input, chat_subtype, teamlead_response)
 
   async def receive(self, user_input: str) -> dict[str, Any]:
     '''사용자 입력을 받아 처리한다.
@@ -399,8 +395,8 @@ class Office:
       self._work_started_at = ''
       self._current_phase = ''
 
-      # 서브유형별 팀원 반응 제어 — 팀장 응답을 스레드에 포함
-      await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype, teamlead_response=response)
+      # [동결] 팀원 반응 — 팀장하고만 대화하는 것으로 결정
+      # await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype, teamlead_response=response)
 
       # 대화 맥락 실시간 갱신 — 후속 메시지에서 주제 변경 감지 가능
       self._update_context(user_input, response)
@@ -581,80 +577,6 @@ class Office:
   async def _teamlead_final_review(self, user_input: str, task_graph: TaskGraph) -> bool: return await project_runner._teamlead_final_review(self, user_input, task_graph)
 
   async def _route_agent_mentions(self, speaker: str, content: str) -> None: return await agent_interactions._route_agent_mentions(self, speaker, content)
-
-  # ──────────────────────────────────────────────────────────────
-  # 자발적 활동 시스템 (Phase 2)
-  # ──────────────────────────────────────────────────────────────
-
-  _DIGEST_PATH = Path(__file__).parent.parent / 'data' / 'team_digests.json'
-
-  async def start_autonomous_loop(self) -> None:
-    '''자율 활동 루프 — autonomous_loop 모듈로 위임.'''
-    return await autonomous_loop.run_loop(self)
-
-  def stop_autonomous_loop(self) -> None:
-    '''자발적 활동 루프를 중단한다.'''
-    autonomous_loop.stop_loop(self)
-
-  def _load_digest_state(self) -> dict: return autonomous_loop.load_digest_state(self)
-
-  def _save_digest_state(self, state: dict) -> None:
-    autonomous_loop.save_digest_state(self, state)
-
-  async def start_teamlead_review_loop(self) -> None:
-    '''팀장 배치 리뷰 루프 — teamlead_review 모듈로 위임.'''
-    return await teamlead_review.run_loop(self)
-
-  async def _run_single_review(self, force: bool = False) -> None:
-    '''배치 리뷰 1회 실행 — teamlead_review 모듈로 위임. main.py 어드민 엔드포인트 호환.'''
-    return await teamlead_review.run_single(self, force=force)
-
-  def stop_teamlead_review_loop(self) -> None:
-    teamlead_review.stop_loop(self)
-
-  async def _team_retrospective(
-    self,
-    project_title: str,
-    project_type: str,
-    all_results: dict[str, str],
-    user_input: str,
-    duration: float,
-  ) -> None:
-    '''프로젝트 완료 회고 — teamlead_review 모듈로 위임.'''
-    return await teamlead_review.run_retrospective(
-      self, project_title, project_type, all_results, user_input, duration,
-    )
-  # ──────────────────────────────────────────────────────────────
-  # 리액션 기반 상호작용 (Task #9, #10)
-  # ──────────────────────────────────────────────────────────────
-
-  async def _react_to_received_reactions(self) -> None:
-    '''리액션 답례 — autonomous_loop 모듈로 위임.'''
-    return await autonomous_loop.react_to_received_reactions(self)
-
-  async def _agents_react_to_peers(self) -> None:
-    '''피어 이모지 리액션 — autonomous_loop 모듈로 위임.'''
-    return await autonomous_loop.agents_react_to_peers(self)
-
-  async def _autonomous_react(
-    self,
-    reactor_name: str,
-    prior_speaker: str,
-    prior_message: str,
-  ) -> str:
-    '''자발 1단 반응 — autonomous_loop 모듈로 위임.'''
-    return await autonomous_loop.autonomous_react(reactor_name, prior_speaker, prior_message)
-
-  async def _autonomous_closing(
-    self,
-    original_speaker: str,
-    original_message: str,
-    challenger: str,
-    challenge: str,
-  ) -> str:
-    '''자발 2단 결론 — autonomous_loop 모듈로 위임.'''
-    return await autonomous_loop.autonomous_closing(original_speaker, original_message, challenger, challenge)
-
 
   async def _file_reaction_suggestion(self, agent_id: str, phase_name: str, message: str, source_log_id: str = '') -> None: return await suggestion_filer._file_reaction_suggestion(self, agent_id, phase_name, message, source_log_id)
 

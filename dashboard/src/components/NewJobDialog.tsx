@@ -1,5 +1,5 @@
 // 새 Job 제출 다이얼로그
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { JobSpec } from '../types'
 import { MatIcon } from './icons'
@@ -34,29 +34,69 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   notes: '선택 사항',
 }
 
-export function NewJobDialog({ onClose }: { onClose: () => void }) {
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+interface SourceJob {
+  id: string
+  title: string
+  specId: string
+  artifacts: Record<string, string>
+}
+
+interface InitialValues {
+  specId: string
+  title: string
+  fields: Record<string, string>
+  sourceJob?: SourceJob   // 이전 Job 체이닝
+}
+
+export function NewJobDialog({
+  onClose,
+  initialValues,
+}: {
+  onClose: () => void
+  initialValues?: InitialValues
+}) {
   const qc = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedSpec, setSelectedSpec] = useState<JobSpec | null>(null)
-  const [title, setTitle] = useState('')
-  const [fields, setFields] = useState<Record<string, string>>({})
+  const [title, setTitle] = useState(initialValues?.title ?? '')
+  const [fields, setFields] = useState<Record<string, string>>(initialValues?.fields ?? {})
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [dragOver, setDragOver] = useState(false)
 
   const { data: specs = [] } = useQuery({
     queryKey: ['job-specs'],
     queryFn: fetchSpecs,
   })
 
+  // specs 로드 완료 후 initialValues.specId 매칭
+  useEffect(() => {
+    if (initialValues?.specId && specs.length > 0 && !selectedSpec) {
+      const matched = specs.find(s => s.id === initialValues.specId)
+      if (matched) setSelectedSpec(matched)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specs])
+
   const submit = useMutation({
     mutationFn: async () => {
       if (!selectedSpec) return
-      const res = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          spec_id: selectedSpec.id,
-          title: title || '',
-          input: fields,
-        }),
-      })
+      const fd = new FormData()
+      fd.append('spec_id', selectedSpec.id)
+      fd.append('title', title)
+      fd.append('input', JSON.stringify(fields))
+      if (initialValues?.sourceJob?.id) {
+        fd.append('source_job_id', initialValues.sourceJob.id)
+      }
+      for (const f of attachedFiles) {
+        fd.append('files', f)
+      }
+      const res = await fetch('/api/jobs', { method: 'POST', body: fd })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.detail || '제출 실패')
@@ -73,12 +113,33 @@ export function NewJobDialog({ onClose }: { onClose: () => void }) {
   const allFields = selectedSpec?.input_fields ?? []
   const canSubmit = selectedSpec && requiredFields.every(f => fields[f]?.trim())
 
+  function addFiles(newFiles: FileList | null) {
+    if (!newFiles) return
+    setAttachedFiles(prev => {
+      const existing = new Set(prev.map(f => f.name))
+      const toAdd = Array.from(newFiles).filter(f => !existing.has(f.name))
+      return [...prev, ...toAdd]
+    })
+  }
+
+  function removeFile(name: string) {
+    setAttachedFiles(prev => prev.filter(f => f.name !== name))
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    addFiles(e.dataTransfer.files)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">새 Job 시작</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+            {initialValues ? '기존 Job 기반으로 새 Job 시작' : '새 Job 시작'}
+          </h2>
           <button onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
             <MatIcon name="close" className="text-[18px]" />
@@ -168,6 +229,89 @@ export function NewJobDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
+          {/* 이전 Job 산출물 참조 (체이닝) */}
+          {selectedSpec && initialValues?.sourceJob && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                이전 Job 산출물 <span className="font-normal normal-case text-gray-400">(자동 참조)</span>
+              </p>
+              <div className="px-3 py-2.5 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-200 dark:border-purple-700/40">
+                <div className="flex items-center gap-2">
+                  <MatIcon name="link" className="text-[16px] text-purple-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-purple-700 dark:text-purple-300 truncate">
+                      {initialValues.sourceJob.title}
+                    </p>
+                    <p className="text-[10px] text-purple-500 dark:text-purple-400">
+                      {initialValues.sourceJob.specId} ·{' '}
+                      {Object.keys(initialValues.sourceJob.artifacts).filter(k => initialValues.sourceJob!.artifacts[k]?.length > 10).length}개 산출물 포함
+                    </p>
+                  </div>
+                  <MatIcon name="check_circle" className="text-[14px] text-purple-400 shrink-0" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 파일 첨부 */}
+          {selectedSpec && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                참조 자료 첨부 <span className="font-normal normal-case text-gray-400">(선택)</span>
+              </p>
+
+              {/* 드롭존 */}
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={onDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`flex flex-col items-center justify-center gap-1.5 px-4 py-5 rounded-xl border-2 border-dashed
+                  cursor-pointer transition-all
+                  ${dragOver
+                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                  }`}
+              >
+                <MatIcon name="upload_file" className="text-[24px] text-gray-400" />
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                  파일을 드래그하거나 클릭해 첨부
+                </p>
+                <p className="text-[10px] text-gray-400">
+                  PDF, Word, Excel, 이미지, 텍스트 등 · 최대 50MB
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={e => addFiles(e.target.files)}
+              />
+
+              {/* 첨부된 파일 목록 */}
+              {attachedFiles.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  {attachedFiles.map(f => (
+                    <div key={f.name}
+                      className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <MatIcon name="attach_file" className="text-[14px] text-gray-400 shrink-0" />
+                      <span className="flex-1 text-xs text-gray-700 dark:text-gray-300 truncate min-w-0">
+                        {f.name}
+                      </span>
+                      <span className="text-[10px] text-gray-400 shrink-0">{formatBytes(f.size)}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); removeFile(f.name) }}
+                        className="p-0.5 rounded text-gray-400 hover:text-red-500 transition-colors cursor-pointer">
+                        <MatIcon name="close" className="text-[13px]" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {submit.isError && (
             <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
               {submit.error instanceof Error ? submit.error.message : '오류 발생'}
@@ -187,7 +331,9 @@ export function NewJobDialog({ onClose }: { onClose: () => void }) {
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700
               rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {submit.isPending ? '제출 중...' : 'Job 시작'}
+            {submit.isPending ? '제출 중...' : attachedFiles.length > 0
+              ? `Job 시작 (파일 ${attachedFiles.length}개)`
+              : 'Job 시작'}
           </button>
         </div>
       </div>

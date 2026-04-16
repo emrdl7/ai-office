@@ -37,30 +37,6 @@ async def restart_server(request: Request) -> dict[str, Any]:
   return {'restarting': True, 'eta_sec': 5}
 
 
-@router.post('/api/teamlead/review')
-async def trigger_teamlead_review(request: Request) -> dict[str, Any]:
-  '''팀장 배치 리뷰를 수동 트리거. 이미 실행 중이면 거절.'''
-  import asyncio
-  office: Office = request.app.state.office
-  if office._review_lock is None:
-    office._review_lock = asyncio.Lock()
-  if office._review_lock.locked():
-    return {'queued': False, 'message': '이미 리뷰가 실행 중입니다'}
-  lock = office._review_lock
-  async def _run_once() -> None:
-    async with lock:
-      await office._run_single_review(force=True)
-  asyncio.create_task(_run_once())
-  return {'queued': True, 'message': '팀장 리뷰 대기열 투입'}
-
-
-@router.get('/api/improvement/metrics')
-async def get_improvement_metrics(request: Request) -> list[dict[str, Any]]:
-  '''프로젝트별 성과 메트릭을 반환한다.'''
-  office: Office = request.app.state.office
-  return office.improvement_engine.get_metrics_summary()
-
-
 @router.get('/api/improvement/rules/{agent}')
 async def get_agent_rules(agent: str, request: Request) -> list[dict[str, Any]]:
   '''에이전트별 학습된 품질 규칙 목록을 반환한다.'''

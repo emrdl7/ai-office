@@ -22,6 +22,7 @@ async def submit(
     spec: JobSpec,
     input_data: dict[str, Any],
     title: str = '',
+    attachments_text: str = '',
 ) -> JobRun:
     """Job을 DB에 등록하고 백그라운드 실행 태스크를 시작한다."""
     job_id = uuid.uuid4().hex[:12]
@@ -33,7 +34,7 @@ async def submit(
         input=input_data,
     )
     create_job(job)
-    task = asyncio.create_task(_execute(job, spec))
+    task = asyncio.create_task(_execute(job, spec, attachments_text=attachments_text))
     _running[job_id] = task
     task.add_done_callback(lambda _: _running.pop(job_id, None))
     return job
@@ -49,7 +50,7 @@ async def resolve_gate(job_id: str, gate_id: str, decision: str, feedback: str =
 
 # ── 내부 실행 로직 ────────────────────────────────────────────────────────────
 
-async def _execute(job: JobRun, spec: JobSpec) -> None:
+async def _execute(job: JobRun, spec: JobSpec, attachments_text: str = '') -> None:
     """Job의 모든 Step을 순서대로 실행한다."""
     from log_bus.event_bus import event_bus, LogEvent
 
@@ -76,6 +77,10 @@ async def _execute(job: JobRun, spec: JobSpec) -> None:
 
     # 입력 데이터를 context에 주입
     context.update({k: str(v) for k, v in job.input.items()})
+
+    # 첨부파일 내용을 context에 주입 — 모든 step 프롬프트에서 {_attachments}로 참조 가능
+    if attachments_text:
+        context['_attachments'] = attachments_text
 
     try:
         for step in spec.steps:
@@ -143,26 +148,38 @@ async def _execute(job: JobRun, spec: JobSpec) -> None:
                         fb = row.get('feedback', '')
                         context[f'{gate.id}_feedback'] = fb
                         context['revision_request'] = fb
-                        # gate를 다시 pending으로 초기화하고 step 재실행
-                        decide_gate(job.id, gate.id, '', '')
+                        # gate를 'revising' 상태로 전환 — inbox에서 사라지고, step 재실행 중임을 표시
                         from db.job_store import _conn as _jconn
-                        c = _jconn()
-                        c.execute(
-                            "UPDATE job_gates SET status='pending', decision='' WHERE job_id=? AND gate_id=?",
-                            (job.id, gate.id),
+                        _c = _jconn()
+                        _c.execute(
+                            "UPDATE job_gates SET status='revising', decision='', feedback=? "
+                            "WHERE job_id=? AND gate_id=?",
+                            (fb, job.id, gate.id),
                         )
-                        c.commit(); c.close()
+                        _c.commit(); _c.close()
                         update_job(job.id, status='running')
-                        await emit(f'🔄 수정 재실행: {step.id}', 'job_step_revised')
+                        await emit(f'🔄 수정 재실행: {step.id} (피드백: {fb[:80]})', 'job_step_revised',
+                                   {'step_id': step.id, 'feedback': fb})
+                        # 이전 revised 카운트 조회 후 증가
+                        from db.job_store import get_steps as _get_steps
+                        prev_steps = {s['step_id']: s for s in _get_steps(job.id)}
+                        prev_revised = prev_steps.get(step.id, {}).get('revised', 0) or 0
                         step_run = await _run_step(job.id, step, context)
+                        step_run.revised = prev_revised + 1
+                        step_run.revision_feedback = fb
                         upsert_step(step_run)
                         if step.output_key:
                             context[step.output_key] = step_run.output
                         artifacts[step.output_key or step.id] = step_run.output
                         update_job(job.id, artifacts=artifacts)
-                        # 다시 gate 오픈
-                        gate_run2 = GateRun(job_id=job.id, gate_id=gate.id, status='pending')
-                        open_gate(gate_run2)
+                        # 수정 완료 → gate를 다시 pending으로 (이제 새 산출물이 있으므로)
+                        _c2 = _jconn()
+                        _c2.execute(
+                            "UPDATE job_gates SET status='pending', decision='', "
+                            "opened_at=? WHERE job_id=? AND gate_id=?",
+                            (datetime.now(timezone.utc).isoformat(), job.id, gate.id),
+                        )
+                        _c2.commit(); _c2.close()
                         update_job(job.id, status='waiting_gate')
                         await emit(f'🔔 Gate 재대기: {gate.prompt}', 'job_gate_opened',
                                    {'gate_id': gate.id, 'prompt': gate.prompt})
@@ -215,6 +232,11 @@ async def _run_step(job_id: str, step: StepSpec, context: dict[str, str]) -> Ste
             tool_results = await _run_tools(step.tools, context)
             if tool_results:
                 prompt = prompt + '\n\n[수집된 참고 자료]\n' + tool_results
+
+        # 첨부파일이 있으면 프롬프트 끝에 자동 주입 (모든 step 공통)
+        attachments = context.get('_attachments', '')
+        if attachments:
+            prompt = prompt + '\n\n[사용자 첨부 참조 자료 — 작업 시 반드시 반영]\n' + attachments
 
         text, model_used = await model_router.run(
             tier=step.tier,

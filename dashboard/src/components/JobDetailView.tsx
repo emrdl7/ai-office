@@ -62,7 +62,9 @@ function StepCard({
   isActive: boolean
   isLast: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const isRevised = (step.revised ?? 0) > 0
+  // 수정된 step은 기본 펼침
+  const [open, setOpen] = useState(isRevised)
   const s = STEP_STATUS_ICON[step.status] ?? STEP_STATUS_ICON.queued
   const hasOutput = step.status === 'done' && step.output
   const isCode = step.output?.includes('```html') || step.output?.includes('```css')
@@ -80,8 +82,29 @@ function StepCard({
 
   return (
     <div className={`rounded-xl border transition-all
-      ${isActive ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10'
-        : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'}`}>
+      ${isRevised
+        ? 'border-orange-300 dark:border-orange-700/60 bg-orange-50/30 dark:bg-orange-900/10'
+        : isActive
+          ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10'
+          : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'
+      }`}>
+
+      {/* 수정 이력 배너 */}
+      {isRevised && (
+        <div className="flex items-start gap-2 px-3 pt-2.5 pb-0">
+          <MatIcon name="history" className="text-[13px] text-orange-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">
+              수정 {step.revised}회 — 아래가 최신 결과물입니다
+            </span>
+            {step.revision_feedback && (
+              <p className="text-[10px] text-orange-500 dark:text-orange-500 mt-0.5 italic truncate">
+                "{step.revision_feedback}"
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 헤더 행 */}
       <button
@@ -99,6 +122,12 @@ function StepCard({
             <span className="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">
               {step.step_id}
             </span>
+            {isRevised && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0
+                bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">
+                수정됨 ×{step.revised}
+              </span>
+            )}
             {step.model_used && (
               <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0
                 ${step.model_used.includes('gemini') ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -165,7 +194,6 @@ function StepCard({
 function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[number] }) {
   const qc = useQueryClient()
   const [feedback, setFeedback] = useState('')
-  const [showFeedback, setShowFeedback] = useState(false)
 
   const decide = useMutation({
     mutationFn: async (decision: 'approved' | 'rejected' | 'revised') => {
@@ -182,69 +210,87 @@ function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[
       qc.invalidateQueries({ queryKey: ['jobs'] })
       qc.invalidateQueries({ queryKey: ['pending-gates'] })
       setFeedback('')
-      setShowFeedback(false)
     },
   })
+
+  // 수정 재실행 중
+  if (gate.status === 'revising') {
+    return (
+      <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700/40">
+        <div className="flex items-center gap-2">
+          <MatIcon name="autorenew" className="text-blue-500 text-[18px] animate-spin" />
+          <div>
+            <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">피드백 반영 중 — Step 재실행</p>
+            {gate.feedback && (
+              <p className="text-[11px] text-blue-500 dark:text-blue-500 mt-0.5 italic">"{gate.feedback}"</p>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (gate.status !== 'pending') return null
 
   return (
-    <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-700/40">
-      <div className="flex items-start gap-2 mb-2">
-        <MatIcon name="pending" className="text-yellow-500 text-[18px] mt-0.5" />
+    <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-700/40 space-y-2.5">
+      {/* 헤더 */}
+      <div className="flex items-start gap-2">
+        <MatIcon name="pending" className="text-yellow-500 text-[18px] mt-0.5 shrink-0" />
         <div className="flex-1">
-          <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">Gate 승인 필요</p>
+          <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">Gate — 검토 필요</p>
           <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-0.5">{gate.prompt}</p>
         </div>
       </div>
 
-      {showFeedback && (
-        <textarea
-          rows={3}
-          value={feedback}
-          onChange={e => setFeedback(e.target.value)}
-          placeholder="피드백 내용 입력 (수정 요청 또는 거절 이유)"
-          className="w-full mt-2 px-3 py-2 text-xs rounded-lg border border-yellow-200 dark:border-yellow-700
-            bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 resize-none
-            focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-        />
-      )}
+      {/* 피드백 입력 — 항상 표시 */}
+      <textarea
+        rows={2}
+        value={feedback}
+        onChange={e => setFeedback(e.target.value)}
+        placeholder="수정 요청 시 피드백을 입력하세요 (예: 경쟁사 분석 섹션을 더 구체적으로)"
+        className="w-full px-3 py-2 text-xs rounded-lg border border-yellow-200 dark:border-yellow-700
+          bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 resize-none
+          focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+      />
 
-      <div className="flex gap-2 mt-2">
+      {/* 액션 버튼 */}
+      <div className="flex gap-2">
         <button
           onClick={() => decide.mutate('approved')}
           disabled={decide.isPending}
-          className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700
-            rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white
+            bg-green-600 hover:bg-green-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
         >
-          <MatIcon name="check" className="text-[14px] mr-1" />
+          <MatIcon name="check" className="text-[14px]" />
           승인
         </button>
         <button
-          onClick={() => {
-            if (!showFeedback) { setShowFeedback(true); return }
-            if (feedback.trim()) decide.mutate('revised')
-          }}
-          disabled={decide.isPending}
-          className="flex-1 px-3 py-1.5 text-xs font-medium text-yellow-700 dark:text-yellow-400
-            bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50
-            rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+          onClick={() => decide.mutate('revised')}
+          disabled={decide.isPending || !feedback.trim()}
+          title={!feedback.trim() ? '피드백을 먼저 입력하세요' : ''}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+            text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30
+            hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-lg transition-colors
+            cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <MatIcon name="edit" className="text-[14px] mr-1" />
-          {showFeedback && feedback.trim() ? '수정 요청' : '피드백'}
+          <MatIcon name="refresh" className="text-[14px]" />
+          수정 후 재검토
         </button>
         <button
           onClick={() => decide.mutate('rejected')}
           disabled={decide.isPending}
-          className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400
-            bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30
-            rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+            text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20
+            hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors
+            cursor-pointer disabled:opacity-50"
         >
-          <MatIcon name="close" className="text-[14px]" />
+          <MatIcon name="cancel" className="text-[14px]" />
+          거절
         </button>
       </div>
       {decide.isError && (
-        <p className="text-xs text-red-500 mt-1">
+        <p className="text-xs text-red-500">
           {decide.error instanceof Error ? decide.error.message : '오류'}
         </p>
       )}
@@ -293,7 +339,17 @@ function ReportModal({ title, content, onClose }: { title: string; content: stri
   )
 }
 
-export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+export function JobDetailView({
+  jobId,
+  onClose,
+  onDuplicate,
+  onChain,
+}: {
+  jobId: string
+  onClose: () => void
+  onDuplicate?: (job: Job) => void
+  onChain?: (job: Job) => void    // 산출물 기반 다음 Job 시작
+}) {
   const qc = useQueryClient()
   const [reportKey, setReportKey] = useState<string | null>(null)
 
@@ -368,6 +424,28 @@ export function JobDetailView({ jobId, onClose }: { jobId: string; onClose: () =
             >
               <MatIcon name="article" className="text-[14px]" />
               리포트
+            </button>
+          )}
+          {onChain && job.status === 'done' && (
+            <button
+              onClick={() => onChain(job)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium
+                text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30
+                hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
+              title="이 Job의 산출물을 바탕으로 다음 Job 시작"
+            >
+              <MatIcon name="arrow_forward" className="text-[14px]" />
+              다음 단계
+            </button>
+          )}
+          {onDuplicate && (
+            <button
+              onClick={() => onDuplicate(job)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200
+                hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              title="입력값 복제로 새 Job 시작"
+            >
+              <MatIcon name="content_copy" className="text-[17px]" />
             </button>
           )}
           {(job.status === 'running' || job.status === 'queued' || job.status === 'waiting_gate') && (

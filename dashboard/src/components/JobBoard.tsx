@@ -1,10 +1,12 @@
 // Job Board — Job 목록 + 상세 뷰
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Job } from '../types'
 import { MatIcon } from './icons'
 import { JobDetailView } from './JobDetailView'
 import { NewJobDialog } from './NewJobDialog'
+
+const DELETABLE_STATUSES = new Set(['done', 'cancelled', 'failed'])
 
 async function fetchJobs(): Promise<Job[]> {
   const res = await fetch('/api/jobs?limit=100')
@@ -46,68 +48,107 @@ function timeAgo(ts: string): string {
   return `${Math.floor(diff / 86400)}일 전`
 }
 
-function JobCard({ job, isSelected, onClick }: { job: Job; isSelected: boolean; onClick: () => void }) {
+function JobCard({
+  job, isSelected, onClick, onDelete,
+}: {
+  job: Job; isSelected: boolean; onClick: () => void; onDelete: (e: React.MouseEvent) => void
+}) {
   const s = STATUS_STYLE[job.status] ?? STATUS_STYLE.queued
   const hasPendingGate = job.status === 'waiting_gate'
+  const canDelete = DELETABLE_STATUSES.has(job.status)
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-3 py-3 rounded-xl transition-all cursor-pointer
+    <div
+      className={`relative group w-full text-left px-3 py-3 rounded-xl transition-all
         ${isSelected
           ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
           : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 hover:border-blue-300 dark:hover:border-blue-700'
         }`}
     >
-      <div className="flex items-start gap-2.5">
-        {/* 아이콘 */}
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5
-          ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
-          <MatIcon name={SPEC_ICONS[job.spec_id] || 'work'} className="text-[16px]" />
+      <button onClick={onClick} className="w-full text-left cursor-pointer">
+        <div className="flex items-start gap-2.5">
+          {/* 아이콘 */}
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5
+            ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+            <MatIcon name={SPEC_ICONS[job.spec_id] || 'work'} className="text-[16px]" />
+          </div>
+
+          <div className="flex-1 min-w-0 pr-6">
+            <div className="flex items-start justify-between gap-1">
+              <p className={`text-sm font-medium leading-snug truncate
+                ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                {job.title}
+              </p>
+              {hasPendingGate && (
+                <MatIcon name="notification_important" className="text-[14px] text-yellow-500 shrink-0 mt-0.5" />
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${s.badge}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                {s.label}
+              </span>
+              <span className="text-[10px] text-gray-400 truncate">{job.spec_id}</span>
+            </div>
+
+            <div className="flex items-center justify-between mt-1">
+              {job.current_step && (job.status === 'running' || job.status === 'waiting_gate') ? (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{job.current_step}</p>
+              ) : (
+                <span />
+              )}
+              <p className="text-[10px] text-gray-400 shrink-0">{timeAgo(job.created_at)}</p>
+            </div>
+          </div>
         </div>
+      </button>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-1">
-            <p className={`text-sm font-medium leading-snug truncate
-              ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-gray-100'}`}>
-              {job.title}
-            </p>
-            {hasPendingGate && (
-              <MatIcon name="notification_important" className="text-[14px] text-yellow-500 shrink-0 mt-0.5" />
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${s.badge}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-              {s.label}
-            </span>
-            <span className="text-[10px] text-gray-400 truncate">{job.spec_id}</span>
-          </div>
-
-          <div className="flex items-center justify-between mt-1">
-            {job.current_step && (job.status === 'running' || job.status === 'waiting_gate') ? (
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{job.current_step}</p>
-            ) : (
-              <span />
-            )}
-            <p className="text-[10px] text-gray-400 shrink-0">{timeAgo(job.created_at)}</p>
-          </div>
-        </div>
-      </div>
-    </button>
+      {/* 삭제 버튼 — hover 시 표시, done/cancelled/failed만 */}
+      {canDelete && (
+        <button
+          onClick={onDelete}
+          title="삭제"
+          className="absolute top-2 right-2 p-1 rounded-lg opacity-0 group-hover:opacity-100
+            text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20
+            transition-all cursor-pointer"
+        >
+          <MatIcon name="delete_outline" className="text-[15px]" />
+        </button>
+      )}
+    </div>
   )
 }
 
+interface NewJobValues {
+  specId: string
+  title: string
+  fields: Record<string, string>
+  sourceJob?: { id: string; title: string; specId: string; artifacts: Record<string, string> }
+}
+
 export function JobBoard() {
+  const qc = useQueryClient()
   const [filter, setFilter] = useState<string>('all')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [showNewJob, setShowNewJob] = useState(false)
+  const [newJobValues, setNewJobValues] = useState<NewJobValues | null>(null)
 
   const { data: jobs = [], isLoading } = useQuery({
     queryKey: ['jobs'],
     queryFn: fetchJobs,
     refetchInterval: 3000,
+  })
+
+  const deleteJob = useMutation({
+    mutationFn: async (jobId: string) => {
+      const res = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('삭제 실패')
+    },
+    onSuccess: (_, jobId) => {
+      if (selectedJobId === jobId) setSelectedJobId(null)
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+    },
   })
 
   const filtered = filter === 'all' ? jobs : jobs.filter(j => j.status === filter)
@@ -199,6 +240,10 @@ export function JobBoard() {
               job={job}
               isSelected={selectedJobId === job.id}
               onClick={() => setSelectedJobId(job.id)}
+              onDelete={e => {
+                e.stopPropagation()
+                deleteJob.mutate(job.id)
+              }}
             />
           ))}
         </div>
@@ -210,6 +255,28 @@ export function JobBoard() {
           <JobDetailView
             jobId={selectedJobId}
             onClose={() => setSelectedJobId(null)}
+            onDuplicate={job => {
+              setNewJobValues({
+                specId: job.spec_id,
+                title: `${job.title} (복제)`,
+                fields: job.input ?? {},
+              })
+              setShowNewJob(true)
+            }}
+            onChain={job => {
+              setNewJobValues({
+                specId: '',
+                title: '',
+                fields: {},
+                sourceJob: {
+                  id: job.id,
+                  title: job.title,
+                  specId: job.spec_id,
+                  artifacts: job.artifacts ?? {},
+                },
+              })
+              setShowNewJob(true)
+            }}
           />
         </div>
       ) : (
@@ -222,7 +289,12 @@ export function JobBoard() {
       )}
 
       {/* 새 Job 다이얼로그 */}
-      {showNewJob && <NewJobDialog onClose={() => setShowNewJob(false)} />}
+      {showNewJob && (
+        <NewJobDialog
+          onClose={() => { setShowNewJob(false); setNewJobValues(null) }}
+          initialValues={newJobValues ?? undefined}
+        />
+      )}
     </div>
   )
 }

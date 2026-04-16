@@ -1245,24 +1245,6 @@ async def _finalize_project(
   phase_metrics: list[PhaseMetrics],
 ) -> None:
   '''프로젝트 phase 루프 완료 후 마감 처리 — 회고/세션종료/상태리셋/메트릭/내보내기.'''
-  # 팀 회고 — 프로젝트 완료 후 각 에이전트가 배운 점 공유
-  try:
-    try:
-      total_dur = (
-        datetime.now(timezone.utc) - datetime.fromisoformat(project_started_at)
-      ).total_seconds()
-    except Exception:
-      total_dur = 0.0
-    await office._team_retrospective(
-      project_title=office._active_project_title or '프로젝트',
-      project_type=project_type,
-      all_results=all_results,
-      user_input=user_input,
-      duration=total_dur,
-    )
-  except Exception:
-    logger.debug("팀 회고 실행 실패", exc_info=True)
-
   # 프로젝트 세션 종료
   if office._active_project_id:
     from db.task_store import archive_project

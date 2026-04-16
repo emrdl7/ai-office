@@ -34,7 +34,7 @@ export interface FileEntry {
 }
 
 // 채널 타입
-export type ChannelId = 'all' | 'planner' | 'designer' | 'developer' | 'qa' | 'jobs' | 'gates'
+export type ChannelId = 'all' | 'jobs' | 'gates'
 
 // Job 파이프라인 타입
 export interface JobStep {
@@ -46,6 +46,8 @@ export interface JobStep {
   finished_at: string
   model_used: string
   cost_usd: number
+  revised: number           // 수정 재실행 횟수 (0 = 최초)
+  revision_feedback: string // 마지막 수정 요청 피드백
 }
 
 export interface JobGate {

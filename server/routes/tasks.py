@@ -93,57 +93,11 @@ async def chat(
   async def _run() -> None:
     try:
       update_task_state(task_id, 'running')
-      has_pending = (hasattr(office, '_interrupted_task_id') and office._interrupted_task_id) or \
-                    (hasattr(office, '_pending_project') and office._pending_project)
-      if not has_pending and to != 'all':
-        task_workspace = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
-        office.workspace = task_workspace
       office._current_task_id = task_id
 
-      if to == 'all':
-        if office._state not in (OfficeState.IDLE, OfficeState.COMPLETED, OfficeState.ESCALATED):
-          await office.handle_mid_work_input(full_message)
-          update_task_state(task_id, 'completed')
-          return
-        result = await office.receive(full_message)
-      else:
-        agent = office.agents.get(to)
-        if agent:
-          dm_context = ''
-          try:
-            for ws_dir in sorted(paths.WORKSPACE_ROOT.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-              for md_file in ws_dir.rglob(f'*{to}*result*.md'):
-                dm_context = md_file.read_text(encoding='utf-8')[:3000]
-                break
-              if dm_context:
-                break
-          except Exception:
-            logger.warning('DM 컨텍스트 산출물 조회 실패 (agent=%s)', to, exc_info=True)
-
-          try:
-            from db.log_store import load_logs
-            recent = load_logs(limit=50)
-            dm_history_lines = []
-            for log in recent:
-              if (log['agent_id'] == to and (log.get('data') or {}).get('dm')) or \
-                 (log['agent_id'] == 'user' and (log.get('data') or {}).get('to') == to):
-                dm_history_lines.append(f'[{log["agent_id"]}] {log["message"][:200]}')
-            if dm_history_lines:
-              dm_context = '[이전 DM 대화]\n' + '\n'.join(dm_history_lines[-10:]) + '\n\n' + dm_context
-          except Exception:
-            logger.warning('DM 대화 기록 로드 실패 (agent=%s)', to, exc_info=True)
-
-          response = await agent.handle(full_message, context=dm_context)
-          await event_bus.publish(LogEvent(
-            agent_id=to,
-            event_type='response',
-            message=response,
-            data={'dm': True},
-          ))
-          result = {'state': 'completed', 'response': response}
-        else:
-          result = {'state': 'error', 'response': f'{to}를 찾을 수 없습니다.'}
-
+      # 모든 채팅은 office.receive()를 통해 팀장이 처리
+      # office.receive() 내부에서 intent 분류 → 팀장 직접 응답 또는 프로젝트 실행
+      result = await office.receive(full_message)
       final_state = result.get('state', 'completed')
       update_task_state(task_id, final_state)
     except Exception as e:

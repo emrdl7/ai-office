@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
-import { AGENT_PROFILE } from './Sidebar'
+import { AGENT_PROFILE } from '../config/team'
 import { AGENT_IDS } from '../config/team'
 import { MatIcon } from './icons'
 import { ProjectStatusBar } from './ProjectStatusBar'
@@ -300,7 +300,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     try {
       const form = new FormData()
       form.append('message', message.trim())
-      form.append('to', activeChannel)
+      form.append('to', 'all')
       for (const f of files) form.append('files', f)
       await fetch('/api/chat', { method: 'POST', body: form })
       setMessage('')

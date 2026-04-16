@@ -51,6 +51,8 @@ class StepRun:
     error: str = ''
     model_used: str = ''
     cost_usd: float = 0.0
+    revised: int = 0                       # 수정 재실행 횟수
+    revision_feedback: str = ''            # 마지막 수정 요청 피드백
 
 
 @dataclass

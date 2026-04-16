@@ -40,6 +40,8 @@ def _conn() -> sqlite3.Connection:
             error TEXT DEFAULT '',
             model_used TEXT DEFAULT '',
             cost_usd REAL DEFAULT 0.0,
+            revised INTEGER DEFAULT 0,
+            revision_feedback TEXT DEFAULT '',
             PRIMARY KEY (job_id, step_id)
         );
         CREATE TABLE IF NOT EXISTS job_gates (
@@ -55,6 +57,15 @@ def _conn() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
         CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
     ''')
+    # 기존 DB 마이그레이션 — 컬럼이 없으면 추가
+    for col, definition in [
+        ('revised', 'INTEGER DEFAULT 0'),
+        ('revision_feedback', 'TEXT DEFAULT ""'),
+    ]:
+        try:
+            c.execute(f'ALTER TABLE job_steps ADD COLUMN {col} {definition}')
+        except Exception:
+            pass  # 이미 존재하면 무시
     c.commit()
     return c
 
@@ -128,15 +139,18 @@ def upsert_step(step: StepRun) -> None:
     c = _conn()
     c.execute(
         'INSERT INTO job_steps (job_id, step_id, status, started_at, finished_at, '
-        'output, error, model_used, cost_usd) VALUES (?,?,?,?,?,?,?,?,?) '
+        'output, error, model_used, cost_usd, revised, revision_feedback) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?) '
         'ON CONFLICT(job_id, step_id) DO UPDATE SET '
         'status=excluded.status, started_at=excluded.started_at, '
         'finished_at=excluded.finished_at, output=excluded.output, '
-        'error=excluded.error, model_used=excluded.model_used, cost_usd=excluded.cost_usd',
+        'error=excluded.error, model_used=excluded.model_used, cost_usd=excluded.cost_usd, '
+        'revised=excluded.revised, revision_feedback=excluded.revision_feedback',
         (step.job_id, step.step_id, step.status,
          step.started_at, step.finished_at,
          step.output or '',
-         step.error, step.model_used, step.cost_usd),
+         step.error, step.model_used, step.cost_usd,
+         step.revised, step.revision_feedback),
     )
     c.commit()
     c.close()
