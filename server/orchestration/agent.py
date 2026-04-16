@@ -409,6 +409,28 @@ class Agent:
         f'- 길이 15~60자. 길면 농담 아님.\n\n'
         f'정말 웃길 자신 없으면 [PASS]. 90%는 [PASS]가 맞다.'
       )
+    elif mode == 'external_trend':
+      # 외부 동향 토론 모드 — 검색 결과 기반, 코드 위치 강제 없음
+      prompt = (
+        f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
+        f'팀 채팅에 **외부 기술/업계 동향**에 대한 의견 한마디.\n\n'
+        f'{own_block}'
+        f'[오늘의 외부 소식/트렌드]\n{topic}\n\n'
+        f'[출력 필수 구조 — 세 요소 모두 포함해야 함]\n'
+        f'1. 소식 핵심: 무슨 일이 일어나고 있는지 1문장 요약 (출처/도구/기업명 구체적으로)\n'
+        f'2. 본인 전문 영역 관점 분석: {display_name(self.name)}으로서 이 소식이 왜 의미 있는지\n'
+        f'3. 우리 팀 적용: 우리 프로젝트(AI Office)에 도입하면 어떤 효과가 있을지, 또는 왜 맞지 않는지\n\n'
+        f'[출력 형식]\n'
+        f'- 50~300자. 구체적 도구명·버전·수치·사례 필수.\n'
+        f'- 추상적 일반론("트렌드를 주시해야", "혁신이 중요") 금지 → [PASS]\n'
+        f'- "~를 도입합시다/적용합시다" 같은 선언 금지. 의견·분석·질문만.\n\n'
+        f'[절대 금지]\n'
+        f'- 선언형 "~수용합니다/반영합니다/도입합니다/적용합니다": 너는 권한 없다\n'
+        f'- 빈 맞장구/응원\n'
+        f'- 커피/점심/날씨 등 물리 경험\n'
+        f'- 출처 없는 주장 (검색 결과에 없는 내용 꾸며내기)\n\n'
+        f'분석할 만한 구체적 인사이트가 없으면 [PASS]. 60%는 [PASS]가 맞다.'
+      )
     else:  # improvement
       prompt = (
         f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
@@ -482,6 +504,20 @@ class Agent:
           logger.info('농담 모드인데 전문가 톤 드랍 [%s]', self.name)
           return ''
         if not (15 <= len(first_line) <= 80):
+          return ''
+      elif mode == 'external_trend':
+        # 외부 동향 모드 — 코드 위치 불필요, 대신 구체 도구/기업/수치 필수
+        import re as _re_trend
+        has_concrete = bool(
+          _re_trend.search(r'[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*', text)  # 고유명사 (도구/기업명)
+          or _re_trend.search(r'\d+[%배만억kKmMgG]', text)  # 수치/퍼센트
+          or _re_trend.search(r'v?\d+\.\d+', text)  # 버전 번호
+        )
+        if not has_concrete:
+          logger.info('외부 동향 모드 구체성 부족 드랍 [%s]: %s', self.name, first_line[:80])
+          return ''
+        if len(first_line) < 40:
+          logger.info('외부 동향 모드 길이 부족 드랍 [%s]: %d자', self.name, len(first_line))
           return ''
       else:
         # 개선 모드 — 파일/커밋/함수명 중 하나 이상 필요

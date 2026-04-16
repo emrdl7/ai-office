@@ -59,6 +59,12 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState<SearchResponse | null>(null)
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
   // q 디바운스 — 400ms. errors preset은 q가 비어도 동작.
   const qTrim = q.trim()
   useEffect(() => {

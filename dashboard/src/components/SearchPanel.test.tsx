@@ -50,7 +50,7 @@ describe('<SearchPanel>', () => {
   it('errors preset 토글 시 q가 비어도 검색 + preset=errors 전송', async () => {
     const fetchMock = stubFetch({ q: '', type: 'logs', preset: 'errors', logs: [] })
     render(<SearchPanel onClose={() => {}} />)
-    fireEvent.click(screen.getByText('⚠ 에러만'))
+    fireEvent.click(screen.getByText('에러만'))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1), { timeout: 1500 })
     const url = fetchMock.mock.calls[0][0] as string
     expect(url).toContain('preset=errors')

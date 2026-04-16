@@ -1,11 +1,15 @@
-'''트렌드 리서치 → 프롬프트 강화
+'''트렌드 리서치 → 프롬프트 강화 + 토론형 외부 동향 공급
 
-자율 루프에서 ~12% 확률로 호출. 흐름:
-  1. speaker의 전문 영역에서 검색어 1개 선택 (또는 LLM이 직접 생성)
-  2. DuckDuckGo web_search → 결과 텍스트
-  3. Gemini가 "적용할 만한 1가지 + 대상 에이전트 + 규칙안" 추출 (JSON)
-  4. PromptEvolver에 source='trend_research'로 규칙 등록
-  5. 자율 발화로 공유 (autonomous 이벤트)
+두 가지 경로:
+  A. 기존 maybe_research (~12%): 검색 → 규칙 등록 → 알림 발화
+  B. 신규 research_for_discussion (~45%): 검색/RSS → 토론 주제 반환
+     → autonomous_loop에서 일반 체인(반응→클로징)을 태워 토론 유도
+
+B 경로 흐름:
+  1. 동적 검색어 생성 (Gemini) 또는 RSS 피드 파싱
+  2. DuckDuckGo/RSS → 결과 텍스트
+  3. Gemini가 토론할 만한 소식 1건 요약 (규칙 등록 X)
+  4. 토론 주제 문자열 반환 → agent.reflect(mode='external_trend')로 전달
 
 같은 일자 동일 검색 키워드는 캐시(스테이트 파일)로 중복 차단.
 '''
@@ -57,6 +61,23 @@ _QUERY_BANK: dict[str, list[str]] = {
     'visual regression testing 2026',
     'LLM evaluation framework 2026',
   ],
+}
+
+
+# RSS 피드 소스 — 공개 피드에서 업계 동향/기술 트렌드 수집
+_RSS_FEEDS: list[dict[str, str]] = [
+  {'name': 'Hacker News (Top)', 'url': 'https://hnrss.org/best?count=5'},
+  {'name': 'TechCrunch', 'url': 'https://techcrunch.com/feed/'},
+  {'name': 'The Verge', 'url': 'https://www.theverge.com/rss/index.xml'},
+  {'name': 'AI News (MIT)', 'url': 'https://news.mit.edu/topic/artificial-intelligence2/feed'},
+]
+
+# 에이전트별 동적 검색어 생성용 전문 영역 힌트
+_DOMAIN_HINTS: dict[str, str] = {
+  'planner': '프로덕트 매니지먼트, 기획 방법론, 사용자 리서치, 비즈니스 전략, 스타트업 전략',
+  'designer': 'UI/UX 디자인, 디자인 시스템, 접근성, 인터랙션 디자인, 디자인 도구',
+  'developer': '웹 개발, Python, React, TypeScript, AI/ML 엔지니어링, DevOps, 아키텍처',
+  'qa': '테스트 자동화, QA 프로세스, 성능 테스팅, AI 품질 평가, CI/CD',
 }
 
 
@@ -266,3 +287,187 @@ async def maybe_research(office: Any, speaker_name: str) -> bool:
     speaker_name, target, rule_id, query,
   )
   return True
+
+
+# ── 토론형 리서치 (경로 B) ──────────────────────────────────────
+
+def _fetch_rss_items(max_items: int = 8) -> list[dict[str, str]]:
+  '''공개 RSS 피드에서 최근 아이템을 가져온다. 네트워크 실패 시 빈 리스트.'''
+  import urllib.request
+  items: list[dict[str, str]] = []
+  feeds = random.sample(_RSS_FEEDS, min(2, len(_RSS_FEEDS)))
+  for feed in feeds:
+    try:
+      req = urllib.request.Request(feed['url'], headers={
+        'User-Agent': 'Mozilla/5.0 (compatible; AI-Office/1.0)',
+      })
+      with urllib.request.urlopen(req, timeout=10) as resp:
+        xml = resp.read().decode('utf-8', errors='replace')
+      # 간이 XML 파싱 — <item><title>...</title><link>...</link><description>...</description>
+      import re as _rss_re
+      for m in _rss_re.finditer(
+        r'<item[^>]*>.*?<title[^>]*>(.*?)</title>.*?'
+        r'<link[^>]*>([^<]*)</link>.*?'
+        r'(?:<description[^>]*>(.*?)</description>)?.*?</item>',
+        xml, _rss_re.DOTALL,
+      ):
+        title = _rss_re.sub(r'<!\[CDATA\[|\]\]>|<[^>]+>', '', m.group(1)).strip()
+        link = m.group(2).strip()
+        desc = _rss_re.sub(r'<!\[CDATA\[|\]\]>|<[^>]+>', '', m.group(3) or '').strip()[:200]
+        if title:
+          items.append({'title': title, 'link': link, 'desc': desc, 'source': feed['name']})
+        if len(items) >= max_items:
+          break
+    except Exception:
+      logger.debug('RSS 피드 실패: %s', feed['name'], exc_info=True)
+  return items
+
+
+async def _generate_dynamic_query(speaker_name: str, used_today: list[str]) -> str:
+  '''Gemini에게 오늘 검색할 만한 주제를 동적으로 생성하게 한다.'''
+  domain = _DOMAIN_HINTS.get(speaker_name, '기술 전반')
+  used_hint = ', '.join(used_today[-5:]) if used_today else '없음'
+  try:
+    raw = await run_gemini(
+      prompt=(
+        f'당신은 {display_name(speaker_name)}의 관심 영역을 아는 리서치 봇입니다.\n'
+        f'전문 영역: {domain}\n'
+        f'오늘 이미 검색한 주제: {used_hint}\n\n'
+        f'[과제] 위 영역에서 2026년 현재 가장 화제가 되는 구체적 기술/도구/사건을 '
+        f'DuckDuckGo 검색어 1개로 출력하세요.\n\n'
+        f'[규칙]\n'
+        f'- 영어 또는 한국어 검색어 1개만 (따옴표 없이)\n'
+        f'- 추상적 주제("AI trends") 금지. 구체적 도구/사건/기업명 포함\n'
+        f'- 이미 검색한 주제와 겹치지 않게\n'
+        f'- 10~50자\n\n'
+        f'검색어:'
+      ),
+      timeout=30.0,
+    )
+    query = raw.strip().split('\n')[0].strip().strip('"\'')
+    if 10 <= len(query) <= 80 and query not in used_today:
+      return query
+  except Exception:
+    logger.debug('동적 검색어 생성 실패: %s', speaker_name, exc_info=True)
+  return ''
+
+
+async def _summarize_for_discussion(
+  speaker_name: str, raw_material: str, source_type: str,
+) -> str | None:
+  '''검색/RSS 원본에서 토론할 만한 소식 1건을 요약. 토론 주제 문자열 반환.'''
+  prompt = (
+    f'당신은 IT/기술 뉴스 큐레이터입니다.\n\n'
+    f'[{source_type} 결과]\n{raw_material[:4000]}\n\n'
+    f'[과제]\n'
+    f'위 내용 중 소프트웨어 개발팀(기획/디자인/개발/QA)이 토론할 만한 '
+    f'가장 흥미롭고 구체적인 소식 1건을 골라 요약하세요.\n\n'
+    f'[출력 형식 — 이 구조 정확히 따르기]\n'
+    f'📰 [소식 제목 — 구체적 도구/기업/기술명 포함]\n'
+    f'핵심: (무슨 일이 일어났는지 2-3문장)\n'
+    f'출처: (URL 또는 매체명)\n'
+    f'토론 포인트: (팀이 논의할 만한 질문 1개)\n\n'
+    f'[규칙]\n'
+    f'- 추상적 트렌드 요약 금지. 구체적 사건/출시/발표/연구 결과 1건만.\n'
+    f'- 흥미로운 소식이 없으면 null만 출력\n'
+    f'- 토론 포인트는 "우리 팀에 이걸 적용하면?", "이게 기존 방식을 대체할까?" 같은 실질적 질문'
+  )
+  try:
+    raw = await run_gemini(prompt=prompt, timeout=60.0)
+    text = raw.strip()
+    if 'null' in text.lower()[:20] and '📰' not in text[:20]:
+      return None
+    if len(text) < 50:
+      return None
+    return text
+  except Exception:
+    logger.debug('토론 주제 요약 실패', exc_info=True)
+    return None
+
+
+async def research_for_discussion(speaker_name: str) -> str | None:
+  '''토론용 외부 동향 주제를 가져온다. 성공 시 토론 주제 문자열 반환.
+
+  소스 전략 (랜덤 혼합):
+    - 50%: 동적 검색어 생성 → DuckDuckGo 검색
+    - 30%: RSS 피드 파싱
+    - 20%: 고정 검색어 뱅크 (기존 호환)
+  '''
+  if speaker_name not in _DOMAIN_HINTS:
+    return None
+
+  state = _load_state()
+  today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+  queries_today: dict[str, list[str]] = state.get('queries_today', {})
+  if state.get('last_run', '')[:10] != today:
+    queries_today = {}
+  used = queries_today.get(speaker_name, [])
+
+  raw_material = ''
+  source_type = ''
+  query_used = ''
+
+  roll = random.random()
+
+  if roll < 0.50:
+    # 경로 1: 동적 검색어 → DuckDuckGo
+    import asyncio as _aio
+    query = await _generate_dynamic_query(speaker_name, used)
+    if query:
+      try:
+        from harness.file_reader import web_search
+        raw_material = await _aio.to_thread(web_search, query, 5)
+        source_type = f'웹 검색 — "{query}"'
+        query_used = query
+      except Exception:
+        logger.debug('동적 검색 실패: %s', query, exc_info=True)
+
+  elif roll < 0.80:
+    # 경로 2: RSS 피드
+    import asyncio as _aio
+    try:
+      items = await _aio.to_thread(_fetch_rss_items, 8)
+    except Exception:
+      logger.debug('RSS 피드 전체 실패', exc_info=True)
+      items = []
+    if items:
+      lines = [f'- [{it["source"]}] {it["title"]}: {it["desc"]}' for it in items]
+      raw_material = '\n'.join(lines)
+      source_type = 'RSS 피드 (Hacker News, TechCrunch 등)'
+      query_used = f'rss-{today}'
+
+  else:
+    # 경로 3: 기존 고정 뱅크
+    query = _pick_query(speaker_name, used)
+    if query:
+      try:
+        import asyncio as _aio
+        from harness.file_reader import web_search
+        raw_material = await _aio.to_thread(web_search, query, 5)
+        source_type = f'웹 검색 — "{query}"'
+        query_used = query
+      except Exception:
+        logger.debug('고정 뱅크 검색 실패: %s', query, exc_info=True)
+
+  if not raw_material or len(raw_material) < 80:
+    return None
+
+  # 사용 기록
+  if query_used and query_used not in used:
+    used.append(query_used)
+    queries_today[speaker_name] = used[-15:]
+    state['queries_today'] = queries_today
+    state['last_run'] = datetime.now(timezone.utc).isoformat()
+    _save_state(state)
+
+  # Gemini로 토론 주제 요약
+  try:
+    discussion_topic = await _summarize_for_discussion(speaker_name, raw_material, source_type)
+  except Exception:
+    logger.debug('_summarize_for_discussion 예외', exc_info=True)
+    discussion_topic = None
+  if not discussion_topic:
+    return None
+
+  logger.info('research_for_discussion: %s → 토론 주제 확보 (source=%s)', speaker_name, source_type)
+  return discussion_topic

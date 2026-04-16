@@ -56,7 +56,7 @@ class MessageBus:
         '''메시지 처리 완료 표시 (status=done, ack_at=now)'''
         self._conn.execute(
             "UPDATE messages SET status='done', ack_at=? WHERE id=?",
-            (datetime.utcnow().isoformat(), message_id),
+            (datetime.now(timezone.utc).isoformat(), message_id),
         )
         self._conn.commit()
 

@@ -54,9 +54,13 @@ def stop_loop(office: Any) -> None:
 # 7. _choose_topic: stuck ? 신선 토픽 / seed 있으면 의논 주제 / 아니면 맥락 유지
 # 8. _pick_speakers: 최근 2회 이상 말한 사람 제외, 1~2명 (75% 1명)
 # 9. _load_code_context: 최근 커밋 + diff stat → 개선 모드 시드용
-# 10. 각 speaker: agent.reflect → 자동 건의 등록 + 다짐 감지 + 1단/2단 체인
-# 11. _maybe_teamlead_closing: 체인 있음 50% / 없음 10% 팀장 관찰
-# 12. 5~15분 sleep 후 iteration 반복
+# 10. 모드 결정: 외부 동향(45%) > 코드 리뷰(40%) > 농담(15%)
+#     - external_trend: research_for_discussion() → 검색/RSS 토론 주제 확보 → 체인 토론
+#     - improvement: 기존 코드 리뷰 (10%에서 기존 trend_research 규칙 등록 발동)
+#     - joke: 유머
+# 11. 각 speaker: agent.reflect → 자동 건의 등록 + 다짐 감지 + 1단/2단 체인
+# 12. _maybe_teamlead_closing: 체인 있음 50% / 없음 10% 팀장 관찰
+# 13. 5~15분 sleep 후 iteration 반복
 #
 # 재시도 정책
 # - Gemini/Claude 오류는 run_gemini / run_claude_isolated 내부에서 2회 자동 재시도.
@@ -240,6 +244,10 @@ def _choose_topic(
     '과거 프로젝트 교훈 중 재적용 가능한 것',
     '본인이 최근 학습한 새 기법/라이브러리',
     '팀 내 역할 경계에서 오해 소지가 있는 지점',
+    '최근 주목받는 오픈소스 프로젝트/도구에 대한 의견 (구체적 이름 필수)',
+    '경쟁사/유사 서비스의 최근 기능 업데이트에서 배울 점',
+    '업계에서 논란이 되는 기술 선택/아키텍처 결정에 대한 본인 입장',
+    '최근 읽은 기술 블로그/컨퍼런스 발표 중 팀에 공유할 만한 인사이트',
   ]
   # stuck 발동 키워드 + 블록리스트 병합 (중복 제거)
   all_banned: list[str] = []
@@ -328,25 +336,14 @@ async def _run_speaker_chain(
   candidates: list[str],
   code_ctx: str,
   recent_logs: list[dict] | None = None,
-) -> str:
+) -> tuple[str, str]:
   '''한 speaker의 발화 → 1단 반응 → 2단 결론 체인 실행.
 
-  반환: first_reactor 이름 (체인이 돌았으면). 못 돌면 빈 문자열.
+  반환: (first_reactor 이름, 사용된 mode) 튜플. 체인 안 돌면 ('', mode).
   '''
   agent = office.agents.get(speaker_name)
   if not agent:
-    return ''
-
-  # 트렌드 리서치 모드 — speaker가 자기 전문 영역의 최신 트렌드를 검색해
-  # 본인 또는 동료의 프롬프트를 강화한다. 발화로 끝나므로 체인은 돌지 않음.
-  if random.random() < 0.12:
-    try:
-      from orchestration import trend_research
-      did = await trend_research.maybe_research(office, speaker_name)
-      if did:
-        return ''
-    except Exception:
-      logger.debug('trend_research 실패: %s', speaker_name, exc_info=True)
+    return '', 'improvement'
 
   # 본인 5개 + 동료 각 2개 — 같은 주제 반복 방지용. recent_logs 있으면 재사용.
   own_recent: list[str] = []
@@ -358,7 +355,37 @@ async def _run_speaker_chain(
   except Exception:
     pass
 
-  mode = 'joke' if random.random() < 0.3 else 'improvement'
+  # ── 모드 결정: 외부 동향(45%) > 코드 리뷰(40%) > 농담(15%) ──
+  mode_roll = random.random()
+  if mode_roll < 0.45:
+    # 외부 동향 토론 모드 — 검색/RSS로 주제를 가져와서 체인 토론
+    mode = 'external_trend'
+    try:
+      from orchestration.trend_research import research_for_discussion
+      discussion_topic = await research_for_discussion(speaker_name)
+      if discussion_topic:
+        topic = discussion_topic  # 검색 결과 기반 토론 주제로 교체
+      else:
+        # 외부 소식 확보 실패 → improvement로 폴백
+        mode = 'improvement'
+    except Exception:
+      logger.debug('research_for_discussion 실패: %s', speaker_name, exc_info=True)
+      mode = 'improvement'
+  elif mode_roll < 0.85:
+    mode = 'improvement'
+  else:
+    mode = 'joke'
+
+  # 기존 트렌드 리서치(프롬프트 규칙 등록) — improvement 모드 중 10%에서만 발동
+  if mode == 'improvement' and random.random() < 0.10:
+    try:
+      from orchestration import trend_research
+      did = await trend_research.maybe_research(office, speaker_name)
+      if did:
+        return '', mode
+    except Exception:
+      logger.debug('trend_research 실패: %s', speaker_name, exc_info=True)
+
   message = await agent.reflect(topic, own_recent=own_recent, mode=mode, code_context=code_ctx)
   if not message:
     # PASS 드롭 추적 — stats 집계용
@@ -369,7 +396,7 @@ async def _run_speaker_chain(
       ))
     except Exception:
       pass
-    return ''
+    return '', mode
 
   # autonomous_mode를 LogEvent.data에 표기 — 건의 등록/검색/UI에서 모드 필터 가능
   speaker_event = LogEvent(
@@ -378,36 +405,40 @@ async def _run_speaker_chain(
   )
   await office.event_bus.publish(speaker_event)
 
-  # mode=joke 발화는 filer 3종 모두 조기 return — 오탐 구조적 차단
-  try:
-    await office._auto_file_suggestion(
-      speaker_name, message, source_log_id=speaker_event.id, mode=mode,
-    )
-  except Exception:
-    logger.debug('자동 건의 등록 실패', exc_info=True)
-  try:
-    await office._file_commitment_suggestion(
-      committer_id=speaker_name, message=message, source_log_id=speaker_event.id, mode=mode,
-    )
-  except Exception:
-    logger.debug('자발 다짐 등록 실패', exc_info=True)
-  try:
-    await office._file_capability_gap_suggestion(
-      speaker_id=speaker_name, message=message, source_log_id=speaker_event.id, mode=mode,
-    )
-  except Exception:
-    logger.debug('능력 부족 등록 실패', exc_info=True)
+  # mode=joke/external_trend 발화는 filer 3종 모두 스킵 — 오탐 구조적 차단
+  # (joke: 농담에서 건의 추출 무의미, external_trend: 외부 동향 토론이지 코드 개선 건의 아님)
+  if mode not in ('joke', 'external_trend'):
+    try:
+      await office._auto_file_suggestion(
+        speaker_name, message, source_log_id=speaker_event.id, mode=mode,
+      )
+    except Exception:
+      logger.debug('자동 건의 등록 실패', exc_info=True)
+    try:
+      await office._file_commitment_suggestion(
+        committer_id=speaker_name, message=message, source_log_id=speaker_event.id, mode=mode,
+      )
+    except Exception:
+      logger.debug('자발 다짐 등록 실패', exc_info=True)
+    try:
+      await office._file_capability_gap_suggestion(
+        speaker_id=speaker_name, message=message, source_log_id=speaker_event.id, mode=mode,
+      )
+    except Exception:
+      logger.debug('능력 부족 등록 실패', exc_info=True)
 
-  # 1단 반응 (50%) — 반응은 구조상 "상대 발언에 대한 동의/보완"이므로
-  # 새로운 실행 요구로 보기 어렵다. mode='reaction' 태깅으로 filer 중
-  # auto_file/capability_gap은 skip, commitment만 통과시켜 다짐은 포착.
+  # 1단 반응 — 외부 동향 토론(70%) vs 기존(50%). 반응은 구조상 "상대 발언에
+  # 대한 동의/보완"이므로 새로운 실행 요구로 보기 어렵다. mode='reaction' 태깅으로
+  # filer 중 auto_file/capability_gap은 skip, commitment만 통과시켜 다짐은 포착.
   first_reactor = ''
-  if random.random() < 0.5:
+  react_chance = 0.70 if mode == 'external_trend' else 0.50
+  if random.random() < react_chance:
     reactors = [n for n in candidates if n != speaker_name]
     if reactors:
       first_reactor = random.choice(reactors)
       first_reply = await autonomous_react(
         reactor_name=first_reactor, prior_speaker=speaker_name, prior_message=message,
+        conversation_mode=mode,
       )
       if first_reply:
         reactor_event = LogEvent(
@@ -432,11 +463,13 @@ async def _run_speaker_chain(
           )
         except Exception:
           logger.debug('리액터 능력 부족 등록 실패', exc_info=True)
-        # 2단 결론 (30%) — 원 발언자의 재반론/수용. mode='closing'.
-        if random.random() < 0.3:
+        # 2단 결론 — 외부 동향(50%) vs 기존(30%). 원 발언자의 재반론/수용.
+        closing_chance = 0.50 if mode == 'external_trend' else 0.30
+        if random.random() < closing_chance:
           closing = await autonomous_closing(
             original_speaker=speaker_name, original_message=message,
             challenger=first_reactor, challenge=first_reply,
+            conversation_mode=mode,
           )
           if closing:
             closing_event = LogEvent(
@@ -461,11 +494,12 @@ async def _run_speaker_chain(
               logger.debug('클로징 능력 부족 등록 실패', exc_info=True)
       else:
         first_reactor = ''
-  return first_reactor
+  return first_reactor, mode
 
 
 async def _maybe_teamlead_closing(
   office: Any, recent_context: str, speaker_name: str, first_reactor: str,
+  conversation_mode: str = 'improvement',
 ) -> None:
   '''체인이 돌았으면 50%, 아니면 10% 확률로 팀장 관찰 한 문장.'''
   teamlead_chance = 0.5 if first_reactor else 0.1
@@ -475,11 +509,20 @@ async def _maybe_teamlead_closing(
   try:
     chain_hint = ''
     if first_reactor:
+      topic_type = '외부 기술/업계 동향' if conversation_mode == 'external_trend' else '코드/업무'
       chain_hint = (
-        f'\n[방금 돈 의논]\n{display_name(speaker_name)} → {display_name(first_reactor)} 순으로 '
+        f'\n[방금 돈 의논 — {topic_type} 토론]\n'
+        f'{display_name(speaker_name)} → {display_name(first_reactor)} 순으로 '
         f'반박·보완이 오갔다.\n'
-        f'논의 내용에 대한 관찰·관점 한 문장. 결론이 모호하면 [PASS].\n'
       )
+      if conversation_mode == 'external_trend':
+        chain_hint += (
+          f'외부 동향에 대한 토론이었다. 팀장으로서 전략적 관점에서 한마디: '
+          f'"이 동향이 우리 팀 방향에 어떤 의미가 있는지" 또는 "어떤 부분을 더 지켜봐야 하는지". '
+          f'결론이 모호하면 [PASS].\n'
+        )
+      else:
+        chain_hint += f'논의 내용에 대한 관찰·관점 한 문장. 결론이 모호하면 [PASS].\n'
     teamlead_msg = await run_gemini(
       prompt=(
         f'당신은 팀장 잡스입니다. AI 에이전트로 물리 경험 없음.\n'
@@ -589,13 +632,17 @@ async def run_loop(office: Any) -> None:
 
       first_reactor = ''
       speaker_name = ''
+      last_mode = 'improvement'
       for speaker_name in speakers:
-        first_reactor = await _run_speaker_chain(
+        first_reactor, last_mode = await _run_speaker_chain(
           office, speaker_name, topic, candidates, code_ctx,
           recent_logs=deep_logs,
         )
 
-      await _maybe_teamlead_closing(office, recent_context, speaker_name, first_reactor)
+      await _maybe_teamlead_closing(
+        office, recent_context, speaker_name, first_reactor,
+        conversation_mode=last_mode,
+      )
 
     except Exception:
       logger.debug("자발적 활동 루프 에러", exc_info=True)
@@ -782,11 +829,27 @@ async def autonomous_react(
   reactor_name: str,
   prior_speaker: str,
   prior_message: str,
+  conversation_mode: str = 'improvement',
 ) -> str:
   '''자발적 대화 1단 반응 — 구체 보완/반론만, 빈 맞장구는 [PASS].'''
   try:
-    react_resp = await run_gemini(
-      prompt=(
+    if conversation_mode == 'external_trend':
+      prompt = (
+        f'당신은 {display_name(reactor_name)}입니다. AI 에이전트이며 물리 경험 없음.\n'
+        f'동료 {display_name(prior_speaker)}가 외부 기술/업계 동향에 대해 의견을 냈습니다:\n'
+        f'"{prior_message}"\n\n'
+        f'[반응 규칙 — 외부 동향 토론]\n'
+        f'- 다음 중 하나의 관점으로 반응하라:\n'
+        f'  (a) 찬성 + 구체적 근거 추가 (다른 사례/수치/경험)\n'
+        f'  (b) 반대/우려 + 왜 우리 팀에 맞지 않는지 근거\n'
+        f'  (c) 보완 + 놓친 측면이나 관련 동향 추가\n'
+        f'- 빈 동의("맞아요", "좋네요") 절대 금지 → [PASS]\n'
+        f'- 커피/점심/날씨 등 물리 경험 금지 → [PASS]\n'
+        f'- 40자 이상, 구체 도구명/수치/사례 포함. 없으면 [PASS].\n'
+        f'50%는 [PASS]가 정답.'
+      )
+    else:
+      prompt = (
         f'당신은 {display_name(reactor_name)}입니다. AI 에이전트이며 물리 경험 없음.\n'
         f'동료 {display_name(prior_speaker)}의 발언: "{prior_message}"\n\n'
         f'[반응 규칙 — 엄격]\n'
@@ -795,13 +858,14 @@ async def autonomous_react(
         f'- 오직 허용: 본인 전문 영역에서 구체적 보완/반론/추가 정보 (수치·파일명·기법)\n'
         f'- 30자 이상, 구체 근거 포함. 없으면 [PASS].\n'
         f'70%는 [PASS]가 정답.'
-      ),
-    )
+      )
+    react_resp = await run_gemini(prompt=prompt)
     react_text = react_resp.strip().split('\n')[0].strip()
+    min_len = 40 if conversation_mode == 'external_trend' else 30
     if (
       react_text
       and '[PASS]' not in react_text.upper()
-      and len(react_text) >= 30
+      and len(react_text) >= min_len
       and not any(p in react_text for p in (
         '굿굿', '맞아요', '좋네요', '좋아요', '든든하', '기대돼',
         '커피', '점심', '날씨', '퇴근', '출근',
@@ -818,11 +882,24 @@ async def autonomous_closing(
   original_message: str,
   challenger: str,
   challenge: str,
+  conversation_mode: str = 'improvement',
 ) -> str:
   '''자발적 대화 2단 — 원 발언자의 재반론/수용 결론.'''
   try:
-    resp = await run_gemini(
-      prompt=(
+    if conversation_mode == 'external_trend':
+      prompt = (
+        f'당신은 {display_name(original_speaker)}입니다. AI 에이전트.\n'
+        f'당신의 원 발언 (외부 동향 분석): "{original_message}"\n'
+        f'동료 {display_name(challenger)}의 반응: "{challenge}"\n\n'
+        f'[규칙 — 외부 동향 토론 결론]\n'
+        f'- 동료의 반응을 받아서 **"그래서 우리 팀은 뭘 해야 하는가"** 방향으로 결론\n'
+        f'- 선택지: (a) 구체적 실험/검토 제안, (b) 시기상조라는 판단 + 근거, (c) 부분 도입 범위 제안\n'
+        f'- "감사합니다", "좋은 지적" 같은 빈 수용 금지 → [PASS]\n'
+        f'- 선언형 "도입합니다/적용합니다" 금지. 의견/제안만.\n'
+        f'- 40자 이상, 구체 근거 필수. 없으면 [PASS].'
+      )
+    else:
+      prompt = (
         f'당신은 {display_name(original_speaker)}입니다. AI 에이전트.\n'
         f'당신의 원 발언: "{original_message}"\n'
         f'동료 {display_name(challenger)}의 반박/보완: "{challenge}"\n\n'
@@ -831,13 +908,14 @@ async def autonomous_closing(
         f'- "감사합니다", "좋은 지적", "맞네요" 같은 빈 수용 금지 → [PASS]\n'
         f'- 수용한다면 무엇을 어떻게 바꾸겠다는지 구체로. 재반론이면 어느 지점에 동의 못하는지.\n'
         f'- 근거 없으면 [PASS].'
-      ),
-    )
+      )
+    resp = await run_gemini(prompt=prompt)
     text = resp.strip().split('\n')[0].strip()
+    min_len = 40 if conversation_mode == 'external_trend' else 30
     if (
       text
       and '[PASS]' not in text.upper()
-      and len(text) >= 30
+      and len(text) >= min_len
       and not any(p in text for p in (
         '굿굿', '맞아요', '좋네요', '좋은 지적', '든든하', '감사합니다', '감사해요',
         '커피', '점심', '날씨',

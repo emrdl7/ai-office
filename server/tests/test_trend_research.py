@@ -154,3 +154,197 @@ async def test_maybe_research_rejects_invalid_target(monkeypatch, office_and_pat
     monkeypatch.setattr(trend_research, 'run_gemini', fake_gemini)
     ok = await trend_research.maybe_research(office, 'developer')
     assert ok is False
+
+
+# ── 예외 처리 / 비정상 응답 케이스 ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_maybe_research_handles_web_search_network_error(monkeypatch, office_and_paths):
+    """web_search가 네트워크 예외를 던지면 False를 반환하고 crash하지 않는다."""
+    office = office_and_paths
+
+    def failing_search(query: str, max_results: int = 5) -> str:
+        raise ConnectionError('네트워크 연결 실패')
+
+    monkeypatch.setattr('harness.file_reader.web_search', failing_search)
+
+    async def fake_gemini(prompt: str = '', **_kw) -> str:
+        raise AssertionError('LLM이 호출되면 안 됨 — 검색 자체가 실패했으므로')
+
+    monkeypatch.setattr(trend_research, 'run_gemini', fake_gemini)
+    ok = await trend_research.maybe_research(office, 'developer')
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_research_handles_web_search_timeout(monkeypatch, office_and_paths):
+    """web_search가 TimeoutError를 던져도 False를 반환하고 정상 종료한다."""
+    office = office_and_paths
+
+    def timeout_search(query: str, max_results: int = 5) -> str:
+        raise TimeoutError('요청 시간 초과')
+
+    monkeypatch.setattr('harness.file_reader.web_search', timeout_search)
+    monkeypatch.setattr(trend_research, 'run_gemini', AsyncMock(side_effect=AssertionError))
+    ok = await trend_research.maybe_research(office, 'qa')
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_research_handles_gemini_exception(monkeypatch, office_and_paths):
+    """run_gemini가 예외를 던지면 insight가 None이 되어 False를 반환한다."""
+    office = office_and_paths
+
+    monkeypatch.setattr(
+        'harness.file_reader.web_search',
+        lambda q, m=5: (
+            '1. 충분히 긴 검색 결과 제목입니다\n'
+            '   https://example.com/result\n'
+            '   This content should be long enough to pass the 80-char guard check.'
+        ),
+    )
+
+    async def failing_gemini(prompt: str = '', **_kw) -> str:
+        raise RuntimeError('Gemini API 503 Service Unavailable')
+
+    monkeypatch.setattr(trend_research, 'run_gemini', failing_gemini)
+    ok = await trend_research.maybe_research(office, 'planner')
+    assert ok is False
+    # Gemini 실패해도 검색어는 사용된 것으로 마킹되어야 함
+    state = json.loads(trend_research._STATE_PATH.read_text())
+    assert state['queries_today'].get('planner')
+
+
+@pytest.mark.asyncio
+async def test_maybe_research_handles_malformed_json_from_gemini(monkeypatch, office_and_paths):
+    """Gemini가 유효하지 않은 JSON을 반환해도 crash 없이 False를 반환한다."""
+    office = office_and_paths
+
+    monkeypatch.setattr(
+        'harness.file_reader.web_search',
+        lambda q, m=5: (
+            '1. 검색 결과\n   https://example.com\n'
+            '   길이가 충분히 길어야 80자 길이 가드를 통과합니다. 테스트용 텍스트.'
+        ),
+    )
+
+    async def malformed_gemini(prompt: str = '', **_kw) -> str:
+        return '{invalid json: not closed'
+
+    monkeypatch.setattr(trend_research, 'run_gemini', malformed_gemini)
+    ok = await trend_research.maybe_research(office, 'designer')
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_research_handles_gemini_empty_response(monkeypatch, office_and_paths):
+    """Gemini가 빈 문자열을 반환해도 False를 반환하고 crash하지 않는다."""
+    office = office_and_paths
+
+    monkeypatch.setattr(
+        'harness.file_reader.web_search',
+        lambda q, m=5: (
+            '1. 검색 결과 항목입니다\n   https://example.com\n'
+            '   테스트용 충분히 긴 스니펫 텍스트 내용입니다.'
+        ),
+    )
+
+    async def empty_gemini(prompt: str = '', **_kw) -> str:
+        return ''
+
+    monkeypatch.setattr(trend_research, 'run_gemini', empty_gemini)
+    ok = await trend_research.maybe_research(office, 'qa')
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_extract_insight_returns_none_on_gemini_exception(monkeypatch):
+    """_extract_insight: run_gemini 예외 → None 반환, 예외 전파 없음."""
+
+    async def failing_gemini(prompt: str = '', **_kw) -> str:
+        raise OSError('API 연결 거부')
+
+    monkeypatch.setattr(trend_research, 'run_gemini', failing_gemini)
+    result = await trend_research._extract_insight('developer', 'test query', '검색 결과 텍스트')
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_extract_insight_returns_none_on_partial_json(monkeypatch):
+    """_extract_insight: Gemini가 필수 필드 누락 JSON을 반환하면 None."""
+
+    async def partial_gemini(prompt: str = '', **_kw) -> str:
+        # rule 필드가 너무 짧음 (30자 미만)
+        return json.dumps({
+            'target_agent': 'developer',
+            'headline': '짧은 규칙',
+            'rule': '짧다',
+            'evidence': '근거',
+            'source': 'https://example.com',
+        })
+
+    monkeypatch.setattr(trend_research, 'run_gemini', partial_gemini)
+    result = await trend_research._extract_insight('developer', 'query', '검색 결과 텍스트')
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_research_for_discussion_handles_all_sources_failing(monkeypatch, office_and_paths):
+    """research_for_discussion: 검색/RSS 모두 실패해도 None 반환, crash 없음."""
+    import random as _random
+
+    monkeypatch.setattr(_random, 'random', lambda: 0.1)  # 경로 1: 동적 검색어 강제
+
+    async def failing_gemini(prompt: str = '', **_kw) -> str:
+        raise ConnectionError('Gemini 연결 실패')
+
+    monkeypatch.setattr(trend_research, 'run_gemini', failing_gemini)
+
+    def failing_search(query: str, max_results: int = 5) -> str:
+        raise ConnectionError('웹 검색 실패')
+
+    monkeypatch.setattr('harness.file_reader.web_search', failing_search)
+
+    result = await trend_research.research_for_discussion('developer')
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_research_for_discussion_handles_rss_failure(monkeypatch, office_and_paths):
+    """research_for_discussion: RSS 피드가 모두 실패해도 None 반환."""
+    import random as _random
+
+    monkeypatch.setattr(_random, 'random', lambda: 0.6)  # 경로 2: RSS 강제
+
+    def failing_rss(max_items: int = 8) -> list:
+        raise ConnectionError('RSS 네트워크 오류')
+
+    monkeypatch.setattr(trend_research, '_fetch_rss_items', failing_rss)
+
+    result = await trend_research.research_for_discussion('qa')
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_research_for_discussion_handles_summarize_exception(monkeypatch, office_and_paths):
+    """_summarize_for_discussion이 예외를 던지면 None을 반환한다."""
+    import random as _random
+
+    monkeypatch.setattr(_random, 'random', lambda: 0.9)  # 경로 3: 고정 뱅크
+
+    monkeypatch.setattr(
+        'harness.file_reader.web_search',
+        lambda q, m=5: (
+            '1. 충분히 긴 검색 결과 제목\n   https://example.com\n'
+            '   This is long enough content to pass the minimum length guard of 80 characters.'
+        ),
+    )
+
+    async def failing_summarize(speaker_name: str, raw: str, source: str) -> None:
+        raise RuntimeError('요약 LLM 실패')
+
+    monkeypatch.setattr(trend_research, '_summarize_for_discussion', failing_summarize)
+
+    result = await trend_research.research_for_discussion('planner')
+    assert result is None
