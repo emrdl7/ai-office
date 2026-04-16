@@ -1,6 +1,6 @@
 // 채팅방 — 메신저 대화 UI + 파일첨부 + 이미지 썸네일 + 링크 프리뷰
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from '../config/team'
 import { AGENT_IDS } from '../config/team'
@@ -120,11 +120,12 @@ async function fetchAgents(): Promise<Agent[]> {
 
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
+  const qc = useQueryClient()
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
     queryFn: fetchAgents,
-    refetchInterval: 2000,
+    staleTime: 10000,
   })
   const workingAgents = agents.filter((a) => a.status === 'working' || a.status === 'meeting')
   const [message, setMessage] = useState('')
@@ -171,6 +172,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     ws.onmessage = (event) => {
       try {
         const log = JSON.parse(event.data) as LogEntry
+        if (log.event_type === 'status_change') {
+          qc.invalidateQueries({ queryKey: ['agents'] })
+          return
+        }
         if (log.event_type === 'reaction_update') {
           return
         }
@@ -205,7 +210,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       } catch { /* 무시 */ }
     }
     }).catch(() => {})
-  }, [addLog])
+  }, [addLog, qc])
 
   useEffect(() => {
     connect()

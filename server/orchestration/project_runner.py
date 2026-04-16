@@ -316,6 +316,7 @@ async def _handle_project(
   user_input: str,
   analysis: str,
   reference_context: str,
+  pre_project_type: str = '',
 ) -> dict[str, Any]:
   '''프로젝트 — 단계별 진행 (기획 → 디자인 → 개발) + 중간 확인.
 
@@ -327,9 +328,12 @@ async def _handle_project(
   if office._context_summary:
     briefing = f'{analysis}\n\n[이전 논의 요약]\n{office._context_summary}'
 
-  # 프로젝트 유형 분류 — 대화 맥락 포함
-  type_context = office._context_summary or analysis
-  project_type = await classify_project_type(user_input, context=type_context[:500])
+  # 프로젝트 유형 분류 — classify_intent에서 이미 분류됐으면 LLM 호출 생략
+  if pre_project_type:
+    project_type = ProjectType(pre_project_type) if pre_project_type in {t.value for t in ProjectType} else ProjectType.GENERAL
+  else:
+    type_context = office._context_summary or analysis
+    project_type = await classify_project_type(user_input, context=type_context[:500])
   phases = get_phases(project_type)
   participants = get_meeting_participants(project_type)
 

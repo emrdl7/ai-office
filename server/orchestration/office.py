@@ -447,6 +447,7 @@ class Office:
         user_input,
         intent_result.analysis,
         reference_context,
+        pre_project_type=intent_result.project_type,
       )
 
     if intent_result.intent == IntentType.JOB:
@@ -542,8 +543,9 @@ class Office:
     user_input: str,
     analysis: str,
     reference_context: str,
+    pre_project_type: str = '',
   ) -> dict[str, Any]:
-    return await project_runner._handle_project(self, user_input, analysis, reference_context)
+    return await project_runner._handle_project(self, user_input, analysis, reference_context, pre_project_type)
 
   async def _continue_project(self, user_answer: str) -> dict[str, Any]: return await project_runner._continue_project(self, user_answer)
 

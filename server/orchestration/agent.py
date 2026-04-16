@@ -63,6 +63,9 @@ class Agent:
         elif log['agent_id'] == self.name and data.get('dm'):
           self._conversation_history.append({'role': 'assistant', 'content': log['message']})
       self._conversation_history = self._conversation_history[-10:]
+      # user로 시작해야 LLM이 올바르게 해석 — assistant 앞 잘라내기
+      while self._conversation_history and self._conversation_history[0]['role'] == 'assistant':
+        self._conversation_history.pop(0)
     except Exception:
       logger.debug("대화 이력 복원 실패", exc_info=True)
 

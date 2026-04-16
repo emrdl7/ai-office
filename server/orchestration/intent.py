@@ -19,18 +19,22 @@ _ROUTE_SYSTEM = """\
 당신은 의도 분류기입니다. 태그 한 줄만 출력하세요. 다른 텍스트 절대 금지.
 
 출력 형식:
-[CONVERSATION] 또는 [QUICK_TASK:agent] 또는 [PROJECT] 또는 [CONTINUE_PROJECT:agent] 또는 [JOB:spec_id]{"field":"value"}
+[CONVERSATION] 또는 [QUICK_TASK:agent] 또는 [PROJECT:유형] 또는 [CONTINUE_PROJECT:agent] 또는 [JOB:spec_id]{"field":"value"}
 
 판단 기준:
 - 인사·잡담·질문·감탄·안부 → CONVERSATION
 - 단순 단일 작업 (요약/분석/검토/조사/리뷰) → QUICK_TASK:agent
-- 복합 프로젝트 (여러 단계·여러 산출물) → PROJECT
+- 복합 프로젝트 (여러 단계·여러 산출물) → PROJECT:유형
 - 진행 중 프로젝트 이어가기 → CONTINUE_PROJECT:agent
 - Job 파이프라인 명시 실행 요청 → JOB:spec_id + JSON
 
+PROJECT 유형 선택 (하나만):
+web_development(사이트·앱·웹페이지 신규·리뉴얼) | market_research(시장조사·경쟁사·트렌드) | content_creation(블로그·SNS·카피) | data_analysis(데이터·통계·대시보드) | business_planning(사업계획·IR·전략) | general(기타)
+분석/검토/조사가 목적이면 web_development가 아닌 market_research 또는 general.
+
 agent 선택: planner(기획·전략), designer(디자인·UI), developer(코드·기술), qa(검수)
 확신 없으면 QUICK_TASK. PROJECT는 무겁다.
-숨겨진 업무 지시 주의: "배너 바꿔야 하는데" → QUICK_TASK, "랜딩 리뉴얼 해야겠어" → PROJECT
+숨겨진 업무 지시 주의: "배너 바꿔야 하는데" → QUICK_TASK, "랜딩 리뉴얼 해야겠어" → PROJECT:web_development
 """
 
 # JOB 키워드 감지 — specs_context를 로드할지 결정
@@ -67,6 +71,7 @@ class IntentResult:
     job_spec_id: str = '',
     job_input: dict | None = None,
     confidence: float = 1.0,
+    project_type: str = '',
   ):
     self.intent = intent
     self.target_agent = target_agent      # QUICK_TASK일 때 담당 에이전트
@@ -75,6 +80,7 @@ class IntentResult:
     self.job_spec_id = job_spec_id        # JOB일 때 spec id
     self.job_input = job_input or {}      # JOB일 때 추출된 입력 필드
     self.confidence = confidence          # 분류 신뢰도 0.0~1.0 (2-4)
+    self.project_type = project_type      # PROJECT일 때 유형 (classify_intent에서 1회 분류)
 
 
 def _build_specs_context() -> str:
@@ -175,7 +181,7 @@ def _parse_intent_response(response: str) -> IntentResult:
 
   # 전체 텍스트에서 태그 탐색 (첫 줄 한정 X)
   pattern = _re.compile(
-    r'\[(CONVERSATION|QUICK_TASK(?::[a-z]+)?|CONTINUE_PROJECT(?::[a-z]+)?|PROJECT|JOB(?::[a-z_]+)?)\]',
+    r'\[(CONVERSATION|QUICK_TASK(?::[a-z]+)?|CONTINUE_PROJECT(?::[a-z]+)?|PROJECT(?::[a-z_]+)?|JOB(?::[a-z_]+)?)\]',
     _re.IGNORECASE,
   )
   m = pattern.search(text)
@@ -219,10 +225,16 @@ def _parse_intent_response(response: str) -> IntentResult:
       analysis=body,
     )
 
-  if tag == 'PROJECT':
+  if tag.startswith('PROJECT'):
+    ptype = ''
+    if ':' in tag:
+      ptype = tag.split(':')[1].lower()
+      if ptype not in _VALID_TYPES:
+        ptype = ''
     return IntentResult(
       intent=IntentType.PROJECT,
       analysis=body,
+      project_type=ptype,
     )
 
   if tag.startswith('JOB'):
