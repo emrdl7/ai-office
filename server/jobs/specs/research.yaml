@@ -1,0 +1,119 @@
+id: research
+title: 리서치
+description: 경쟁사 분석·UX 트렌드·사용성 리서치를 수행하고 리포트를 생성한다.
+version: 1
+input_fields:
+  - topic      # 필수: 리서치 주제
+  - scope      # 선택: competitor | trend | usability (기본 competitor)
+  - depth      # 선택: light | standard | deep (기본 standard)
+
+steps:
+  - id: plan
+    agent: planner
+    tier: nano
+    output_key: plan
+    tools: []
+    prompt: |
+      당신은 UX 리서치 전문가입니다.
+      사용자의 리서치 요청을 분석해 구체적인 조사 계획을 수립하세요.
+
+      [요청]
+      주제: {topic}
+      범위: {scope}
+      깊이: {depth}
+      추가 메모: {notes}
+
+      다음을 JSON으로만 출력하세요 (설명 없이):
+      {
+        "summary": "리서치 목적 1문장",
+        "queries": ["검색어1", "검색어2", "검색어3"],
+        "focus_points": ["핵심 관찰 포인트1", "핵심 관찰 포인트2"],
+        "output_sections": ["섹션1", "섹션2"]
+      }
+
+  - id: gather
+    agent: researcher
+    tier: research
+    output_key: findings
+    tools:
+      - web_search
+      - url_fetch
+    prompt: |
+      당신은 UX 리서치 전문가입니다.
+      아래 리서치 계획에 따라 정보를 수집하고 핵심 내용을 정리하세요.
+
+      [리서치 계획]
+      {plan}
+
+      [지침]
+      - 제공된 검색어로 최신 정보를 수집하세요
+      - 각 발견 사항은 출처(URL)와 함께 기록하세요
+      - 중복 내용은 통합하세요
+      - 한국어로 작성하세요
+
+      수집된 내용을 마크다운으로 정리해 출력하세요.
+
+  - id: synthesize
+    agent: planner
+    tier: standard
+    output_key: insights
+    tools: []
+    prompt: |
+      당신은 UX 리서치 전문가입니다.
+      수집된 데이터를 분석해 핵심 인사이트를 도출하세요.
+
+      [리서치 계획]
+      {plan}
+
+      [수집된 데이터]
+      {findings}
+
+      다음 형식으로 인사이트를 작성하세요:
+      ## 핵심 발견
+      (3-5개 핵심 발견, 각각 구체적 근거 포함)
+
+      ## 패턴 및 트렌드
+      (공통적으로 나타나는 패턴)
+
+      ## 시사점
+      (우리 서비스/업무에 적용 가능한 시사점)
+
+  - id: report
+    agent: planner
+    tier: standard
+    output_key: report
+    tools: []
+    prompt: |
+      당신은 UX 리서치 전문가입니다.
+      분석 결과를 전달력 있는 리포트로 작성하세요.
+
+      [주제]
+      {topic}
+
+      [인사이트]
+      {insights}
+
+      [수집된 데이터]
+      {findings}
+
+      다음 구조로 완성된 리포트를 작성하세요:
+      # {topic} 리서치 리포트
+
+      ## 개요
+      ## 주요 발견
+      ## 상세 분석
+      ## 권장사항
+      ## 참고 자료
+
+      전문적이고 읽기 쉽게, 한국어로 작성하세요.
+
+gates:
+  - id: scope_review
+    after_step: plan
+    prompt: "리서치 범위와 검색 방향을 확인하세요. 수정이 필요하면 피드백을 남겨주세요."
+    auto_advance_after: null
+
+  - id: final_review
+    after_step: report
+    prompt: "리서치 리포트를 검토하세요. 승인하면 완료 처리됩니다."
+    auto_advance_after: 86400
