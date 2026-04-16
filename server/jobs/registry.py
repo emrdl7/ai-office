@@ -56,6 +56,7 @@ def _parse(data: dict[str, Any]) -> JobSpec:
             parallel=s.get('parallel', False),
             output_key=s.get('output_key', s['id']),
             revision_prompt_template=s.get('revision_prompt', ''),
+            system_prompt=s.get('system', ''),
         )
         for s in data.get('steps', [])
     ]

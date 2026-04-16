@@ -461,6 +461,7 @@ async def _run_step(
         text, model_used = await model_router.run(
             tier=step.tier,
             prompt=prompt,
+            system=step.system_prompt,
             agent_id=f'{step.agent}:{step.id}',
             timeout=180.0,
         )

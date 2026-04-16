@@ -34,13 +34,26 @@ steps:
         "severity_criteria": "심각도 판단 기준 1문장"
       }
 
-  - id: heuristic_review
+    revision_prompt: |
+      아래 검토 계획을 추가 요청에 따라 조정하세요.
+
+      [기존 검토 계획]
+      {intake}
+
+      [수정 요청]
+      {revision_request}
+
+      수정된 JSON을 출력하세요.
+
+  - id: heuristic_scan
     agent: reviewer
-    tier: deep
+    tier: standard
     output_key: heuristic
+    system: |
+      당신은 닐슨 노먼 그룹 수준의 UX 리뷰 전문가입니다.
+      사용성 원칙에 따라 객관적으로 산출물을 평가합니다.
     tools: []
     prompt: |
-      당신은 UX 리뷰 전문가입니다.
       닐슨 노먼의 10가지 사용성 휴리스틱을 기반으로 아래 산출물을 검토하세요.
 
       [리뷰 대상]
@@ -49,7 +62,7 @@ steps:
       [검토 계획]
       {intake}
 
-      각 항목별로 Pass/Fail/N/A 판정과 근거를 작성하세요:
+      각 항목별로 Pass/Fail/N/A 판정과 간략한 근거를 작성하세요:
 
       ## 휴리스틱 검토
 
@@ -66,16 +79,46 @@ steps:
       | 9 | 오류 인식·진단·복구 지원 | | |
       | 10 | 도움말 및 문서 | | |
 
-      ## 주요 발견 사항
-      (Fail 항목 상세 설명)
+      ## Fail 항목 목록
+      (Fail 판정을 받은 항목만 간략히 나열)
+
+  - id: critical_triage
+    agent: reviewer
+    tier: deep
+    output_key: heuristic_critical
+    tools: []
+    prompt: |
+      아래 휴리스틱 스캔의 Fail 항목만 재검증하세요.
+      정말 Critical한 것 상위 3개만 심층 분석합니다.
+
+      [리뷰 대상]
+      {artifact}
+
+      [휴리스틱 스캔 결과]
+      {heuristic}
+
+      ## Critical 이슈 심층 분석 (최대 3개)
+
+      각 이슈에 대해:
+      1. **이슈**: 1문장 요약
+      2. **영향**: 사용자에게 미치는 실제 영향
+      3. **근거**: 해당 휴리스틱 원칙과의 구체적 충돌 지점
+      4. **수정안**: 구체적이고 실행 가능한 해결책
+
+      [출력 제약]
+      - 500단어 이내
+      - Critical 이슈 최대 3개에만 집중
+      - 각 이슈: 이슈·영향·근거·수정안 4줄 구조 준수
 
   - id: accessibility_audit
     agent: reviewer
     tier: standard
     output_key: a11y
+    system: |
+      당신은 WCAG 전문 접근성 감사관입니다.
+      WCAG 2.1 AA 기준을 철저히 적용해 감사합니다.
     tools: []
     prompt: |
-      당신은 접근성 전문가입니다.
       WCAG 2.1 AA 기준으로 아래 산출물을 감사하세요.
 
       [리뷰 대상]
@@ -118,18 +161,21 @@ steps:
     agent: reviewer
     tier: standard
     output_key: improvements
+    system: |
+      당신은 닐슨 노먼 그룹 수준의 UX 리뷰 전문가입니다.
+      검토 결과를 실행 가능한 개선 계획으로 전환합니다.
     tools: []
     prompt: |
-      당신은 UX 리뷰 전문가입니다.
       검토 결과를 바탕으로 우선순위별 개선 계획을 수립하세요.
 
       [휴리스틱 검토]
       {heuristic}
 
+      [Critical 이슈]
+      {heuristic_critical}
+
       [접근성 감사]
       {a11y}
-
-      다음 형식으로 작성하세요:
 
       ## 개선 우선순위
 
@@ -148,13 +194,29 @@ steps:
       ## 개선 효과 예상
       (개선 시 기대 효과)
 
+    revision_prompt: |
+      아래 개선 계획을 검토자 피드백에 따라 수정하세요.
+
+      [기존 개선 계획]
+      {improvements}
+
+      [수정 요청]
+      {revision_request}
+
+      지침:
+      - 수정 요청에서 지적한 부분만 수정하고 나머지는 원문 그대로 유지하세요
+      - 변경된 항목 앞에 (수정됨) 표시를 붙이세요
+      수정된 전체 개선 계획을 완성된 형태로 출력하세요.
+
   - id: report
     agent: reviewer
     tier: standard
     output_key: report
+    system: |
+      당신은 닐슨 노먼 그룹 수준의 UX 리뷰 전문가입니다.
+      전문적이고 실행 가능한 리뷰 리포트를 작성합니다.
     tools: []
     prompt: |
-      당신은 UX 리뷰 전문가입니다.
       검토 결과를 완성된 리뷰 리포트로 작성하세요.
 
       [리뷰 대상]
@@ -162,6 +224,9 @@ steps:
 
       [휴리스틱 검토]
       {heuristic}
+
+      [Critical 이슈]
+      {heuristic_critical}
 
       [접근성 감사]
       {a11y}
@@ -173,12 +238,27 @@ steps:
 
       ## 1. 개요 및 평가 요약
       ## 2. 휴리스틱 검토 결과
-      ## 3. 접근성 감사 결과
-      ## 4. 우선순위별 개선 사항
-      ## 5. 빠른 개선안 (Quick Wins)
-      ## 6. 결론 및 다음 단계
+      ## 3. Critical 이슈 심층 분석
+      ## 4. 접근성 감사 결과
+      ## 5. 우선순위별 개선 사항
+      ## 6. 빠른 개선안 (Quick Wins)
+      ## 7. 결론 및 다음 단계
 
       전문적이고 실행 가능하게 작성하세요.
+
+    revision_prompt: |
+      아래 리뷰 리포트를 검토자 피드백에 따라 수정하세요.
+
+      [기존 리뷰 리포트]
+      {report}
+
+      [수정 요청]
+      {revision_request}
+
+      지침:
+      - 수정 요청에서 지적한 부분만 수정하고 나머지는 원문 그대로 유지하세요
+      - 변경된 섹션 앞에 (수정됨) 표시를 붙이세요
+      수정된 전체 리포트를 완성된 형태로 출력하세요.
 
 gates:
   - id: scope_confirm
