@@ -238,49 +238,17 @@ async def _run_step(job_id: str, step: StepSpec, context: dict[str, str]) -> Ste
 
 async def _run_tools(tool_ids: list[str], context: dict[str, str]) -> str:
     """도구 목록을 실행하고 결과를 합친다."""
+    from jobs.tool_registry import execute_tool
+
     results: list[str] = []
     for tid in tool_ids:
         try:
-            result = await asyncio.to_thread(_execute_tool, tid, context)
+            result = await asyncio.to_thread(execute_tool, tid, context)
             if result:
                 results.append(f'[{tid}]\n{result}')
         except Exception as e:
             logger.warning('Tool 실행 실패: %s — %s', tid, e)
     return '\n\n'.join(results)
-
-
-def _execute_tool(tool_id: str, context: dict[str, str]) -> str:
-    """동기 도구 실행 (to_thread에서 실행)."""
-    if tool_id == 'web_search':
-        from harness.file_reader import web_search
-        # plan에서 queries 추출 시도
-        import json as _json
-        import re
-        plan_text = context.get('plan', '')
-        queries: list[str] = []
-        try:
-            m = re.search(r'\{[\s\S]*\}', plan_text)
-            if m:
-                plan_data = _json.loads(m.group())
-                queries = plan_data.get('queries', [])
-        except Exception:
-            pass
-        if not queries:
-            queries = [context.get('topic', '')]
-        parts = []
-        for q in queries[:3]:  # 최대 3개 쿼리
-            parts.append(web_search(q, max_results=5))
-        return '\n\n'.join(parts)
-
-    if tool_id == 'url_fetch':
-        from harness.file_reader import _fetch_web_page
-        url = context.get('url', '')
-        if url:
-            return _fetch_web_page(url)
-        return ''
-
-    logger.warning('알 수 없는 도구: %s', tool_id)
-    return ''
 
 
 def _fill(template: str, context: dict[str, str]) -> str:

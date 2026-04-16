@@ -31,6 +31,24 @@ async def list_specs() -> list[dict[str, Any]]:
     ]
 
 
+@router.get('/api/jobs/tools')
+async def list_tools() -> list[dict[str, Any]]:
+    """사용 가능한 Tool 목록."""
+    from jobs.tool_registry import list_tools as _list
+    return _list()
+
+
+@router.patch('/api/jobs/tools/{tool_id}')
+async def toggle_tool(tool_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """도구 활성화/비활성화 (run_shell 등 위험 도구 관리용)."""
+    from jobs.tool_registry import _BUILTIN_TOOLS
+    if tool_id not in _BUILTIN_TOOLS:
+        raise HTTPException(status_code=404, detail=f'도구를 찾을 수 없습니다: {tool_id}')
+    enabled = body.get('enabled', True)
+    _BUILTIN_TOOLS[tool_id].enabled = bool(enabled)
+    return {'id': tool_id, 'enabled': _BUILTIN_TOOLS[tool_id].enabled}
+
+
 @router.get('/api/jobs/gates/pending')
 async def pending_gates() -> list[dict[str, Any]]:
     """승인 대기 중인 Gate 전체 — Gate Inbox용."""
