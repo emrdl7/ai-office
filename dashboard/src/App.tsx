@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useStore } from './store'
 import { Sidebar } from './components/Sidebar'
 import { ChatRoom } from './components/ChatRoom'
-import { ArtifactModal } from './components/ArtifactModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { JobBoard } from './components/JobBoard'
 import { GateInbox } from './components/GateInbox'
@@ -19,7 +18,7 @@ const queryClient = new QueryClient({
 })
 
 function MessengerApp() {
-  const { theme, showArtifacts, activeChannel } = useStore()
+  const { theme, activeChannel } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -74,9 +73,6 @@ function MessengerApp() {
           <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
         )}
       </div>
-
-      {/* 산출물 모달 */}
-      {showArtifacts && <ArtifactModal />}
 
     </div>
   )

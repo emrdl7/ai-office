@@ -3,9 +3,11 @@ title: 리서치
 description: 경쟁사 분석·UX 트렌드·사용성 리서치를 수행하고 리포트를 생성한다.
 version: 1
 input_fields:
-  - topic      # 필수: 리서치 주제
-  - scope      # 선택: competitor | trend | usability (기본 competitor)
-  - depth      # 선택: light | standard | deep (기본 standard)
+  - topic
+  - scope
+  - depth
+required_fields:
+  - topic
 
 steps:
   - id: plan
@@ -110,10 +112,10 @@ steps:
 gates:
   - id: scope_review
     after_step: plan
-    prompt: "리서치 범위와 검색 방향을 확인하세요. 수정이 필요하면 피드백을 남겨주세요."
+    prompt: "리서치 계획을 확인하세요. [승인] 하면 정보 수집을 시작합니다. 검색 범위나 방향을 바꾸고 싶으면 피드백을 입력하고 [수정 후 재검토]를 선택하세요."
     auto_advance_after: null
 
   - id: final_review
     after_step: report
-    prompt: "리서치 리포트를 검토하세요. 승인하면 완료 처리됩니다."
+    prompt: "리서치 리포트를 확인하세요. 이상 없으면 승인, 추가 분석이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
     auto_advance_after: 86400

@@ -43,7 +43,7 @@ async def list_specs() -> list[dict[str, Any]]:
     from jobs.registry import all_specs
     return [
         {'id': s.id, 'title': s.title, 'description': s.description,
-         'input_fields': s.input_fields, 'step_count': len(s.steps)}
+         'input_fields': s.input_fields, 'required_fields': s.required_fields, 'step_count': len(s.steps)}
         for s in all_specs()
     ]
 
@@ -143,7 +143,7 @@ async def submit_job(
         raise HTTPException(status_code=422, detail='input 필드가 유효한 JSON이 아닙니다')
 
     # 필수 입력 검증
-    missing = [f for f in spec.input_fields if f not in input_data and f != 'notes']
+    missing = [f for f in spec.required_fields if f not in input_data]
     if missing:
         raise HTTPException(
             status_code=422,

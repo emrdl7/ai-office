@@ -81,5 +81,6 @@ export interface JobSpec {
   title: string
   description: string
   input_fields: string[]
+  required_fields: string[]
   step_count: number
 }

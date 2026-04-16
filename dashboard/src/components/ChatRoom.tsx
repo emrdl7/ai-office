@@ -5,7 +5,6 @@ import { useStore } from '../store'
 import { AGENT_PROFILE } from '../config/team'
 import { AGENT_IDS } from '../config/team'
 import { MatIcon } from './icons'
-import { ProjectStatusBar } from './ProjectStatusBar'
 import type { Agent, LogEntry, ChannelId } from '../types'
 import Markdown from 'react-markdown'
 
@@ -130,7 +129,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const [previews, setPreviews] = useState<string[]>([])
   const [sending, setSending] = useState(false)
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
-  const [activeProject, setActiveProject] = useState<{ id: string; title: string } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const sendLock = useRef(false)
@@ -161,14 +159,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           if (filtered.length > 0) setLogs(filtered)
         })
         .catch(() => {})
-      // 활성 프로젝트 복원
-      fetch('/api/project/active')
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.project_id) setActiveProject({ id: data.project_id, title: data.title })
-          else setActiveProject(null)
-        })
-        .catch(() => {})
     }
     ws.onclose = () => {
       setConnected(false)
@@ -185,13 +175,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           return
         }
         if (log.event_type === 'project_update') {
-          const title = log.message.replace(/^📂\s*(새 프로젝트|프로젝트 이어가기):\s*/, '')
-          if (title) setActiveProject({ id: log.agent_id, title })
           addLog(log)
           return
         }
         if (log.event_type === 'project_close') {
-          setActiveProject(null)
           return
         }
         if (log.event_type === 'typing') {
@@ -418,17 +405,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
       </header>
 
-      {/* 활성 프로젝트 표시 */}
-      {activeProject && (
-        <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/20
-          border-b border-blue-100 dark:border-blue-800
-          flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
-          <MatIcon name="folder_open" className="text-[14px]" />
-          <span className="font-medium">{activeProject.title}</span>
-        </div>
-      )}
-
-      <ProjectStatusBar />
 
       {/* 검색 바 */}
       {showSearch && (
@@ -817,7 +793,6 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
   const isAutonomous = log.event_type === 'autonomous'
   const isColleagueQ = log.event_type === 'colleague_question'
   const content = log.message.replace(/^\[.*?\]\s*/, '')
-  const artifactPaths = (log.data?.artifacts as string[]) ?? []
   const needsInput = !!log.data?.needs_input
   const reactions = (log.data?.reactions as Record<string, string[]>) ?? {}
 
@@ -934,40 +909,6 @@ function MessageBubble({ log, isResponse, onImageClick }: { log: LogEntry; isRes
         </div>
       )}
 
-      {/* 산출물 파일 카드 */}
-      {artifactPaths.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-1.5">
-          {artifactPaths.map((path, pi) => {
-            const parts = path.split('/')
-            const name = parts.length >= 3 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : parts.pop() ?? path
-            const artifactUrl = `/api/artifacts/${path}`
-            const isImg = isImageFile(name)
-            const isGif = name.toLowerCase().endsWith('.gif')
-            if (isImg) {
-              return (
-                <button key={pi} onClick={() => onImageClick(artifactUrl)}
-                  className="block max-w-[240px] rounded-lg overflow-hidden
-                    border border-gray-200 dark:border-gray-600 cursor-zoom-in
-                    hover:opacity-90 transition-opacity">
-                  <img src={artifactUrl} alt={name}
-                    className={`w-full max-h-[200px] ${isGif ? 'object-contain' : 'object-cover'}`}
-                    loading="lazy" />
-                </button>
-              )
-            }
-            return (
-              <a key={pi} href={artifactUrl} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
-                  bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600
-                  text-xs text-gray-600 dark:text-gray-300
-                  hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                <MatIcon name={fileIcon(name)} className="text-[14px]" />
-                <span className="truncate max-w-[250px]">{name}</span>
-              </a>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

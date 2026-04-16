@@ -367,6 +367,8 @@ class Office:
       else:
         # 새 프로젝트 시작 — 이전 프로젝트 컨텍스트 초기화 (다른 프로젝트 대화 오염 방지)
         self._context_summary = ''
+        self._user_mid_feedback = []
+        self._phase_feedback = []
         for agent in self.agents.values():
           agent._conversation_history = []
         if self._active_project_id:
@@ -394,9 +396,6 @@ class Office:
       self._active_agent = ''
       self._work_started_at = ''
       self._current_phase = ''
-
-      # [동결] 팀원 반응 — 팀장하고만 대화하는 것으로 결정
-      # await self._team_chat(user_input, chat_subtype=intent_result.chat_subtype, teamlead_response=response)
 
       # 대화 맥락 실시간 갱신 — 후속 메시지에서 주제 변경 감지 가능
       self._update_context(user_input, response)
@@ -426,9 +425,67 @@ class Office:
         reference_context,
       )
 
+    if intent_result.intent == IntentType.JOB:
+      return await self._handle_job(
+        intent_result.job_spec_id,
+        intent_result.job_input,
+        user_input,
+      )
+
     # 기본값
     self._state = OfficeState.COMPLETED
     return {'state': self._state.value, 'response': '처리할 수 없는 입력입니다.', 'artifacts': []}
+
+  async def _handle_job(
+    self,
+    spec_id: str,
+    job_input: dict[str, Any],
+    user_input: str,
+  ) -> dict[str, Any]:
+    '''Job 파이프라인을 생성하고 팀장이 결과를 알린다.'''
+    from jobs.registry import get as get_spec
+    from jobs.runner import submit as job_submit
+
+    self._state = OfficeState.TEAMLEAD_THINKING
+    self._active_agent = 'teamlead'
+    self._work_started_at = datetime.now(timezone.utc).isoformat()
+
+    spec = get_spec(spec_id)
+    if not spec:
+      await self._emit(
+        'teamlead',
+        f'"{spec_id}" Job 스펙을 찾을 수 없습니다. Job Board에서 직접 생성해 주세요.',
+        'response',
+      )
+      self._state = OfficeState.COMPLETED
+      self._active_agent = ''
+      self._work_started_at = ''
+      return {'state': self._state.value, 'response': '', 'artifacts': []}
+
+    # 필수 입력 필드 누락 확인
+    missing = [f for f in spec.required_fields if f not in job_input]
+    if missing:
+      await self._emit(
+        'teamlead',
+        f'**{spec.title}** Job을 시작하려면 다음 정보가 필요합니다: **{", ".join(missing)}**\n\n어떤 주제로 진행할까요?',
+        'response',
+      )
+      self._state = OfficeState.COMPLETED
+      self._active_agent = ''
+      self._work_started_at = ''
+      return {'state': self._state.value, 'response': '', 'artifacts': []}
+
+    job = await job_submit(spec, job_input, title=user_input[:40])
+
+    await self._emit(
+      'teamlead',
+      f'**{spec.title}** Job을 시작했습니다. Job Board에서 진행 상황을 확인하세요.',
+      'response',
+    )
+    self._state = OfficeState.COMPLETED
+    self._active_agent = ''
+    self._work_started_at = ''
+    return {'state': self._state.value, 'response': '', 'artifacts': []}
 
   async def _handle_quick_task(
     self,

@@ -18,6 +18,7 @@ class IntentType(str, Enum):
   QUICK_TASK = 'quick_task'              # 한 명이 처리할 수 있는 단순 작업
   PROJECT = 'project'                    # 여러 팀원이 협업해야 하는 프로젝트
   CONTINUE_PROJECT = 'continue_project'  # 기존 프로젝트 이어가기
+  JOB = 'job'                           # Job 파이프라인 실행 요청
 
 
 class IntentResult:
@@ -28,13 +29,31 @@ class IntentResult:
     target_agent: str | None = None,
     direct_response: str | None = None,
     analysis: str = '',
-    chat_subtype: str = 'casual',
+    job_spec_id: str = '',
+    job_input: dict | None = None,
   ):
     self.intent = intent
     self.target_agent = target_agent      # QUICK_TASK일 때 담당 에이전트
     self.direct_response = direct_response  # CONVERSATION일 때 직접 답변
     self.analysis = analysis              # PROJECT일 때 분석 내용
-    self.chat_subtype = chat_subtype      # CONVERSATION일 때 'greeting'|'question'|'casual'
+    self.job_spec_id = job_spec_id        # JOB일 때 spec id
+    self.job_input = job_input or {}      # JOB일 때 추출된 입력 필드
+
+
+def _build_specs_context() -> str:
+  '''사용 가능한 Job spec 목록을 프롬프트용 텍스트로 반환한다.'''
+  try:
+    from jobs.registry import all_specs
+    specs = all_specs()
+    if not specs:
+      return ''
+    lines = ['[사용 가능한 Job 파이프라인]']
+    for s in specs:
+      fields = ', '.join(s.input_fields) if s.input_fields else '없음'
+      lines.append(f'- {s.id}: {s.title} — {s.description} (입력 필드: {fields})')
+    return '\n'.join(lines) + '\n'
+  except Exception:
+    return ''
 
 
 def _build_system_info() -> str:
@@ -66,6 +85,7 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
   '''
   teamlead_prompt = _load_teamlead_prompt()
   system_info = _build_system_info()
+  specs_context = _build_specs_context()
 
   context_section = ''
   if recent_context:
@@ -83,26 +103,33 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
   prompt = (
     f'{teamlead_prompt}\n\n'
     f'{system_info}\n\n'
+    f'{specs_context}\n'
     f'---\n\n'
     f'{context_section}'
     f'사용자가 다음과 같이 말했습니다:\n\n'
     f'"{user_input}"\n\n'
     f'당신은 팀장입니다. 이 입력을 보고 어떻게 대응할지 판단하세요.\n\n'
     f'반드시 아래 형식으로 첫 줄에 판단을 적고, 그 아래에 내용을 적으세요:\n\n'
-    f'[CONVERSATION:서브유형]\n직접 답변 내용\n\n'
-    f'서브유형은 greeting(인사/출퇴근), question(질문), casual(잡담/기타) 중 하나.\n'
-    f'예: [CONVERSATION:greeting], [CONVERSATION:question], [CONVERSATION:casual]\n\n'
+    f'[CONVERSATION]\n직접 답변 내용\n\n'
     f'또는:\n\n'
     f'[QUICK_TASK:에이전트명]\n작업 지시 내용\n\n'
     f'또는:\n\n'
     f'[PROJECT]\n프로젝트 분석 내용\n\n'
     f'또는 (진행 중인 프로젝트와 연관된 추가 작업 요청일 때):\n\n'
     f'[CONTINUE_PROJECT:에이전트명]\n이어서 할 작업 내용\n\n'
+    f'또는 (Job 파이프라인 실행 요청일 때):\n\n'
+    f'[JOB:spec_id]\n{{"field1":"값1","field2":"값2"}}\n\n'
     f'에이전트명은 planner, designer, developer, qa 중 하나입니다.\n'
     f'간단한 대화나 질문이면 CONVERSATION, '
     f'한 명이 처리할 수 있는 새 작업이면 QUICK_TASK, '
     f'여러 팀원이 협업하여 산출물을 만들어야 하는 새 프로젝트면 PROJECT, '
-    f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT입니다.\n\n'
+    f'진행 중인 프로젝트에 대한 추가 지시이면 CONTINUE_PROJECT, '
+    f'Job 파이프라인 실행 요청이면 JOB입니다.\n\n'
+    f'**JOB 판단 기준:**\n'
+    f'- "잡 만들어줘", "잡 돌려줘", "파이프라인 실행해", "Job 생성해줘" 등 명시적 요청\n'
+    f'- 위 Job 파이프라인 목록 중 하나와 정확히 맞아떨어지는 작업\n'
+    f'- JOB 선택 시 spec_id는 목록의 id 값 그대로, body는 입력 필드를 JSON으로\n'
+    f'- 필수 필드(topic 등)는 사용자 메시지에서 추출, 선택 필드는 적절히 추론\n\n'
     f'**QUICK_TASK vs PROJECT 판단 기준:**\n'
     f'- 리뷰, 분석, 조사, 검토, 평가, 요약 → QUICK_TASK (산출물이 문서 1개)\n'
     f'- 코드 리뷰, GitHub 저장소 분석, 기술 검토 → QUICK_TASK:developer\n'
@@ -149,16 +176,9 @@ def _parse_intent_response(response: str) -> IntentResult:
   body = lines[1].strip() if len(lines) > 1 else ''
 
   if header.startswith('[CONVERSATION'):
-    # [CONVERSATION:greeting] 형태에서 서브유형 추출
-    chat_subtype = 'casual'
-    if ':' in header:
-      sub_part = header.split(':')[1].strip().rstrip(']').lower()
-      if sub_part in ('greeting', 'question', 'casual'):
-        chat_subtype = sub_part
     return IntentResult(
       intent=IntentType.CONVERSATION,
       direct_response=body or text,
-      chat_subtype=chat_subtype,
     )
 
   if header.startswith('[QUICK_TASK'):
@@ -191,6 +211,24 @@ def _parse_intent_response(response: str) -> IntentResult:
       intent=IntentType.PROJECT,
       analysis=body,
     )
+
+  if header.startswith('[JOB'):
+    import json as _json
+    spec_id = ''
+    if ':' in header:
+      spec_id = header.split(':')[1].strip().rstrip(']').strip()
+    job_input: dict = {}
+    if body:
+      try:
+        job_input = _json.loads(body)
+      except Exception:
+        pass
+    return IntentResult(
+      intent=IntentType.JOB,
+      job_spec_id=spec_id,
+      job_input=job_input,
+    )
+
 
   # 파싱 실패 시 기본값: 내용이 짧으면 대화, 길면 프로젝트
   if len(text) < 200:

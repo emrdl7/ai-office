@@ -67,6 +67,9 @@ def _parse(data: dict[str, Any]) -> JobSpec:
         )
         for g in data.get('gates', [])
     ]
+    input_fields = data.get('input_fields', [])
+    # required_fields 미지정 시 input_fields 전체를 필수로 (하위 호환)
+    required_fields = data.get('required_fields', input_fields)
     return JobSpec(
         id=data['id'],
         title=data['title'],
@@ -74,5 +77,6 @@ def _parse(data: dict[str, Any]) -> JobSpec:
         version=data.get('version', 1),
         steps=steps,
         gates=gates,
-        input_fields=data.get('input_fields', []),
+        input_fields=input_fields,
+        required_fields=required_fields,
     )

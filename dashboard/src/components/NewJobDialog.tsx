@@ -109,7 +109,7 @@ export function NewJobDialog({
     },
   })
 
-  const requiredFields = selectedSpec?.input_fields.filter(f => f !== 'notes') ?? []
+  const requiredFields = selectedSpec?.required_fields ?? []
   const allFields = selectedSpec?.input_fields ?? []
   const canSubmit = selectedSpec && requiredFields.every(f => fields[f]?.trim())
 

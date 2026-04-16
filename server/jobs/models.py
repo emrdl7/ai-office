@@ -37,7 +37,8 @@ class JobSpec:
     version: int
     steps: list[StepSpec]
     gates: list[GateSpec] = field(default_factory=list)
-    input_fields: list[str] = field(default_factory=list)  # 필수 입력 필드
+    input_fields: list[str] = field(default_factory=list)   # 전체 입력 필드 (UI 표시용)
+    required_fields: list[str] = field(default_factory=list) # 필수 입력 필드 (검증용)
 
 
 @dataclass

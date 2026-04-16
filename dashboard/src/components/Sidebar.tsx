@@ -70,7 +70,7 @@ function SidebarBtn({
 }
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { activeChannel, setActiveChannel, toggleTheme, theme, toggleArtifacts, showArtifacts } = useStore()
+  const { activeChannel, setActiveChannel, toggleTheme, theme } = useStore()
   const [showSearch, setShowSearch] = useState(false)
   const [showInsight, setShowInsight] = useState(false)
 
@@ -93,15 +93,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <h1 className="text-sm font-semibold text-gray-900 dark:text-white">Office</h1>
         </div>
         <div className="flex gap-1">
-          <button
-            onClick={toggleArtifacts}
-            className={`p-1.5 rounded cursor-pointer transition-colors
-              ${showArtifacts ? 'bg-blue-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-            aria-label="산출물 패널 토글"
-            title="산출물"
-          >
-            <MatIcon name="description" className="text-[16px]" />
-          </button>
           <button
             onClick={toggleTheme}
             className="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800
