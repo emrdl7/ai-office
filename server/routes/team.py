@@ -121,6 +121,102 @@ async def get_team() -> list[dict[str, Any]]:
   return to_api_dict()
 
 
+@router.get('/api/agents/{agent_id}/growth')
+async def get_agent_growth(agent_id: str, days: int = 30) -> dict[str, Any]:
+  '''에이전트별 성장 트래킹 — 발화 수, PASS율, 채택 건의, 키워드 다양성, 인용 수.'''
+  import sqlite3
+  import json
+  from datetime import datetime, timedelta, timezone
+  from collections import Counter
+  from db.log_store import DB_PATH as LOG_DB
+  from db.suggestion_store import DB_PATH as SUGG_DB
+  from config.team import display_name
+
+  cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+  # 발화 수, PASS 수
+  log_conn = sqlite3.connect(str(LOG_DB))
+  log_conn.row_factory = sqlite3.Row
+  speak_count = log_conn.execute(
+    "SELECT count(*) AS n FROM chat_logs "
+    "WHERE agent_id=? AND event_type IN ('autonomous','response') AND timestamp >= ?",
+    (agent_id, cutoff),
+  ).fetchone()['n']
+  pass_count = log_conn.execute(
+    "SELECT count(*) AS n FROM chat_logs "
+    "WHERE agent_id=? AND event_type='autonomous_pass' AND timestamp >= ?",
+    (agent_id, cutoff),
+  ).fetchone()['n']
+
+  # 키워드 다양성 (TF-IDF는 과중 — 유니크 토큰 수 사용)
+  msg_rows = log_conn.execute(
+    "SELECT message FROM chat_logs WHERE agent_id=? AND event_type='autonomous' AND timestamp >= ? LIMIT 200",
+    (agent_id, cutoff),
+  ).fetchall()
+  unique_kw: set[str] = set()
+  total_kw_count = 0
+  try:
+    from orchestration.office import _extract_keywords
+    for r in msg_rows:
+      kws = [k for k in _extract_keywords(r['message'] or '') if len(k) >= 3]
+      total_kw_count += len(kws)
+      unique_kw.update(kws)
+  except Exception:
+    pass
+
+  # 동료가 인용/멘션한 횟수 — 발화에 본인 이름 등장 (다른 에이전트 발화에서)
+  display = display_name(agent_id)
+  cite_rows = log_conn.execute(
+    "SELECT count(*) AS n FROM chat_logs "
+    "WHERE agent_id != ? AND event_type IN ('autonomous','response') "
+    "AND message LIKE ? AND timestamp >= ?",
+    (agent_id, f'%{display}%', cutoff),
+  ).fetchone()
+  cite_count = cite_rows['n'] if cite_rows else 0
+  log_conn.close()
+
+  # 건의 채택 수 (status=done) + 등록 수
+  filed = 0
+  accepted = 0
+  try:
+    sugg_conn = sqlite3.connect(str(SUGG_DB))
+    sugg_conn.row_factory = sqlite3.Row
+    filed_row = sugg_conn.execute(
+      "SELECT count(*) AS n FROM suggestions WHERE agent_id=? AND created_at >= ?",
+      (agent_id, cutoff),
+    ).fetchone()
+    filed = filed_row['n'] if filed_row else 0
+    accepted_row = sugg_conn.execute(
+      "SELECT count(*) AS n FROM suggestions WHERE agent_id=? AND status='done' AND created_at >= ?",
+      (agent_id, cutoff),
+    ).fetchone()
+    accepted = accepted_row['n'] if accepted_row else 0
+    sugg_conn.close()
+  except Exception:
+    pass
+
+  total_attempts = speak_count + pass_count
+  pass_rate = round(pass_count / total_attempts, 3) if total_attempts > 0 else 0.0
+  diversity_ratio = round(len(unique_kw) / max(total_kw_count, 1), 3)
+  acceptance_rate = round(accepted / filed, 3) if filed > 0 else 0.0
+
+  return {
+    'agent_id': agent_id,
+    'display_name': display,
+    'period_days': days,
+    'speak_count': speak_count,
+    'pass_count': pass_count,
+    'pass_rate': pass_rate,
+    'unique_keywords': len(unique_kw),
+    'total_keyword_tokens': total_kw_count,
+    'keyword_diversity': diversity_ratio,
+    'cite_count': cite_count,
+    'suggestions_filed': filed,
+    'suggestions_accepted': accepted,
+    'acceptance_rate': acceptance_rate,
+  }
+
+
 @router.get('/api/team-memory')
 async def get_team_memory() -> dict[str, Any]:
   '''팀 공유 메모리 조회 — 교훈, 협업 패턴, 프로젝트 이력'''

@@ -82,6 +82,57 @@ def maybe_archive_logs(days: int = 30) -> int:
   return 0
 
 
+def dump_archive_to_quarterly_file(days_threshold: int = 365) -> tuple[int, str]:
+  '''chat_logs_archive에서 N일 이전 데이터를 분기별 JSONL 파일로 dump.
+
+  반환: (이관 건수, 저장된 파일 경로). 데이터 없으면 (0, '').
+  분기별 파일: data/archive/logs_YYYYqQ.jsonl
+  '''
+  import json as _json
+  from datetime import datetime, timezone, timedelta
+  cutoff = (datetime.now(timezone.utc) - timedelta(days=days_threshold)).isoformat()
+  c = _conn()
+  c.row_factory = __import__('sqlite3').Row
+  try:
+    rows = c.execute(
+      'SELECT id, agent_id, event_type, message, data, timestamp '
+      'FROM chat_logs_archive WHERE timestamp < ? ORDER BY timestamp',
+      (cutoff,),
+    ).fetchall()
+    if not rows:
+      return 0, ''
+
+    # 가장 오래된 분기로 묶음
+    first_ts = rows[0]['timestamp']
+    dt = datetime.fromisoformat(first_ts.replace('Z', '+00:00'))
+    quarter = (dt.month - 1) // 3 + 1
+    fname = f'logs_{dt.year}q{quarter}.jsonl'
+
+    archive_dir = DB_PATH.parent / 'archive'
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    out_path = archive_dir / fname
+
+    with out_path.open('a', encoding='utf-8') as f:
+      for r in rows:
+        f.write(_json.dumps({
+          'id': r['id'], 'agent_id': r['agent_id'], 'event_type': r['event_type'],
+          'message': r['message'], 'data': r['data'], 'timestamp': r['timestamp'],
+        }, ensure_ascii=False) + '\n')
+
+    # DB에서 삭제
+    ids = [r['id'] for r in rows]
+    c.execute('BEGIN IMMEDIATE')
+    placeholders = ','.join('?' * len(ids))
+    c.execute(f'DELETE FROM chat_logs_archive WHERE id IN ({placeholders})', ids)
+    c.commit()
+    return len(rows), str(out_path)
+  except Exception:
+    c.rollback()
+    raise
+  finally:
+    c.close()
+
+
 def save_log(log_dict: dict) -> None:
   '''로그를 저장한다.
 

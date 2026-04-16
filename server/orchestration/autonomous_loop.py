@@ -341,6 +341,32 @@ _DOMAIN_EXT_MAP: dict[str, set[str]] = {
 _QA_FILE_PATTERNS = ('test_', '_test.', '.test.', 'spec.')
 
 
+def _detect_mention_target(message: str, exclude: str = '') -> str:
+  '''메시지에서 @멘션 대상 에이전트 ID 추출. 본인 호명 / 미발견 시 빈 문자열.
+
+  build_mention_map의 별칭 + display_name 모두 지원.
+  '''
+  import re as _re_mention
+  from config.team import build_mention_map, display_name as _dn
+  if not message:
+    return ''
+  mmap = build_mention_map()
+  # @로 시작하는 토큰 추출
+  for at_token in _re_mention.findall(r'@([\w가-힣]+)', message):
+    target = mmap.get(at_token, '')
+    if target and target != exclude and target in ('planner', 'designer', 'developer', 'qa', 'teamlead'):
+      return target
+  # @ 없이도 호명 — "튜링님,", "잡스가" 등 별칭 + 조사 패턴
+  for member_id in ('planner', 'designer', 'developer', 'qa', 'teamlead'):
+    if member_id == exclude:
+      continue
+    name = _dn(member_id)
+    # "이름님" / "이름," / "이름이" / "이름은" 등 강한 호명 패턴
+    if _re_mention.search(rf'\b{_re_mention.escape(name)}(님|,| 님|에게|께|이여|이시여)', message):
+      return member_id
+  return ''
+
+
 def _classify_file_domain(filepath: str) -> str:
   '''파일 경로 → 담당 에이전트 ID.'''
   base = filepath.rsplit('/', 1)[-1].lower()
@@ -537,6 +563,27 @@ async def _run_speaker_chain(
     except Exception:
       logger.debug('능력 부족 등록 실패', exc_info=True)
 
+  # ── @멘션 라우팅: speaker가 동료를 호명했으면 그 동료가 직접 답변 ──
+  # 자율 대화의 유기성 핵심 — "@개발자, 이 흐름 안전합니까?" 같은 질문에 실제 답변
+  mentioned_target = _detect_mention_target(message, exclude=speaker_name)
+  if mentioned_target and mentioned_target in office.agents:
+    try:
+      target_agent = office.agents[mentioned_target]
+      mention_answer = await target_agent.respond_to(
+        sender=display_name(speaker_name),
+        question=f'(자율 대화 중 호명됨)\n원 발언: {message}',
+      )
+      if mention_answer and len(mention_answer.strip()) >= 30:
+        await office.event_bus.publish(LogEvent(
+          agent_id=mentioned_target, event_type='autonomous',
+          message=mention_answer.strip(),
+          data={'autonomous_mode': 'mention_answer', 'thread_id': thread_id},
+        ))
+        # 멘션 답변자가 실질적으로 first_reactor 역할 — 1단 반응 스킵
+        return mentioned_target, mode, thread_id
+    except Exception:
+      logger.debug('@멘션 라우팅 실패: %s → %s', speaker_name, mentioned_target, exc_info=True)
+
   # 1단 반응 — 외부 동향 토론(70%) vs 기존(50%). 반응은 구조상 "상대 발언에
   # 대한 동의/보완"이므로 새로운 실행 요구로 보기 어렵다. mode='reaction' 태깅으로
   # filer 중 auto_file/capability_gap은 skip, commitment만 통과시켜 다짐은 포착.
@@ -620,7 +667,98 @@ async def _run_speaker_chain(
               logger.debug('클로징 능력 부족 등록 실패', exc_info=True)
       else:
         first_reactor = ''
+
+  # ── 합의 → 액션 변환: 체인이 돌았으면 합의 감지 후 자동 건의 등록 ──
+  if first_reactor and mode != 'joke':
+    try:
+      await _detect_consensus_and_file(office, thread_id, mode, speaker_name)
+    except Exception:
+      logger.debug('합의 감지 실패', exc_info=True)
+
   return first_reactor, mode, thread_id
+
+
+async def _detect_consensus_and_file(
+  office: Any, thread_id: str, mode: str, original_speaker: str,
+) -> None:
+  '''같은 thread_id 메시지에서 합의 감지 → 자동 건의 등록.
+
+  합의 신호:
+    - 같은 키워드 ≥3회 등장 (3+ 메시지에서 공통)
+    - 부정 신호("반대", "아니", "위험") 없음
+    - "~해야", "~하자" 같은 액션 동사 1개+
+  Haiku로 한 줄 요약 → suggestion_store에 mode='consensus_action'으로 등록.
+  '''
+  from db.log_store import load_logs
+  from runners.claude_runner import run_claude_isolated
+
+  recent_logs = load_logs(limit=20)
+  thread_msgs = [
+    l for l in recent_logs
+    if l.get('event_type') == 'autonomous'
+    and (l.get('data') or {}).get('thread_id') == thread_id
+  ]
+  if len(thread_msgs) < 2:
+    return
+
+  # 부정 신호 빠른 거부
+  full_text = ' '.join(l.get('message', '') for l in thread_msgs)
+  negative_markers = ('반대', '동의 못', '아니다', '위험', '안 됩', '시기상조', '맞지 않')
+  if any(m in full_text for m in negative_markers):
+    logger.debug('합의 감지: 부정 신호로 스킵 (thread=%s)', thread_id)
+    return
+
+  # 액션 동사 신호
+  action_markers = ('해야', '하자', '도입', '적용', '추가', '변경', '개선', '구현')
+  if not any(m in full_text for m in action_markers):
+    return
+
+  # Haiku로 합의 요약 + 건의화 가능 여부 판단
+  try:
+    chain_summary = '\n'.join(
+      f'[{l.get("agent_id", "")}] {l.get("message", "")[:200]}'
+      for l in thread_msgs
+    )
+    summary = await run_claude_isolated(
+      prompt=(
+        f'다음은 팀이 방금 나눈 자율 대화입니다:\n\n{chain_summary}\n\n'
+        f'[과제]\n'
+        f'이 대화에서 **2명 이상이 명시적으로 동의한 구체적 액션**이 있다면 1줄 건의 제목으로 출력.\n\n'
+        f'[규칙]\n'
+        f'- 동의 명시 없거나 액션이 추상적이면 [PASS]만 출력\n'
+        f'- 액션이 명확하면: "[합의] {{한 줄 액션}}" 형태로\n'
+        f'- 30~80자, 다른 텍스트 금지'
+      ),
+      timeout=20.0, model='claude-haiku-4-5-20251001',
+    )
+    text = summary.strip().split('\n')[0]
+    if '[PASS]' in text.upper() or not text.startswith('[합의]'):
+      return
+
+    title = text[len('[합의]'):].strip()[:100]
+    if len(title) < 20:
+      return
+
+    # 건의 등록
+    from db.suggestion_store import create_suggestion, is_duplicate
+    dup, _ = is_duplicate(title, chain_summary[:500])
+    if dup:
+      return
+
+    create_suggestion(
+      agent_id=original_speaker,
+      title=f'[합의] {title}',
+      content=f'자율 대화 합의 (thread {thread_id}):\n\n{chain_summary[:1500]}',
+      category='아이디어',
+      status='review_pending',  # 사용자/팀장 검토 후 승격
+    )
+    await office.event_bus.publish(LogEvent(
+      agent_id='system', event_type='system_notice',
+      message=f'🤝 합의 감지 — "{title[:60]}" 건의로 등록 (thread {thread_id})',
+    ))
+    logger.info('합의 건의 등록: thread=%s, title=%s', thread_id, title[:60])
+  except Exception:
+    logger.debug('합의 요약 실패', exc_info=True)
 
 
 async def _maybe_teamlead_closing(
@@ -713,6 +851,20 @@ async def run_loop(office: Any) -> None:
         await asyncio.sleep(60)
         continue
 
+      # 비용 한도 검사 — 초과 시 1시간 일시정지
+      try:
+        from runners.cost_tracker import is_budget_exceeded
+        if is_budget_exceeded():
+          logger.warning('일일 LLM 비용 한도 초과 — 자율 루프 1시간 일시정지')
+          await office.event_bus.publish(LogEvent(
+            agent_id='system', event_type='system_notice',
+            message='💰 일일 LLM 비용 한도 초과 — 자율 루프 1시간 일시정지',
+          ))
+          await asyncio.sleep(3600)
+          continue
+      except Exception:
+        pass
+
       await react_to_received_reactions(office)
       await agents_react_to_peers(office)
 
@@ -745,6 +897,22 @@ async def run_loop(office: Any) -> None:
         stuck, repeated, concrete_seed, recent_context, project_context,
         recent_topic_blocklist=topic_blocklist,
       )
+
+      # 사용자 제시 토픽이 있으면 강제 사용 (1회성, queue pop)
+      try:
+        from routes.topics import pop_next_topic
+        user_topic = pop_next_topic()
+        if user_topic:
+          topic = (
+            f'[사용자 직접 제시 토픽 — 우선 처리]\n{user_topic}\n\n'
+            f'(이 주제로 토론하라. 본인 전문 영역 관점에서 분석/적용/우려를 한마디씩.)'
+          )
+          await office.event_bus.publish(LogEvent(
+            agent_id='system', event_type='system_notice',
+            message=f'💬 사용자 토픽 활성화: {user_topic[:80]}',
+          ))
+      except Exception:
+        logger.debug('사용자 토픽 pop 실패', exc_info=True)
 
       speakers, candidates = _pick_speakers(recent)
 

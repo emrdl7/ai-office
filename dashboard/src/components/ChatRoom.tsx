@@ -579,14 +579,32 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
 // --- 메시지 렌더링 ---
 
+// thread_id → 색상 인덱스 매핑 (간단한 해시)
+function threadColorClass(threadId: string): string {
+  if (!threadId) return ''
+  const palette = [
+    'border-l-pink-400', 'border-l-purple-400', 'border-l-indigo-400',
+    'border-l-cyan-400', 'border-l-emerald-400', 'border-l-amber-400',
+    'border-l-rose-400', 'border-l-violet-400',
+  ]
+  let h = 0
+  for (let i = 0; i < threadId.length; i++) h = (h * 31 + threadId.charCodeAt(i)) | 0
+  return palette[Math.abs(h) % palette.length]
+}
+
 function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
   const elements: React.ReactNode[] = []
   let prevAgent = ''
   let prevTime = ''
   let prevDate = ''
+  let prevThread = ''
 
   for (let i = 0; i < logs.length; i++) {
     const log = logs[i]
+    const threadId = (log.data as Record<string, unknown>)?.thread_id as string ?? ''
+    const threadColor = threadColorClass(threadId)
+    const sameThread = threadId && threadId === prevThread
+    const threadClasses = threadId ? `border-l-2 ${threadColor} pl-2` : ''
     const profile = AGENT_PROFILE[log.agent_id] ?? {
       name: log.agent_id, character: log.agent_id, color: 'from-gray-500 to-gray-600', role: '',
     }
@@ -626,7 +644,10 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
     const isAutonomousMsg = log.event_type === 'autonomous'
     if (isNewGroup) {
       elements.push(
-        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined} className="flex gap-2 md:gap-3 py-1.5 transition-shadow rounded">
+        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined}
+          className={`flex gap-2 md:gap-3 py-1.5 transition-shadow rounded ${threadClasses}`}
+          title={threadId ? `토론 스레드 ${threadId}` : undefined}>
+        {sameThread && <div className="hidden" />}
           <div className="flex-shrink-0 mt-0.5 relative self-start w-8 h-8 md:w-9 md:h-9">
             <div className={`w-full h-full rounded-full bg-gradient-to-br ${profile.color}
               flex items-center justify-center shadow-sm overflow-hidden`}>
@@ -660,7 +681,9 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
       )
     } else {
       elements.push(
-        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined} className="flex gap-3 py-0.5 pl-10 md:pl-12 transition-shadow rounded">
+        <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined}
+          className={`flex gap-3 py-0.5 pl-10 md:pl-12 transition-shadow rounded ${threadClasses}`}
+          title={threadId ? `토론 스레드 ${threadId}` : undefined}>
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
             <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
           </div>
@@ -669,6 +692,7 @@ function renderMessages(logs: LogEntry[], onImageClick: (url: string) => void) {
     }
     prevAgent = log.agent_id
     prevTime = time
+    prevThread = threadId
   }
   return elements
 }

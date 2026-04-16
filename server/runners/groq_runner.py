@@ -71,7 +71,13 @@ class GroqRunner:
         resp.raise_for_status()
         data = resp.json()
         content: str = data['choices'][0]['message']['content']
-        return content.strip()
+        result_text = content.strip()
+        try:
+          from runners.cost_tracker import record_call
+          record_call(runner='groq', model=model or 'groq', prompt=prompt, response=result_text)
+        except Exception:
+          pass
+        return result_text
       except httpx.TimeoutException:
         raise GroqRunnerError(f'Groq 타임아웃 ({REQUEST_TIMEOUT}초)')
       except httpx.HTTPStatusError as e:

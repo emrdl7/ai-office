@@ -86,9 +86,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
   archive_task = asyncio.create_task(_archive_loop())
   # draft 건의 자동 승격 루프 — 24h 경과 draft를 pending으로
   draft_promotion_task = asyncio.create_task(_draft_promotion_loop())
+  # 대화 품질 자동 평가 루프 — 24h 주기 (insight/consensus/synergy)
+  from orchestration.conversation_quality import quality_eval_loop
+  quality_task = asyncio.create_task(quality_eval_loop(office))
   yield
   archive_task.cancel()
   draft_promotion_task.cancel()
+  quality_task.cancel()
   office.stop_autonomous_loop()
   await office.groq_runner.stop()
   message_bus.close()
@@ -114,6 +118,16 @@ async def _archive_loop() -> None:
       raise
     except Exception:
       logger.exception('chat_logs archive failed')
+    # 1년+ archive 데이터 → 분기별 JSONL 파일 dump
+    try:
+      from db.log_store import dump_archive_to_quarterly_file
+      dumped, fpath = await asyncio.to_thread(dump_archive_to_quarterly_file, 365)
+      if dumped:
+        logger.info('chat_logs quarterly dump: %d rows → %s', dumped, fpath)
+    except asyncio.CancelledError:
+      raise
+    except Exception:
+      logger.exception('chat_logs quarterly dump failed')
     try:
       await asyncio.sleep(24 * 60 * 60)
     except asyncio.CancelledError:
@@ -195,6 +209,7 @@ from routes.tasks import router as tasks_router
 from routes.suggestion_branch import router as suggestion_branch_router
 from routes.suggestions import router as suggestions_router, auto_triage_new_suggestion
 from routes.autonomous import router as autonomous_router
+from routes.topics import router as topics_router
 app.include_router(admin_router)
 app.include_router(team_router)
 app.include_router(search_router)
@@ -204,6 +219,7 @@ app.include_router(tasks_router)
 app.include_router(suggestion_branch_router)
 app.include_router(suggestions_router)
 app.include_router(autonomous_router)
+app.include_router(topics_router)
 
 
 def _validate_upload(f: UploadFile, content: bytes) -> str | None:

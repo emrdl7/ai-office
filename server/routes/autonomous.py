@@ -119,4 +119,50 @@ async def autonomous_stats(hours: int = 24) -> dict:
     'avg_thread_depth': avg_thread_depth,
     'max_thread_depth': max_thread_depth,
     'thread_count': len(thread_depths),
+    'quality': _load_quality_cache(),
+    'persona_drift': _load_drift_cache(),
+    'cost_today': _load_cost_today(),
   }
+
+
+def _load_cost_today() -> dict:
+  try:
+    from runners.cost_tracker import get_today_stats
+    return get_today_stats()
+  except Exception:
+    return {}
+
+
+def _load_drift_cache() -> dict:
+  try:
+    from orchestration.persona_drift import load_drift_cache
+    cache = load_drift_cache()
+    if cache:
+      return {
+        'evaluated_at': cache.get('evaluated_at', ''),
+        'drifting': cache.get('drifting', []),
+        'agents': {
+          aid: {'density': r.get('density', 0.0), 'drifting': r.get('drifting', False)}
+          for aid, r in (cache.get('agents') or {}).items()
+        },
+      }
+  except Exception:
+    pass
+  return {'evaluated_at': '', 'drifting': [], 'agents': {}}
+
+
+def _load_quality_cache() -> dict:
+  try:
+    from orchestration.conversation_quality import load_quality_cache
+    cache = load_quality_cache()
+    if cache:
+      return {
+        'evaluated_at': cache.get('evaluated_at', ''),
+        'insight_density': cache.get('insight_density', 0.0),
+        'consensus_rate': cache.get('consensus_rate', 0.0),
+        'synergy_score': cache.get('synergy_score', 0.0),
+        'evaluated_threads': cache.get('evaluated_threads', 0),
+      }
+  except Exception:
+    pass
+  return {'evaluated_at': '', 'insight_density': 0.0, 'consensus_rate': 0.0, 'synergy_score': 0.0, 'evaluated_threads': 0}

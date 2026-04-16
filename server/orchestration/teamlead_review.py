@@ -520,7 +520,7 @@ async def run_retrospective(
   "30자 한 줄"에 그치지 않고 구체 교훈이 나오도록 유도. 팀장이 회고를
   종합해 `retrospective.md` 아티팩트로 저장한다 — 사람이 읽을 회고록.
   '''
-  await office._emit('teamlead', '프로젝트 회고를 진행하겠습니다. 각자 배운 점 한마디씩 해주세요.', 'response')
+  await office._emit('teamlead', '프로젝트 회고를 진행하겠습니다. 3라운드로 정리하시죠.', 'response')
 
   # 참여한 에이전트만 회고 (산출물이 있는 에이전트)
   participants = set()
@@ -531,7 +531,8 @@ async def run_retrospective(
   if not participants:
     participants = {'planner', 'designer', 'developer'}
 
-  async def _one_retro(name: str) -> tuple[str, str]:
+  async def _retro_round(name: str, round_kind: str) -> tuple[str, str]:
+    '''round_kind: 'good' | 'bad' | 'next' '''
     agent = office.agents.get(name)
     if not agent:
       return name, ''
@@ -539,28 +540,49 @@ async def run_retrospective(
       system = agent._build_system_prompt()
       metrics_ctx = _build_agent_metrics_context(office, name)
       metrics_section = f'\n[당신의 이번 프로젝트 실행 요약]\n{metrics_ctx}\n' if metrics_ctx else ''
+
+      round_prompts = {
+        'good': '이번 프로젝트에서 **잘한 점** 1가지 (구체적 사례)',
+        'bad': '이번 프로젝트에서 **부족했던 점** 1가지 (구체적 사례, 핑계 없이)',
+        'next': '다음 프로젝트에서 **반드시 적용할 것** 1가지 (실행 가능한 행동)',
+      }
       retro_prompt = (
-        f'프로젝트 "{project_title}"이(가) 완료되었습니다.\n'
-        f'프로젝트 유형: {project_type}\n'
-        f'소요 시간: {int(duration // 60)}분\n'
+        f'프로젝트 "{project_title}" 회고 — 라운드: {round_prompts[round_kind]}\n'
+        f'프로젝트 유형: {project_type}, 소요: {int(duration // 60)}분\n'
         f'{metrics_section}\n'
-        f'위 실행 요약을 참고해서, 당신({display_name(name)})이 이번 프로젝트에서 배운 점을 한 줄로 공유하세요.\n'
-        f'- 실제 겪은 일에 근거한 구체 교훈 (예: "리비전 2회 반복 → 초안에 AC 체크 먼저 해야")\n'
-        f'- 30자 이내, 메신저 톤, 마크다운 금지.'
+        f'당신({display_name(name)})의 답변을 한 줄로.\n'
+        f'- 30~80자, 구체 사례/숫자 포함, 마크다운 금지\n'
+        f'- 빈말 금지 ("다음에 더 잘하겠습니다" 같은 것 → [PASS])'
       )
       result = await run_claude_isolated(
         f'{system}\n\n---\n\n{retro_prompt}',
         model='claude-haiku-4-5-20251001', timeout=20.0,
       )
-      return name, result.strip().split('\n')[0][:80]
+      text = result.strip().split('\n')[0][:120]
+      if '[PASS]' in text.upper() or len(text) < 20:
+        return name, ''
+      return name, text
     except Exception:
-      logger.debug("회고 발언 생성 실패: %s", name, exc_info=True)
+      logger.debug("회고 발언 생성 실패: %s/%s", name, round_kind, exc_info=True)
       return name, ''
 
-  results = await asyncio.gather(
-    *[_one_retro(n) for n in participants],
-    return_exceptions=False,
-  )
+  # ── Round 1: 잘한 점 ──
+  await office._emit('teamlead', '먼저 잘한 점부터.', 'response')
+  good_results = await asyncio.gather(*[_retro_round(n, 'good') for n in participants])
+  for name, text in good_results:
+    if text:
+      await office._emit(name, f'✨ {text}', 'response')
+
+  # ── Round 2: 부족했던 점 ──
+  await office._emit('teamlead', '다음으로 부족했던 점.', 'response')
+  bad_results = await asyncio.gather(*[_retro_round(n, 'bad') for n in participants])
+  for name, text in bad_results:
+    if text:
+      await office._emit(name, f'⚠️ {text}', 'response')
+
+  # ── Round 3: 다음에 적용할 것 (lesson으로 저장됨) ──
+  await office._emit('teamlead', '마지막으로 다음에 반드시 적용할 것.', 'response')
+  results = await asyncio.gather(*[_retro_round(n, 'next') for n in participants])
 
   key_decisions = []
   lesson_pairs: list[tuple[str, str]] = []
@@ -568,8 +590,8 @@ async def run_retrospective(
     if not lesson_text:
       continue
 
-    # 채팅에 회고 발언 표시
-    await office._emit(name, f'💭 {lesson_text}', 'response')
+    # 채팅에 회고 발언 표시 (Round 3 — 다음에 적용할 것)
+    await office._emit(name, f'➡️ {lesson_text}', 'response')
     key_decisions.append(lesson_text)
     lesson_pairs.append((name, lesson_text))
 

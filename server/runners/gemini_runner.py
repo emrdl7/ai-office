@@ -110,4 +110,9 @@ async def run_gemini(prompt: str, system: str = '', timeout: float = 600.0) -> s
     continuation = await _call_gemini(continue_prompt, timeout)
     result += '\n' + continuation
 
+  try:
+    from runners.cost_tracker import record_call
+    record_call(runner='gemini', model='gemini', prompt=full_prompt, response=result)
+  except Exception:
+    pass
   return result

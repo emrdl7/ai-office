@@ -109,6 +109,11 @@ async def run_claude_isolated(prompt: str, timeout: float = 600.0, model: str = 
 
   if stripped:
     LOG.open('a').write(f'[CLAUDE] result_len={len(stripped)}, using result\n')
+    try:
+      from runners.cost_tracker import record_call
+      record_call(runner='claude', model=model or 'claude', prompt=prompt, response=text)
+    except Exception:
+      pass
     return text
 
   raise ClaudeRunnerError('Claude 응답 텍스트 없음')
