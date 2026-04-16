@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "gen:types": "node scripts/gen-types.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
