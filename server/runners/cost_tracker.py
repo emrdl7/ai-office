@@ -1,7 +1,7 @@
 '''LLM 비용/호출 모니터링 — 호출 횟수, 추정 토큰, 일별 한도
 
-각 runner(claude/gemini/groq)가 호출 시 record_call()을 호출하여
-일별 누적 통계를 SQLite에 기록한다. 한도 초과 시 자율 루프 정지 신호.
+각 runner(claude/gemini)가 호출 시 record_call()을 호출하여
+일별 누적 통계를 SQLite에 기록한다.
 '''
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _DB_PATH = Path(__file__).parent.parent / 'data' / 'cost.db'
 
 # 모델별 입력/출력 1K 토큰당 USD (대략) — Claude Haiku, Sonnet, Opus 기준
-# Gemini/Groq는 무료 티어 가정
+# Gemini는 무료 티어 가정
 _PRICE_TABLE: dict[str, tuple[float, float]] = {
   'claude-haiku-4-5-20251001': (0.0008, 0.004),
   'claude-haiku': (0.0008, 0.004),
@@ -25,11 +25,10 @@ _PRICE_TABLE: dict[str, tuple[float, float]] = {
   'claude-opus-4-6': (0.015, 0.075),
   'claude-opus': (0.015, 0.075),
   'gemini': (0.0, 0.0),
-  'groq': (0.0, 0.0),
 }
 
-# 일 한도 (USD) — 초과 시 자율 루프 일시정지
-DAILY_BUDGET_USD = 5.0
+# 일 한도 (USD)
+DAILY_BUDGET_USD = 15.0
 
 
 def _conn() -> sqlite3.Connection:

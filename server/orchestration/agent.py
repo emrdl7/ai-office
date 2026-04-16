@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 import logging
 
-from runners.groq_runner import GroqRunner
 from runners.gemini_runner import run_gemini
 from runners.claude_runner import run_claude_isolated
 from log_bus.event_bus import EventBus, LogEvent
@@ -35,10 +34,8 @@ class Agent:
     name: str,
     event_bus: EventBus,
     memory_root: str | Path = 'data/memory',
-    groq_runner: GroqRunner | None = None,
   ):
     self.name = name
-    self.groq_runner = groq_runner
     self.event_bus = event_bus
     self.memory = AgentMemory(name, memory_root=memory_root)
     self.team_memory = TeamMemory(memory_root=memory_root)

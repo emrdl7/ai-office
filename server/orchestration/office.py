@@ -30,7 +30,6 @@ from orchestration import (
   suggestion_filer,
   teamlead_review,
 )
-from runners.groq_runner import GroqRunner
 from runners.claude_runner import run_claude_isolated
 from runners.gemini_runner import run_gemini
 from bus.message_bus import MessageBus
@@ -116,9 +115,6 @@ class Office:
     self._phase_feedback: list[dict] = []   # 팀원 리액션/인수인계 피드백
     self._current_project_type: str = ''    # 현재 프로젝트 유형 (phase_registry)
 
-    # Groq 러너 (디자이너, QA용)
-    self.groq_runner = GroqRunner()
-
     # 자가개선 엔진
     self.improvement_engine = ImprovementEngine(event_bus=event_bus)
 
@@ -142,7 +138,6 @@ class Office:
         name=name,
         event_bus=event_bus,
         memory_root=memory_root,
-        groq_runner=self.groq_runner,
       )
 
   async def restore_pending_tasks(self) -> None:
