@@ -1,0 +1,182 @@
+id: design_direction
+title: 디자인 방향 수립
+description: 레퍼런스 수집, 디자인 방향성 정의, 디자인 브리프를 작성한다.
+version: 1
+input_fields:
+  - project      # 필수: 프로젝트/화면 설명
+  - goals        # 필수: 디자인 목표 (예: "신뢰감·심플함")
+
+steps:
+  - id: reference_plan
+    agent: planner
+    tier: nano
+    output_key: ref_plan
+    tools: []
+    prompt: |
+      당신은 UX 디자이너입니다.
+      아래 프로젝트의 디자인 레퍼런스 수집 계획을 수립하세요.
+
+      [프로젝트]
+      {project}
+
+      [디자인 목표]
+      {goals}
+
+      [추가 요청]
+      {notes}
+
+      다음을 JSON으로만 출력하세요 (설명 없이):
+      {
+        "keywords": ["검색어1", "검색어2", "검색어3"],
+        "style_direction": "목표 스타일 1문장",
+        "reference_categories": ["카테고리1", "카테고리2"]
+      }
+
+  - id: reference_gather
+    agent: designer
+    tier: research
+    output_key: references
+    tools:
+      - web_search
+    prompt: |
+      당신은 UX 디자이너입니다.
+      아래 계획에 따라 디자인 레퍼런스를 수집하세요.
+
+      [수집 계획]
+      {ref_plan}
+
+      [지침]
+      - 실제 서비스 UI/UX 레퍼런스를 수집하세요
+      - 각 레퍼런스는 URL, 특징, 벤치마킹 포인트를 포함하세요
+      - 색상, 타이포그래피, 레이아웃 관점에서 분석하세요
+      - 최소 5개 이상 수집하세요
+
+      ## 레퍼런스 수집 결과
+
+      | 서비스 | URL | 특징 | 벤치마킹 포인트 |
+      |--------|-----|------|----------------|
+      ...
+
+      ## 공통 디자인 패턴
+      ...
+
+  - id: direction_define
+    agent: designer
+    tier: standard
+    output_key: direction
+    tools: []
+    prompt: |
+      당신은 UX 디자이너입니다.
+      수집된 레퍼런스를 바탕으로 디자인 방향성을 정의하세요.
+
+      [프로젝트]
+      {project}
+
+      [디자인 목표]
+      {goals}
+
+      [레퍼런스]
+      {references}
+
+      [수정 요청]
+      {direction_feedback}
+
+      다음 형식으로 작성하세요:
+
+      ## 디자인 컨셉
+      (핵심 키워드 3개 + 1문장 컨셉 설명)
+
+      ## 비주얼 방향
+      ### 색상
+      - Primary: (색상 + 의도)
+      - Secondary: (색상 + 의도)
+      - 배경/텍스트: (색상 + 의도)
+
+      ### 타이포그래피
+      - 폰트 추천: (이유 포함)
+      - 위계 구조: (H1/H2/Body 크기 가이드)
+
+      ### 레이아웃
+      - 그리드 시스템
+      - 여백 원칙
+      - 컴포넌트 스타일 키워드
+
+      ## 피해야 할 방향
+      (안티 패턴 2-3개)
+
+  - id: direction_review
+    agent: reviewer
+    tier: deep
+    output_key: direction_critique
+    tools: []
+    prompt: |
+      당신은 시니어 UX 디자이너입니다.
+      아래 디자인 방향성을 검토하고 개선점을 제시하세요.
+
+      [프로젝트]
+      {project}
+
+      [디자인 목표]
+      {goals}
+
+      [디자인 방향]
+      {direction}
+
+      다음 관점에서 검토하세요:
+      1. 목표와 방향성의 일치도
+      2. 실현 가능성 (기술적 구현 난이도)
+      3. 사용자 접근성 (색상 대비, 가독성)
+      4. 일관성 (색상/타이포/레이아웃 간 조화)
+      5. 차별성 (레퍼런스와 충분히 차별화되는가)
+
+      ## 검토 결과
+      ### 잘된 점
+      ### 개선 필요 사항
+      ### 권장 수정안
+
+  - id: brief
+    agent: designer
+    tier: standard
+    output_key: brief
+    tools: []
+    prompt: |
+      당신은 UX 디자이너입니다.
+      디자인 방향성과 검토 의견을 반영해 최종 디자인 브리프를 작성하세요.
+
+      [프로젝트]
+      {project}
+
+      [디자인 방향]
+      {direction}
+
+      [검토 의견]
+      {direction_critique}
+
+      [레퍼런스]
+      {references}
+
+      # {project} 디자인 브리프
+
+      ## 1. 프로젝트 개요
+      ## 2. 디자인 목표
+      ## 3. 타깃 사용자
+      ## 4. 디자인 컨셉 & 방향
+      ## 5. 비주얼 가이드라인
+        - 색상 팔레트
+        - 타이포그래피
+        - 레이아웃 원칙
+      ## 6. 레퍼런스
+      ## 7. 다음 단계 (디자인 작업 항목)
+
+      전문적이고 실행 가능하게 작성하세요.
+
+gates:
+  - id: direction_check
+    after_step: direction_review
+    prompt: "디자인 방향성 검토 결과를 확인하세요. 방향이 맞으면 승인, 수정이 필요하면 피드백을 남겨주세요."
+    auto_advance_after: null
+
+  - id: brief_review
+    after_step: brief
+    prompt: "디자인 브리프 최종 검토 후 승인해주세요."
+    auto_advance_after: null

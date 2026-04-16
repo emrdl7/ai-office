@@ -34,4 +34,48 @@ export interface FileEntry {
 }
 
 // 채널 타입
-export type ChannelId = 'all' | 'planner' | 'designer' | 'developer' | 'qa'
+export type ChannelId = 'all' | 'planner' | 'designer' | 'developer' | 'qa' | 'jobs' | 'gates'
+
+// Job 파이프라인 타입
+export interface JobStep {
+  step_id: string
+  status: 'queued' | 'running' | 'done' | 'failed' | string
+  output: string
+  error: string
+  started_at: string
+  finished_at: string
+}
+
+export interface JobGate {
+  gate_id: string
+  after_step: string
+  prompt: string
+  status: 'not_reached' | 'pending' | 'approved' | 'rejected' | string
+  decision: string
+  feedback: string
+  opened_at: string
+}
+
+export interface Job {
+  id: string
+  spec_id: string
+  title: string
+  status: 'queued' | 'running' | 'waiting_gate' | 'done' | 'failed' | 'cancelled' | string
+  input: Record<string, string>
+  current_step: string
+  error: string
+  created_at: string
+  started_at: string
+  finished_at: string
+  artifacts: Record<string, string>
+  steps?: JobStep[]
+  gates?: JobGate[]
+}
+
+export interface JobSpec {
+  id: string
+  title: string
+  description: string
+  input_fields: string[]
+  step_count: number
+}

@@ -216,6 +216,45 @@ function AgentCard({
   )
 }
 
+// Gate Inbox 버튼 — 대기 수 실시간 뱃지
+function GateInboxButton({
+  activeChannel,
+  selectChannel,
+}: {
+  activeChannel: string
+  selectChannel: (ch: import('../types').ChannelId) => void
+}) {
+  const { data: gates = [] } = useQuery({
+    queryKey: ['pending-gates'],
+    queryFn: async () => {
+      const res = await fetch('/api/jobs/gates/pending')
+      if (!res.ok) return []
+      return res.json() as Promise<{ gate_id: string }[]>
+    },
+    refetchInterval: 10000,
+  })
+
+  return (
+    <button
+      onClick={() => selectChannel('gates')}
+      className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
+        flex items-center gap-2 mt-0.5
+        ${activeChannel === 'gates'
+          ? 'bg-blue-600/15 text-blue-400 font-medium'
+          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+        }`}
+    >
+      <MatIcon name="pending_actions" className="text-[16px]" />
+      <span className="flex-1">Gate Inbox</span>
+      {gates.length > 0 && (
+        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-yellow-500 text-white">
+          {gates.length}
+        </span>
+      )}
+    </button>
+  )
+}
+
 function SidebarBtn({
   icon, label, onClick, title,
 }: {
@@ -332,6 +371,23 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <span className="text-base">#</span>
           <span>팀 채널</span>
         </button>
+
+        {/* Job Board */}
+        <button
+          onClick={() => selectChannel('jobs')}
+          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
+            flex items-center gap-2 mt-0.5
+            ${activeChannel === 'jobs'
+              ? 'bg-blue-600/15 text-blue-400 font-medium'
+              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+        >
+          <MatIcon name="work" className="text-[16px]" />
+          <span>Job Board</span>
+        </button>
+
+        {/* Gate Inbox */}
+        <GateInboxButton activeChannel={activeChannel} selectChannel={selectChannel} />
       </div>
 
       {/* 팀원 DM */}

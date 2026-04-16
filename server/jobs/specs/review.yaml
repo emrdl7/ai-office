@@ -1,0 +1,190 @@
+id: review
+title: 디자인·기획 리뷰
+description: 산출물(디자인/기획서/코드)을 검토하고 접근성 감사 및 개선 보고서를 생성한다.
+version: 1
+input_fields:
+  - artifact     # 필수: 리뷰 대상 설명 또는 내용 (URL, 텍스트, 파일 경로)
+  - review_type  # 선택: design | planning | code | accessibility (기본 design)
+
+steps:
+  - id: intake
+    agent: planner
+    tier: nano
+    output_key: intake
+    tools: []
+    prompt: |
+      당신은 UX 리뷰 전문가입니다.
+      아래 리뷰 요청을 분석해 검토 계획을 수립하세요.
+
+      [리뷰 대상]
+      {artifact}
+
+      [리뷰 유형]
+      {review_type}
+
+      [추가 요청]
+      {notes}
+
+      다음을 JSON으로만 출력하세요 (설명 없이):
+      {
+        "review_focus": ["검토 포인트1", "검토 포인트2", "검토 포인트3"],
+        "checklist_categories": ["카테고리1", "카테고리2"],
+        "severity_criteria": "심각도 판단 기준 1문장"
+      }
+
+  - id: heuristic_review
+    agent: reviewer
+    tier: deep
+    output_key: heuristic
+    tools: []
+    prompt: |
+      당신은 UX 리뷰 전문가입니다.
+      닐슨 노먼의 10가지 사용성 휴리스틱을 기반으로 아래 산출물을 검토하세요.
+
+      [리뷰 대상]
+      {artifact}
+
+      [검토 계획]
+      {intake}
+
+      각 항목별로 Pass/Fail/N/A 판정과 근거를 작성하세요:
+
+      ## 휴리스틱 검토
+
+      | # | 원칙 | 판정 | 근거 |
+      |---|------|------|------|
+      | 1 | 시스템 상태 가시성 | | |
+      | 2 | 실제 환경과의 일치 | | |
+      | 3 | 사용자 통제 및 자유 | | |
+      | 4 | 일관성 및 표준 | | |
+      | 5 | 오류 방지 | | |
+      | 6 | 인식보다 회상 최소화 | | |
+      | 7 | 유연성 및 효율성 | | |
+      | 8 | 미학적이고 미니멀한 디자인 | | |
+      | 9 | 오류 인식·진단·복구 지원 | | |
+      | 10 | 도움말 및 문서 | | |
+
+      ## 주요 발견 사항
+      (Fail 항목 상세 설명)
+
+  - id: accessibility_audit
+    agent: reviewer
+    tier: standard
+    output_key: a11y
+    tools: []
+    prompt: |
+      당신은 접근성 전문가입니다.
+      WCAG 2.1 AA 기준으로 아래 산출물을 감사하세요.
+
+      [리뷰 대상]
+      {artifact}
+
+      다음 항목을 검토하세요:
+
+      ## 접근성 감사 (WCAG 2.1 AA)
+
+      ### 인식 가능성 (Perceivable)
+      - [ ] 색상 대비 4.5:1 이상 (일반 텍스트)
+      - [ ] 색상 대비 3:1 이상 (큰 텍스트/UI 요소)
+      - [ ] 이미지에 대체 텍스트 존재
+      - [ ] 색상만으로 정보 전달하지 않음
+
+      ### 조작 가능성 (Operable)
+      - [ ] 키보드 탐색 가능
+      - [ ] 포커스 표시 명확
+      - [ ] 충분한 클릭 영역 (44x44px 이상)
+      - [ ] 동작/애니메이션 제어 가능
+
+      ### 이해 가능성 (Understandable)
+      - [ ] 오류 메시지 명확
+      - [ ] 레이블/힌트 텍스트 적절
+      - [ ] 일관된 인터랙션 패턴
+
+      ### 견고성 (Robust)
+      - [ ] 시맨틱 마크업 구조 적절
+      - [ ] ARIA 속성 사용 여부
+
+      ## 접근성 이슈 목록
+      | 이슈 | 심각도 | WCAG 항목 | 권장 수정 |
+      |------|--------|-----------|---------|
+      ...
+
+      ## 접근성 점수
+      합격 항목: X / 전체: Y
+
+  - id: improvement_plan
+    agent: reviewer
+    tier: standard
+    output_key: improvements
+    tools: []
+    prompt: |
+      당신은 UX 리뷰 전문가입니다.
+      검토 결과를 바탕으로 우선순위별 개선 계획을 수립하세요.
+
+      [휴리스틱 검토]
+      {heuristic}
+
+      [접근성 감사]
+      {a11y}
+
+      다음 형식으로 작성하세요:
+
+      ## 개선 우선순위
+
+      ### P0 — 즉시 수정 필요 (출시 블로커)
+      (사용자에게 심각한 영향을 미치는 이슈)
+
+      ### P1 — 다음 스프린트 내 수정
+      (사용성에 영향은 있지만 출시는 가능한 이슈)
+
+      ### P2 — 장기 개선 과제
+      (경험 향상을 위한 개선 사항)
+
+      ## 빠른 개선안 (Quick Wins)
+      (1-2시간 내 해결 가능한 개선 3-5개)
+
+      ## 개선 효과 예상
+      (개선 시 기대 효과)
+
+  - id: report
+    agent: reviewer
+    tier: standard
+    output_key: report
+    tools: []
+    prompt: |
+      당신은 UX 리뷰 전문가입니다.
+      검토 결과를 완성된 리뷰 리포트로 작성하세요.
+
+      [리뷰 대상]
+      {artifact}
+
+      [휴리스틱 검토]
+      {heuristic}
+
+      [접근성 감사]
+      {a11y}
+
+      [개선 계획]
+      {improvements}
+
+      # 리뷰 리포트
+
+      ## 1. 개요 및 평가 요약
+      ## 2. 휴리스틱 검토 결과
+      ## 3. 접근성 감사 결과
+      ## 4. 우선순위별 개선 사항
+      ## 5. 빠른 개선안 (Quick Wins)
+      ## 6. 결론 및 다음 단계
+
+      전문적이고 실행 가능하게 작성하세요.
+
+gates:
+  - id: scope_confirm
+    after_step: intake
+    prompt: "리뷰 범위와 중점 검토 항목을 확인하세요. 추가 요청이 있으면 피드백을 남겨주세요."
+    auto_advance_after: 1800
+
+  - id: final_review
+    after_step: report
+    prompt: "리뷰 리포트를 확인하세요. 개선 작업을 시작할 준비가 되면 승인해주세요."
+    auto_advance_after: 86400

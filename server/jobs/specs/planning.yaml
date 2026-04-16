@@ -1,0 +1,202 @@
+id: planning
+title: 기획
+description: 정보구조(IA), 사용자 플로우, 기획서 초안을 작성한다.
+version: 1
+input_fields:
+  - product    # 필수: 제품/서비스 설명
+  - goals      # 필수: 목표 (예: "완료율 +20%")
+
+steps:
+  - id: problem_definition
+    agent: planner
+    tier: standard
+    output_key: problem
+    tools: []
+    prompt: |
+      당신은 UX 기획 전문가입니다.
+      사용자의 요청을 분석해 문제를 명확히 정의하세요.
+
+      [제품/서비스]
+      {product}
+
+      [목표]
+      {goals}
+
+      [사용자 세그먼트]
+      {user_segments}
+
+      [제약 조건]
+      {constraints}
+
+      다음 형식으로 작성하세요:
+
+      ## 핵심 문제
+      (현재 상황에서 해결해야 할 핵심 문제 2-3개)
+
+      ## 목표 사용자
+      (주요 사용자 세그먼트와 핵심 니즈)
+
+      ## 성공 기준
+      (측정 가능한 성공 지표 3개 이내)
+
+      ## 제약 조건
+      (기술적, 비즈니스적 제약)
+
+  - id: ia_draft
+    agent: planner
+    tier: standard
+    output_key: ia
+    tools: []
+    prompt: |
+      당신은 UX 기획 전문가입니다.
+      문제 정의를 바탕으로 정보구조(IA)를 설계하세요.
+
+      [문제 정의]
+      {problem}
+
+      [수정 요청]
+      {ia_review_feedback}
+
+      다음 형식으로 정보구조를 작성하세요:
+
+      ## 정보구조 (IA)
+
+      ### 1단계 메뉴
+      - 메뉴1
+        - 1-1 서브메뉴
+        - 1-2 서브메뉴
+      - 메뉴2
+        ...
+
+      ## 핵심 화면 목록
+      | 화면명 | 목적 | 주요 기능 |
+      |--------|------|---------|
+      ...
+
+      ## 설계 근거
+      (이 구조를 선택한 이유)
+
+  - id: ia_review
+    agent: reviewer
+    tier: deep
+    output_key: ia_critique
+    tools: []
+    prompt: |
+      당신은 UX 아키텍처 전문가입니다.
+      아래 정보구조를 엄격하게 검토하고 개선점을 제시하세요.
+
+      [문제 정의]
+      {problem}
+
+      [정보구조 초안]
+      {ia}
+
+      다음 관점에서 검토하세요:
+      1. 사용자 멘탈 모델과의 일치도
+      2. 계층 구조의 깊이 (3단계 초과 여부)
+      3. 메뉴명의 명확성
+      4. 중복 또는 누락된 기능
+      5. 접근성 (자주 쓰는 기능이 쉽게 접근 가능한가)
+
+      ## 검토 결과
+      ### 잘된 점
+      ### 개선 필요 사항 (우선순위 순)
+      ### 권장 수정안
+
+  - id: user_flows
+    agent: planner
+    tier: standard
+    output_key: flows
+    tools: []
+    prompt: |
+      당신은 UX 기획 전문가입니다.
+      핵심 사용자 시나리오의 플로우를 작성하세요.
+
+      [정보구조]
+      {ia}
+
+      [IA 검토 의견]
+      {ia_critique}
+
+      주요 사용자 플로우 3개를 작성하세요 (가장 중요한 태스크 기준):
+
+      ## 플로우 1: [태스크명]
+      시작 → 단계1 → 단계2 → ... → 완료
+      (각 단계에서 사용자 행동과 시스템 반응 포함)
+
+      ## 플로우 2: [태스크명]
+      ...
+
+      ## 엣지 케이스 / 예외 처리
+      (주요 오류 상황과 대응 방안)
+
+  - id: acceptance_criteria
+    agent: planner
+    tier: fast
+    output_key: ac
+    tools: []
+    prompt: |
+      당신은 UX 기획 전문가입니다.
+      기획 내용을 검증 가능한 인수조건으로 변환하세요.
+
+      [사용자 플로우]
+      {flows}
+
+      Given-When-Then 형식으로 핵심 인수조건 5-10개를 작성하세요:
+
+      ```
+      Given [상황]
+      When [사용자 행동]
+      Then [예상 결과]
+      ```
+
+  - id: report
+    agent: planner
+    tier: standard
+    output_key: report
+    tools: []
+    prompt: |
+      당신은 UX 기획 전문가입니다.
+      아래 내용을 바탕으로 완성된 기획서를 작성하세요.
+
+      [제품/서비스]
+      {product}
+
+      [문제 정의]
+      {problem}
+
+      [정보구조]
+      {ia}
+
+      [사용자 플로우]
+      {flows}
+
+      [인수조건]
+      {ac}
+
+      # {product} UX 기획서
+
+      ## 1. 개요
+      ## 2. 문제 정의 및 목표
+      ## 3. 정보구조 (IA)
+      ## 4. 사용자 플로우
+      ## 5. 인수조건
+      ## 6. 다음 단계
+
+      전문적이고 읽기 쉽게 작성하세요.
+
+gates:
+  - id: problem_check
+    after_step: problem_definition
+    prompt: "문제 정의를 검토하세요. 방향이 맞으면 승인, 수정이 필요하면 피드백을 남겨주세요."
+    auto_advance_after: null
+
+  - id: ia_check
+    after_step: ia_review
+    prompt: "IA 검토 결과를 확인하세요. 계속 진행하려면 승인해주세요."
+    auto_advance_after: 3600
+
+  - id: final_review
+    after_step: report
+    prompt: "기획서 최종 검토 후 승인해주세요."
+    auto_advance_after: null

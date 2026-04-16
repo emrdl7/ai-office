@@ -35,7 +35,28 @@ async def list_specs() -> list[dict[str, Any]]:
 async def pending_gates() -> list[dict[str, Any]]:
     """승인 대기 중인 Gate 전체 — Gate Inbox용."""
     from db.job_store import list_pending_gates
-    return list_pending_gates()
+    from jobs.registry import get as get_spec
+
+    rows = list_pending_gates()
+    result = []
+    for row in rows:
+        # spec에서 gate prompt 조회
+        gate_prompt = ''
+        spec = get_spec(row.get('spec_id', ''))
+        if spec:
+            for g in spec.gates:
+                if g.id == row['gate_id']:
+                    gate_prompt = g.prompt
+                    break
+        result.append({
+            'job_id': row['job_id'],
+            'job_title': row['job_title'],
+            'job_spec_id': row['spec_id'],
+            'gate_id': row['gate_id'],
+            'gate_prompt': gate_prompt,
+            'opened_at': row['opened_at'],
+        })
+    return result
 
 
 @router.post('/api/jobs')

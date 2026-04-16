@@ -7,6 +7,8 @@ import { ChatRoom } from './components/ChatRoom'
 import { ArtifactModal } from './components/ArtifactModal'
 import { SuggestionModal } from './components/SuggestionModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { JobBoard } from './components/JobBoard'
+import { GateInbox } from './components/GateInbox'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,7 +20,7 @@ const queryClient = new QueryClient({
 })
 
 function MessengerApp() {
-  const { theme, showArtifacts } = useStore()
+  const { theme, showArtifacts, activeChannel } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -63,9 +65,15 @@ function MessengerApp() {
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
-      {/* 중앙: 채팅방 */}
+      {/* 중앙: 메인 뷰 */}
       <div className="flex-1 flex flex-col min-w-0">
-        <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
+        {activeChannel === 'jobs' ? (
+          <JobBoard />
+        ) : activeChannel === 'gates' ? (
+          <GateInbox />
+        ) : (
+          <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
+        )}
       </div>
 
       {/* 산출물 모달 */}
