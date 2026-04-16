@@ -393,22 +393,23 @@ export function JobDetailView({
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-950">
       {/* 헤더 */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+      <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 overflow-hidden">
         <button onClick={onClose}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white
-            hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+          className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white
+            hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer
+            min-w-[36px] min-h-[36px] flex items-center justify-center">
           <MatIcon name="arrow_back" className="text-[18px]" />
         </button>
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white truncate">{job.title}</h2>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
             <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${status.cls}`}>
               <MatIcon name={status.icon} className="text-[11px]" />
               {status.text}
             </span>
-            <span className="text-[10px] text-gray-400">{job.spec_id}</span>
+            <span className="text-[10px] text-gray-400 truncate max-w-[80px]">{job.spec_id}</span>
             {job.created_at && (
-              <span className="text-[10px] text-gray-400">
+              <span className="text-[10px] text-gray-400 hidden sm:inline">
                 {new Date(job.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
@@ -423,24 +424,24 @@ export function JobDetailView({
           {finalKey && job.status === 'done' && (
             <button
               onClick={() => setReportKey(finalKey)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white
+              className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-white
                 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
               title="최종 산출물 보기"
             >
               <MatIcon name="article" className="text-[14px]" />
-              리포트
+              <span className="hidden sm:inline">리포트</span>
             </button>
           )}
           {onChain && job.status === 'done' && (
             <button
               onClick={() => onChain(job)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium
+              className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium
                 text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30
                 hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
               title="이 Job의 산출물을 바탕으로 다음 Job 시작"
             >
               <MatIcon name="arrow_forward" className="text-[14px]" />
-              다음 단계
+              <span className="hidden sm:inline">다음 단계</span>
             </button>
           )}
           {onDuplicate && (
