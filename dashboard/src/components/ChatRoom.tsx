@@ -260,10 +260,10 @@ export function ChatRoom({ onMenuClick, onBack }: ChatRoomProps) {
             onChange={handleFileChange} className="hidden" />
 
           <div className={`rounded-2xl px-4 pt-3 pb-2
-            backdrop-blur-xl shadow-lg transition-all duration-200 border
+            shadow-lg transition-all duration-200 border
             ${message.trim() || files.length > 0
-              ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
-              : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
+              ? 'border-blue-400/60 dark:border-blue-500/50'
+              : 'border-gray-200/60 dark:border-gray-700/50'
             }`}>
 
             {/* 첨부파일 미리보기 */}
