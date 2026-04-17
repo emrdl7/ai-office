@@ -251,8 +251,7 @@ export function ChatRoom({ onMenuClick, onBack }: ChatRoomProps) {
 
       {/* 입력창 — flex shrink-0, iOS 키보드 대응 */}
       <div
-        className="shrink-0 px-3 md:px-5 pt-2 pb-[max(12px,env(safe-area-inset-bottom))]
-          bg-gray-50 dark:bg-gray-900/50"
+        className="shrink-0 px-3 md:px-5 pt-2 pb-[max(12px,env(safe-area-inset-bottom))]"
         style={kbInset > 0 ? { marginBottom: kbInset } : undefined}
       >
         <div className="max-w-3xl mx-auto">
@@ -260,10 +259,10 @@ export function ChatRoom({ onMenuClick, onBack }: ChatRoomProps) {
             onChange={handleFileChange} className="hidden" />
 
           <div className={`rounded-2xl px-4 pt-3 pb-2
-            shadow-lg transition-all duration-200 border
+            backdrop-blur-xl shadow-lg transition-all duration-200 border
             ${message.trim() || files.length > 0
-              ? 'border-blue-400/60 dark:border-blue-500/50'
-              : 'border-gray-200/60 dark:border-gray-700/50'
+              ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
+              : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
             }`}>
 
             {/* 첨부파일 미리보기 */}
