@@ -1,23 +1,31 @@
 id: research
 title: 리서치
-description: 경쟁사 분석·UX 트렌드·사용성 리서치를 수행하고 리포트를 생성한다.
-version: 1
+description: 어떤 주제든 계획·수집·분석·리포트까지 범용 리서치를 수행한다.
+version: 2
 input_fields:
   - topic
   - scope
   - depth
+  - persona
+  - output_format
 required_fields:
   - topic
+field_questions:
+  output_format: "결과물 형식은 어떻게 드릴까요? (마크다운 / HTML)"
+  depth: "분석 깊이는요? (빠른 개요 / 상세 분석 / 학술적 심층)"
 
 steps:
   - id: plan
     agent: planner
+    skills: [structured_writing]
     tier: nano
     output_key: plan
-    tools: []
+    tools:
+      - current_date
     prompt: |
-      당신은 UX 리서치 전문가입니다.
       사용자의 리서치 요청을 분석해 구체적인 조사 계획을 수립하세요.
+      제공된 정보만으로 계획을 수립하고, 없는 항목은 무시하세요.
+      첨부 자료나 배경 정보를 추측하거나 지어내지 마세요.
 
       [요청]
       주제: {topic}
@@ -35,13 +43,14 @@ steps:
 
   - id: gather
     agent: researcher
+    skills: [research_synthesis, source_citation]
     tier: research
     output_key: findings
     tools:
       - web_search
       - url_fetch
+      - rss_feed
     prompt: |
-      당신은 UX 리서치 전문가입니다.
       아래 리서치 계획에 따라 정보를 수집하고 핵심 내용을 정리하세요.
 
       [리서치 계획]
@@ -57,11 +66,11 @@ steps:
 
   - id: synthesize
     agent: planner
+    skills: [research_synthesis, critique]
     tier: standard
     output_key: insights
     tools: []
     prompt: |
-      당신은 UX 리서치 전문가입니다.
       수집된 데이터를 분석해 핵심 인사이트를 도출하세요.
 
       [리서치 계획]
@@ -80,13 +89,16 @@ steps:
       ## 시사점
       (우리 서비스/업무에 적용 가능한 시사점)
 
+      ## 반례·한계
+      (발견의 한계, 상반된 데이터)
+
   - id: report
     agent: planner
+    skills: [structured_writing, source_citation]
     tier: standard
     output_key: report
     tools: []
     prompt: |
-      당신은 UX 리서치 전문가입니다.
       분석 결과를 전달력 있는 리포트로 작성하세요.
 
       [주제]
@@ -110,7 +122,6 @@ steps:
       전문적이고 읽기 쉽게, 한국어로 작성하세요.
 
     revision_prompt: |
-      당신은 UX 리서치 전문가입니다.
       아래 리포트를 검토자 피드백에 따라 부분 수정하세요.
 
       [기존 리포트]
@@ -127,7 +138,55 @@ steps:
       - 변경된 섹션 앞에 '(수정됨)' 표시를 붙이세요
       - 전체 리포트를 완성된 형태로 출력하세요
 
-      수정된 전체 리포트를 출력하세요.
+  - id: report_polish
+    agent: planner
+    skills: [critique, structured_writing]
+    tier: standard
+    optional: true
+    output_key: report
+    tools: []
+    prompt: |
+      아래 리포트를 스스로 비판적으로 검토하고 즉시 개선하세요.
+
+      [리포트]
+      {report}
+
+      [인사이트]
+      {insights}
+
+      점검 기준:
+      - 모든 주장에 구체적 근거·데이터가 있는가?
+      - 출처(URL 또는 서비스명)가 명시되었는가?
+      - 권장사항이 실행 가능한 수준으로 구체적인가?
+      - 중복·모호·과도하게 일반적인 내용은 없는가?
+      - 한국어 표현이 자연스럽고 전문적인가?
+
+      개선된 완성 리포트를 원래 형식 그대로 출력하세요. (설명·주석 없이)
+
+  - id: summary
+    agent: planner
+    skills: [structured_writing]
+    tier: nano
+    optional: true
+    output_key: summary
+    tools: []
+    prompt: |
+      아래 리서치 리포트를 경영진이 30초 안에 파악할 수 있는 TL;DR로 압축하세요.
+
+      [리포트]
+      {report}
+
+      **형식 (반드시 준수):**
+      ## 핵심 요약
+      (3문장 이내 — 가장 중요한 발견 → 핵심 시사점 → 권장 행동)
+
+      ## 주요 발견 3선
+      - 발견 1
+      - 발견 2
+      - 발견 3
+
+      ## 즉시 적용 가능한 액션
+      (1-2개, 구체적으로)
 
 gates:
   - id: scope_review
@@ -136,6 +195,6 @@ gates:
     auto_advance_after: null
 
   - id: final_review
-    after_step: report
-    prompt: "리서치 리포트를 확인하세요. 이상 없으면 승인, 추가 분석이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
+    after_step: summary
+    prompt: "리서치 리포트와 핵심 요약을 확인하세요. 이상 없으면 승인, 추가 분석이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
     auto_advance_after: 86400

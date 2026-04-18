@@ -3,6 +3,7 @@ from __future__ import annotations
 # 팀장이 판단하고, 팀원이 협업하고, 회의를 통해 프로젝트를 진행한다.
 import asyncio
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -98,6 +99,8 @@ class Office:
     self._context_summary = ''  # 기획자가 압축한 이전 대화 요약
     self._task_count = 0        # 업무 횟수 카운터
     self._pending_project = None  # 사용자 확인 대기 중인 프로젝트
+    self._pending_job: dict | None = None  # 필드 입력 대기 중인 Job
+    self._discovery_state: Any = None     # DiscoveryState | None
     self._interrupted_instruction = None  # 서버 재시작으로 중단된 작업 instruction
     self._interrupted_task_id = None
     self._interrupted_confirmed = False
@@ -197,9 +200,9 @@ class Office:
           'response',
         )
 
-  async def _emit(self, agent_id: str, message: str, event_type: str = 'message') -> LogEvent:
+  async def _emit(self, agent_id: str, message: str, event_type: str = 'message', data: dict | None = None) -> LogEvent:
     '''이벤트 버스에 로그 발행. 후속 건의 등록 등에서 추적용으로 event를 반환.'''
-    event = LogEvent(agent_id=agent_id, event_type=event_type, message=message)
+    event = LogEvent(agent_id=agent_id, event_type=event_type, message=message, data=data or {})
     await self.event_bus.publish(event)
     return event
 
@@ -267,16 +270,22 @@ class Office:
     Returns:
       {'state': str, 'response': str, 'artifacts': list[str]}
     '''
-    if self._receive_lock.locked():
+    if not self._receive_lock.locked():
+      async with self._receive_lock:
+        return await self._receive_inner(user_input)
+
+    # 락 잠김 — 대화/Discovery 응답이 완료될 때까지 최대 10초 대기
+    try:
+      async with asyncio.timeout(10.0):
+        async with self._receive_lock:
+          return await self._receive_inner(user_input)
+    except asyncio.TimeoutError:
       await self._emit(
         'teamlead',
         '현재 다른 요청을 처리 중입니다. 잠시 후 다시 말씀해 주세요.',
         'response',
       )
       return {'state': self._state.value, 'response': '', 'artifacts': []}
-
-    async with self._receive_lock:
-      return await self._receive_inner(user_input)
 
   async def _receive_inner(self, user_input: str) -> dict[str, Any]:
     # 의도 분류 전에는 typing만 표시 (작업중 X)
@@ -297,7 +306,37 @@ class Office:
       except Exception:
         logger.debug("이전 맥락 복원 실패", exc_info=True)
 
-    # 0. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
+    # -1. Discovery 대화 진행 중 — 멀티턴 요구사항 수집
+    if self._discovery_state is not None:
+      from orchestration.discovery import continue_discovery
+      result = await continue_discovery(self, self._discovery_state, user_input)
+      self._discovery_state = result
+      self._state = OfficeState.COMPLETED
+      self._active_agent = ''
+      self._work_started_at = ''
+      return {'state': self._state.value, 'response': '', 'artifacts': []}
+
+    # 0. 대기 중인 Job 필드 입력 — 이전 턴에서 누락 필드를 물었을 때
+    if hasattr(self, '_pending_job') and self._pending_job:
+      pending = self._pending_job
+      self._pending_job = None
+      spec_id = pending['spec_id']
+      job_input = dict(pending['job_input'])
+      orig_input = pending.get('orig_input', user_input)
+      attachments = pending.get('attachments_text', '')
+
+      if 'clarifying_fields' in pending:
+        # Haiku가 자유응답을 field→value로 파싱
+        parsed = await _parse_clarification_answer(user_input, pending['clarifying_fields'])
+        job_input.update(parsed)
+      else:
+        # required 필드 단순 채우기
+        job_input[pending['missing'][0]] = user_input.strip()
+
+      return await self._handle_job(spec_id, job_input, orig_input,
+                                    attachments_text=attachments, skip_clarify=True)
+
+    # 0-1. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
       return await project_runner._continue_project(self, user_input)
 
@@ -434,23 +473,30 @@ class Office:
         'artifacts': [],
       }
 
-    if intent_result.intent in (IntentType.QUICK_TASK, IntentType.CONTINUE_PROJECT):
-      return await project_runner._handle_quick_task(
-        self,
-        user_input,
-        intent_result.target_agent or 'developer',
-        intent_result.analysis,
-        reference_context,
-      )
+    if intent_result.intent in (IntentType.QUICK_TASK, IntentType.PROJECT, IntentType.CONTINUE_PROJECT):
+      # 첨부파일 블록 분리
+      _ATTACH_SEP = '\n\n[첨부된 참조 자료]\n'
+      if _ATTACH_SEP in user_input:
+        clean_input, chat_attachments = user_input.split(_ATTACH_SEP, 1)
+      else:
+        clean_input, chat_attachments = user_input, ''
 
-    if intent_result.intent == IntentType.PROJECT:
-      return await project_runner._handle_project(
-        self,
-        user_input,
-        intent_result.analysis,
-        reference_context,
-        pre_project_type=intent_result.project_type,
-      )
+      from orchestration.discovery import should_enter_discovery, start_discovery
+      if should_enter_discovery(clean_input, chat_attachments):
+        # Discovery 모드 — 대화부터 시작, 나중에 Job 매핑
+        self._discovery_state = await start_discovery(self, clean_input, chat_attachments)
+        self._state = OfficeState.COMPLETED
+        self._active_agent = ''
+        self._work_started_at = ''
+        return {'state': self._state.value, 'response': '', 'artifacts': []}
+
+      # 명확한 요청 — 바로 Job 매핑 후 등록
+      from orchestration.intent import map_to_job_spec
+      spec_id, job_input, conf = await map_to_job_spec(clean_input, combined_context)
+      if not spec_id or conf < 0.5:
+        spec_id = 'research'
+        job_input = {'topic': clean_input[:500]}
+      return await self._handle_job(spec_id, job_input, clean_input, attachments_text=chat_attachments)
 
     if intent_result.intent == IntentType.JOB:
       # JOB 처리 로직 → job_handler 모듈로 위임 (4-1)
@@ -466,6 +512,8 @@ class Office:
     spec_id: str,
     job_input: dict[str, Any],
     user_input: str,
+    attachments_text: str = '',
+    skip_clarify: bool = False,
   ) -> dict[str, Any]:
     '''Job 파이프라인을 생성하고 팀장이 결과를 알린다.'''
     from jobs.registry import get as get_spec
@@ -487,42 +535,69 @@ class Office:
       self._work_started_at = ''
       return {'state': self._state.value, 'response': '', 'artifacts': []}
 
-    # 필수 입력 필드 누락 확인
-    missing = [f for f in spec.required_fields if f not in job_input]
+    # 필수 입력 필드 누락 확인 (빈 문자열도 누락으로 처리)
+    missing = [f for f in spec.required_fields if not job_input.get(f, '').strip()]
     if missing:
-      await self._emit(
-        'teamlead',
-        f'**{spec.title}** Job을 시작하려면 다음 정보가 필요합니다: **{", ".join(missing)}**\n\n어떤 주제로 진행할까요?',
-        'response',
-      )
+      field = missing[0]
+      field_labels = {
+        'topic': '어떤 주제로 리서치할까요?',
+        'product': '어떤 제품/서비스인가요?',
+        'goals': '목표가 무엇인가요?',
+        'project': '어떤 프로젝트인가요?',
+        'screen': '어떤 화면을 퍼블리싱할까요?',
+        'spec': '화면 명세를 알려주세요.',
+        'artifact': '검토할 산출물을 알려주세요.',
+      }
+      question = field_labels.get(field, f'{field}를 알려주세요.')
+      await self._emit('teamlead', f'**{spec.title}** 작업을 등록하겠습니다. {question}', 'response')
+      # 다음 턴에서 이어서 처리할 수 있도록 상태 저장
+      self._pending_job = {
+        'spec_id': spec_id,
+        'job_input': job_input,
+        'missing': missing,
+        'orig_input': user_input,
+        'attachments_text': attachments_text,
+      }
       self._state = OfficeState.COMPLETED
       self._active_agent = ''
       self._work_started_at = ''
       return {'state': self._state.value, 'response': '', 'artifacts': []}
 
-    # 활성 프로젝트가 있으면 최근 완료 Job 산출물을 context로 주입 (1-5)
-    attachments_text = ''
-    if self._active_project_id:
-      try:
-        from db.job_store import list_jobs as _list_jobs, get_job as _get_job
-        recent = _list_jobs(status='done', limit=5)
-        if recent:
-          src = _get_job(recent[0]['id'])
-          if src:
-            arts = src.get('artifacts') or {}
-            if arts:
-              attachments_text = '\n\n'.join(
-                f'[{k}]\n{str(v)[:800]}' for k, v in arts.items() if v
-              )[:3000]
-      except Exception:
-        pass
+    # 이전 잡 산출물 자동 주입 제거 — 주제가 다른 잡 산출물이 오염되는 문제 방지.
 
-    await job_submit(spec, job_input, title=user_input[:40], attachments_text=attachments_text)
+    # 채팅 경유 clarification — Haiku가 활성 툴 + spec 보고 동적으로 질문 생성
+    if not skip_clarify:
+      already_answered = set(k for k, v in job_input.items() if str(v).strip())
+      questions = await _generate_clarification_questions(spec, job_input, already_answered)
+      # 이미 입력된 필드는 제외
+      questions = [q for q in questions if not str(job_input.get(q['field'], '')).strip()]
+      if questions:
+        lines = [f'{i + 1}. {q["question"]}' for i, q in enumerate(questions)]
+        await self._emit(
+          'teamlead',
+          f'**{spec.title}** 작업 등록 전에 몇 가지 확인할게요.\n\n' + '\n'.join(lines),
+          'response',
+        )
+        self._pending_job = {
+          'spec_id': spec_id,
+          'job_input': job_input,
+          'clarifying_fields': [q['field'] for q in questions],
+          'orig_input': user_input,
+          'attachments_text': attachments_text,
+        }
+        self._state = OfficeState.COMPLETED
+        self._active_agent = ''
+        self._work_started_at = ''
+        return {'state': self._state.value, 'response': '', 'artifacts': []}
+
+    job_title = await _generate_job_title(spec.title, job_input, user_input)
+    job = await job_submit(spec, job_input, title=job_title, attachments_text=attachments_text)
 
     await self._emit(
       'teamlead',
-      f'**{spec.title}** Job을 시작했습니다. Job Board에서 진행 상황을 확인하세요.',
+      f'**{spec.title}** 작업을 작업보드에 등록했습니다.',
       'response',
+      data={'job_id': job.id, 'spec_id': spec.id, 'job_title': job.title},
     )
     self._state = OfficeState.COMPLETED
     self._active_agent = ''
@@ -562,4 +637,131 @@ class Office:
     'designer': ['developer', 'planner'],
     'developer': ['designer', 'planner'],
   }
+
+
+async def _generate_clarification_questions(
+  spec: Any, job_input: dict, already_answered: set[str]
+) -> list[dict[str, str]]:
+  """Haiku가 활성 툴 + spec 정보를 보고 clarification 질문을 동적으로 생성한다.
+
+  Returns:
+    [{"field": "output_format", "question": "...결과물 형식은?..."}, ...]
+    최대 3개, 빈 리스트면 즉시 제출.
+  """
+  from runners.claude_runner import run_claude_isolated
+  from jobs.tool_registry import list_tools
+  import json as _json
+
+  # 활성(사용 가능) 툴만 추림
+  all_tools = list_tools()
+  active_tools = [
+    f"- {t['id']}: {t['description']}"
+    for t in all_tools
+    if t.get('enabled') or t.get('token_set')
+  ]
+  tools_text = '\n'.join(active_tools) if active_tools else '(없음)'
+
+  # spec 스텝들이 사용하는 툴
+  spec_tools = sorted({t for s in spec.steps for t in getattr(s, 'tools', [])})
+
+  # spec에 정의된 field_questions 힌트
+  hints = '\n'.join(f'- {f}: {q}' for f, q in spec.field_questions.items()) if spec.field_questions else '(없음)'
+
+  # 이미 채워진 입력값
+  filled = {k: v for k, v in job_input.items() if v and k not in already_answered}
+
+  prompt = (
+    f'아래 Job 실행 전에 사용자에게 물어볼 clarification 질문 목록을 생성하세요.\n\n'
+    f'=== Job 정보 ===\n'
+    f'제목: {spec.title}\n'
+    f'설명: {spec.description}\n'
+    f'이 Job이 사용하는 툴: {", ".join(spec_tools) if spec_tools else "없음"}\n\n'
+    f'=== 현재 시스템에서 활성화된 툴 ===\n{tools_text}\n\n'
+    f'=== 이미 입력된 값 ===\n'
+    + '\n'.join(f'- {k}: {v}' for k, v in filled.items() if k not in ('_attachments',))
+    + f'\n\n=== spec 권장 질문 힌트 ===\n{hints}\n\n'
+    f'규칙:\n'
+    f'1. 활성화된 툴이 지원하는 출력 형식(HTML/마크다운/다이어그램/SVG/이미지 등) 중 가능한 것을 선택지로 제시하는 output_format 질문은 반드시 포함하세요.\n'
+    f'2. 이미 입력된 값은 다시 묻지 마세요.\n'
+    f'3. 최대 3개 질문만 생성하세요 (꼭 필요한 것만).\n'
+    f'4. 반드시 JSON 배열만 출력 (설명 없이):\n'
+    f'[{{"field": "output_format", "question": "결과물을 어떤 형식으로 받고 싶으세요? (선택지: ...)"}}]'
+  )
+
+  try:
+    raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=15.0)
+    m = re.search(r'\[[\s\S]*\]', raw)
+    if m:
+      items = _json.loads(m.group())
+      return [
+        {'field': str(x['field']), 'question': str(x['question'])}
+        for x in items
+        if isinstance(x, dict) and 'field' in x and 'question' in x
+      ][:3]
+  except Exception:
+    logger.debug('_generate_clarification_questions 실패', exc_info=True)
+
+  # 폴백: 최소 output_format 하나는 반환
+  return [{'field': 'output_format', 'question': '결과물 형식은 어떻게 드릴까요? (마크다운 / HTML)'}]
+
+
+async def _parse_clarification_answer(user_answer: str, fields: list[str]) -> dict[str, str]:
+  """사용자의 자유응답을 field→value dict로 파싱한다 (Haiku 사용)."""
+  from runners.claude_runner import run_claude_isolated
+  import json as _json
+
+  fields_str = ', '.join(fields)
+  example = '{' + ', '.join(f'"{f}": ""' for f in fields) + '}'
+  prompt = (
+    f'사용자가 아래 필드들에 대한 답변을 자유롭게 했습니다.\n'
+    f'필드 목록: {fields_str}\n\n'
+    f'사용자 답변: "{user_answer}"\n\n'
+    f'각 필드에 해당하는 값을 JSON으로 추출하세요. '
+    f'언급하지 않은 필드는 빈 문자열("")로 두세요.\n'
+    f'반드시 JSON만 출력 (설명 없이):\n'
+    f'{example}'
+  )
+  try:
+    raw = await run_claude_isolated(prompt, model='claude-haiku-4-5-20251001', timeout=15.0)
+    m = re.search(r'\{[\s\S]*\}', raw)
+    if m:
+      parsed = _json.loads(m.group())
+      return {k: str(v) for k, v in parsed.items() if k in fields and v}
+  except Exception:
+    pass
+  # 파싱 실패 시 전체 응답을 첫 번째 필드에 넣기
+  return {fields[0]: user_answer.strip()} if fields else {}
+
+
+async def _generate_job_title(spec_title: str, job_input: dict, user_input: str) -> str:
+  """Job 제목을 LLM으로 생성한다. 실패 시 spec 제목 + 핵심 키워드 조합으로 대체."""
+  from runners.claude_runner import run_claude_isolated
+
+  # job_input에서 핵심 값 추출 (첫 번째 non-empty 값)
+  main_value = next((str(v)[:60] for v in job_input.values() if v and str(v).strip()), '')
+  context = main_value or user_input[:80]
+
+  prompt = (
+    f'아래 작업 정보를 보고 간결한 작업 제목을 한 줄로 만들어주세요.\n\n'
+    f'작업 유형: {spec_title}\n'
+    f'핵심 내용: {context}\n\n'
+    f'규칙:\n'
+    f'- 15자 이내, 명사형으로 끝내기\n'
+    f'- 구체적이고 핵심만 담기 (예: "2026 컬러 트렌드 리서치", "메인 화면 UX 기획")\n'
+    f'- 제목만 출력, 따옴표나 부연 설명 없이'
+  )
+  try:
+    title = await run_claude_isolated(
+      prompt, model='claude-haiku-4-5-20251001', timeout=10.0, max_turns=1,
+    )
+    title = title.strip().strip('"\'「」').strip()
+    if title and len(title) <= 40:
+      return title
+  except Exception:
+    pass
+
+  # 폴백: spec 제목 + 핵심 키워드
+  if main_value:
+    return f'{spec_title} — {main_value[:20]}'
+  return spec_title
 

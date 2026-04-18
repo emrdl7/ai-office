@@ -57,6 +57,10 @@ def _parse(data: dict[str, Any]) -> JobSpec:
             output_key=s.get('output_key', s['id']),
             revision_prompt_template=s.get('revision_prompt', ''),
             system_prompt=s.get('system', ''),
+            persona=s.get('persona', ''),
+            skills=s.get('skills', []),
+            inputs=s.get('inputs', []),
+            optional=s.get('optional', False),
         )
         for s in data.get('steps', [])
     ]
@@ -66,6 +70,7 @@ def _parse(data: dict[str, Any]) -> JobSpec:
             after_step=g['after_step'],
             prompt=g.get('prompt', ''),
             auto_advance_after=g.get('auto_advance_after'),
+            auto_approve_if=g.get('auto_approve_if', ''),
         )
         for g in data.get('gates', [])
     ]
@@ -82,4 +87,5 @@ def _parse(data: dict[str, Any]) -> JobSpec:
         input_fields=input_fields,
         required_fields=required_fields,
         depends_on=data.get('depends_on', []),
+        field_questions=data.get('field_questions', {}),
     )

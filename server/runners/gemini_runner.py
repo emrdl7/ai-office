@@ -79,7 +79,7 @@ def _load_credentials() -> Credentials:
     return creds
 
 
-async def _call_gemini_model(full_prompt: str, timeout: float, model: str) -> str:
+async def _call_gemini_model(full_prompt: str, timeout: float, model: str, system: str = '') -> str:
     '''지정 모델로 Gemini REST API 단일 호출.'''
     api_key = os.environ.get('GOOGLE_API_KEY', '')
     if api_key:
@@ -96,10 +96,12 @@ async def _call_gemini_model(full_prompt: str, timeout: float, model: str) -> st
         }
         url = f'{_GEMINI_BASE}/models/{model}:generateContent'
 
-    payload = {
+    payload: dict = {
         'contents': [{'role': 'user', 'parts': [{'text': full_prompt}]}],
         'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 8192},
     }
+    if system:
+        payload['systemInstruction'] = {'parts': [{'text': system}]}
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -129,7 +131,7 @@ async def _call_gemini_model(full_prompt: str, timeout: float, model: str) -> st
     return text.strip()
 
 
-async def _call_gemini(full_prompt: str, timeout: float) -> str:
+async def _call_gemini(full_prompt: str, timeout: float, system: str = '') -> str:
     '''2.5-flash 우선, 503/429 시 2.0-flash 폴백. 429면 5초 대기 후 재시도.'''
     import logging as _log  # noqa: PLC0415
     _logger = _log.getLogger(__name__)
@@ -137,7 +139,7 @@ async def _call_gemini(full_prompt: str, timeout: float) -> str:
     for model in (_DEFAULT_MODEL, _FALLBACK_MODEL):
         for attempt in range(2):
             try:
-                return await _call_gemini_model(full_prompt, timeout, model)
+                return await _call_gemini_model(full_prompt, timeout, model, system=system)
             except GeminiRunnerError as e:
                 if '일시 불가' in str(e):
                     if attempt == 0:
@@ -157,13 +159,16 @@ async def run_gemini(prompt: str, system: str = '', timeout: float = 600.0) -> s
         '- 반드시 한국어로만 응답하세요. 영어를 사용하지 마세요.\n'
         '- 파일을 생성하거나 도구를 호출하지 마세요. 텍스트로만 응답하세요.\n'
         '- 코드를 작성해야 할 경우 마크다운 코드블록(```)으로 감싸서 텍스트로 출력하세요.\n'
-        '---\n\n'
     )
-    full_prompt = rules + prompt
+    # system이 있으면 rules를 systemInstruction에 합쳐서 전달, 없으면 user content에 포함
     if system:
-        full_prompt = rules + system + '\n\n---\n\n' + prompt
+        system_with_rules = rules + '---\n\n' + system
+        full_prompt = prompt
+    else:
+        system_with_rules = ''
+        full_prompt = rules + '---\n\n' + prompt
 
-    result = await _call_gemini(full_prompt, timeout)
+    result = await _call_gemini(full_prompt, timeout, system=system_with_rules)
 
     # 응답이 잘린 것 같으면 최대 2회 이어쓰기
     for _ in range(2):
@@ -175,7 +180,7 @@ async def run_gemini(prompt: str, system: str = '', timeout: float = 600.0) -> s
             f'위 응답이 중간에 끊겼습니다. 끊긴 부분부터 이어서 작성하세요. '
             f'이전 내용을 반복하지 말고, 끊긴 지점부터 바로 이어서 작성하세요.'
         )
-        continuation = await _call_gemini(continue_prompt, timeout)
+        continuation = await _call_gemini(continue_prompt, timeout, system=system_with_rules)
         result += '\n' + continuation
 
     try:

@@ -5,18 +5,20 @@ version: 1
 input_fields:
   - product
   - goals
+  - output_format
 required_fields:
   - product
   - goals
+field_questions:
+  output_format: "기획서 형식은 어떻게 드릴까요? (마크다운 / HTML)"
 
 steps:
   - id: problem_definition
     agent: planner
+    persona: product_manager
+    skills: [structured_writing, requirements_definition]
     tier: standard
     output_key: problem
-    system: |
-      당신은 10년 경력의 UX 기획 전문가입니다.
-      사용자 리서치와 비즈니스 목표를 연결해 명확한 문제 정의를 도출합니다.
     tools: []
     prompt: |
       사용자의 요청을 분석해 문제를 명확히 정의하세요.
@@ -63,6 +65,8 @@ steps:
 
   - id: ia_draft
     agent: planner
+    persona: ux_planner
+    skills: [structured_writing]
     tier: standard
     output_key: ia
     system: |
@@ -118,7 +122,10 @@ steps:
 
   - id: ia_review
     agent: reviewer
+    persona: senior_ux_researcher
+    skills: [critique]
     tier: deep
+    optional: true
     output_key: ia_critique
     tools: []
     prompt: |
@@ -163,7 +170,10 @@ steps:
 
   - id: ia_patch
     agent: planner
+    persona: ux_planner
+    skills: [structured_writing]
     tier: standard
+    optional: true
     output_key: ia
     system: |
       당신은 10년 경력의 UX 기획 전문가입니다.
@@ -184,8 +194,35 @@ steps:
 
       개선된 전체 IA를 완성된 형태로 출력하세요.
 
+  - id: ia_diagram
+    agent: planner
+    tier: fast
+    optional: true
+    output_key: ia_diagram
+    tools: []
+    prompt: |
+      아래 정보구조(IA)를 Mermaid mindmap 다이어그램으로 변환하세요.
+
+      [정보구조]
+      {ia}
+
+      **출력 형식 (```mermaid 코드블록만, 설명 없이):**
+      ```mermaid
+      mindmap
+        root((서비스명))
+          메뉴1
+            서브1-1
+            서브1-2
+          메뉴2
+            서브2-1
+      ```
+
+      IA의 1~3단계까지만 포함하세요. 노드 텍스트는 10자 이내로 간결하게.
+
   - id: user_flows
     agent: planner
+    persona: ux_planner
+    skills: [structured_writing]
     tier: standard
     output_key: flows
     system: |
@@ -213,8 +250,34 @@ steps:
       ## 엣지 케이스 / 예외 처리
       (주요 오류 상황과 대응 방안)
 
+  - id: flow_diagram
+    agent: planner
+    tier: fast
+    optional: true
+    output_key: flow_diagram
+    tools: []
+    prompt: |
+      아래 사용자 플로우 중 가장 핵심적인 1개를 Mermaid flowchart로 변환하세요.
+
+      [사용자 플로우]
+      {flows}
+
+      **출력 형식 (```mermaid 코드블록만, 설명 없이):**
+      ```mermaid
+      flowchart TD
+        A[시작] --> B{분기}
+        B -->|선택1| C[단계]
+        B -->|선택2| D[단계]
+        C --> E[완료]
+        D --> E
+      ```
+
+      노드 텍스트는 15자 이내. 분기·성공·실패 경로를 명확히 표현하세요.
+
   - id: acceptance_criteria
     agent: planner
+    persona: qa_engineer
+    skills: [test_case_design]
     tier: fast
     output_key: ac
     tools: []
@@ -234,6 +297,8 @@ steps:
 
   - id: report
     agent: planner
+    persona: ux_planner
+    skills: [structured_writing]
     tier: standard
     output_key: report
     system: |
@@ -283,6 +348,32 @@ steps:
       - 변경된 섹션 앞에 (수정됨) 표시를 붙이세요
       수정된 전체 기획서를 완성된 형태로 출력하세요.
 
+  - id: summary
+    agent: planner
+    persona: ux_planner
+    skills: [structured_writing]
+    tier: nano
+    optional: true
+    output_key: summary
+    tools: []
+    prompt: |
+      아래 기획서를 의사결정자가 1분 안에 파악할 수 있는 TL;DR로 압축하세요.
+
+      [기획서]
+      {report}
+
+      **형식 (반드시 준수):**
+      ## 기획 요약
+      (2-3문장 — 무엇을, 왜, 어떻게)
+
+      ## 핵심 결정 사항
+      - 결정 1
+      - 결정 2
+      - 결정 3
+
+      ## 다음 단계
+      (즉시 시작해야 할 액션 1-2개)
+
 gates:
   - id: problem_check
     after_step: problem_definition
@@ -295,6 +386,6 @@ gates:
     auto_advance_after: 3600
 
   - id: final_review
-    after_step: report
-    prompt: "기획서를 확인하세요. 이상 없으면 승인, 추가 수정이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
+    after_step: summary
+    prompt: "기획서와 핵심 요약을 확인하세요. 이상 없으면 승인, 추가 수정이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
     auto_advance_after: null

@@ -28,7 +28,46 @@ export interface LogEntry {
 }
 
 // 채널 타입
-export type ChannelId = 'all' | 'jobs' | 'gates'
+export type ChannelId = 'all' | 'jobs' | 'gates' | 'components'
+
+// 컴포넌트 라이브러리 타입
+export interface PersonaItem {
+  id: string
+  display_name: string
+  description: string
+  identity?: string
+  traits?: string[]
+  voice?: string
+  category?: string
+  tags?: string[]
+  usage_count: number
+  usages?: Array<{ spec_id: string; step_id: string }>
+}
+
+export interface SkillItem {
+  id: string
+  display_name: string
+  description: string
+  thinking_frame?: string
+  output_checklist?: string[]
+  category?: string
+  tags?: string[]
+  usage_count: number
+  usages?: Array<{ spec_id: string; step_id: string }>
+}
+
+export interface ToolItem {
+  id: string
+  name: string
+  description: string
+  category: string
+  enabled: boolean
+  is_async: boolean
+  params: string[]
+  env_var: string
+  token_set: boolean
+  usage_count: number
+}
 
 // Job 파이프라인 타입
 export interface JobStep {
@@ -40,8 +79,11 @@ export interface JobStep {
   finished_at: string
   model_used: string
   cost_usd: number
-  revised: number           // 수정 재실행 횟수 (0 = 최초)
-  revision_feedback: string // 마지막 수정 요청 피드백
+  revised: number
+  revision_feedback: string
+  persona?: string
+  skills?: string[]
+  tools?: string[]
 }
 
 export interface JobGate {
@@ -66,9 +108,18 @@ export interface Job {
   started_at: string
   finished_at: string
   artifacts: Record<string, string>
+  artifact_kinds?: Record<string, string>  // key → kind ('markdown'|'html'|'mermaid'|'svg'|'image'|'zip'|'json')
   total_cost_usd: number
+  planned_steps?: string[]
   steps?: JobStep[]
   gates?: JobGate[]
+}
+
+export interface ToolParam {
+  param: string
+  tool_id: string
+  tool_name: string
+  env_var: string
 }
 
 export interface JobSpec {
@@ -78,4 +129,5 @@ export interface JobSpec {
   input_fields: string[]
   required_fields: string[]
   step_count: number
+  tool_params: ToolParam[]
 }

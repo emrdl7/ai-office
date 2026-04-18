@@ -27,6 +27,7 @@ def _conn() -> sqlite3.Connection:
             status TEXT NOT NULL DEFAULT 'queued',
             input_json TEXT DEFAULT '{}',
             artifacts_json TEXT DEFAULT '{}',
+            artifact_kinds_json TEXT DEFAULT '{}',
             created_at TEXT NOT NULL,
             started_at TEXT DEFAULT '',
             finished_at TEXT DEFAULT '',
@@ -65,7 +66,12 @@ def _conn() -> sqlite3.Connection:
     for table, col, definition in [
         ('job_steps', 'revised', 'INTEGER DEFAULT 0'),
         ('job_steps', 'revision_feedback', 'TEXT DEFAULT ""'),
+        ('job_steps', 'persona', 'TEXT DEFAULT ""'),
+        ('job_steps', 'skills_json', "TEXT DEFAULT '[]'"),
+        ('job_steps', 'tools_json', "TEXT DEFAULT '[]'"),
         ('jobs', 'total_cost_usd', 'REAL DEFAULT 0.0'),
+        ('jobs', 'artifact_kinds_json', "TEXT DEFAULT '{}'"),
+        ('jobs', 'planned_steps_json', "TEXT DEFAULT '[]'"),
     ]:
         try:
             c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
@@ -80,11 +86,12 @@ def _conn() -> sqlite3.Connection:
 def create_job(job: JobRun) -> None:
     c = _conn()
     c.execute(
-        'INSERT INTO jobs (id, spec_id, title, status, input_json, artifacts_json, created_at) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO jobs (id, spec_id, title, status, input_json, artifacts_json, artifact_kinds_json, created_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         (job.id, job.spec_id, job.title, job.status,
          json.dumps(job.input, ensure_ascii=False),
          json.dumps(job.artifacts, ensure_ascii=False),
+         json.dumps(job.artifact_kinds, ensure_ascii=False),
          job.created_at),
     )
     c.commit()
@@ -97,6 +104,10 @@ def update_job(job_id: str, **kwargs: Any) -> None:
         return
     if 'artifacts' in kwargs:
         kwargs['artifacts_json'] = json.dumps(kwargs.pop('artifacts'), ensure_ascii=False)
+    if 'artifact_kinds' in kwargs:
+        kwargs['artifact_kinds_json'] = json.dumps(kwargs.pop('artifact_kinds'), ensure_ascii=False)
+    if 'planned_steps' in kwargs:
+        kwargs['planned_steps_json'] = json.dumps(kwargs.pop('planned_steps'), ensure_ascii=False)
     cols = ', '.join(f'{k} = ?' for k in kwargs)
     vals = list(kwargs.values()) + [job_id]
     c = _conn()
@@ -114,6 +125,8 @@ def get_job(job_id: str) -> dict[str, Any] | None:
     d = dict(row)
     d['input'] = json.loads(d.pop('input_json') or '{}')
     d['artifacts'] = json.loads(d.pop('artifacts_json') or '{}')
+    d['artifact_kinds'] = json.loads(d.pop('artifact_kinds_json', None) or '{}')
+    d['planned_steps'] = json.loads(d.pop('planned_steps_json', None) or '[]')
     return d
 
 
@@ -134,6 +147,8 @@ def list_jobs(status: str | None = None, limit: int = 50) -> list[dict[str, Any]
         d = dict(row)
         d['input'] = json.loads(d.pop('input_json') or '{}')
         d['artifacts'] = json.loads(d.pop('artifacts_json') or '{}')
+        d['artifact_kinds'] = json.loads(d.pop('artifact_kinds_json', None) or '{}')
+        d['planned_steps'] = json.loads(d.pop('planned_steps_json', None) or '[]')
         result.append(d)
     return result
 
@@ -144,18 +159,23 @@ def upsert_step(step: StepRun) -> None:
     c = _conn()
     c.execute(
         'INSERT INTO job_steps (job_id, step_id, status, started_at, finished_at, '
-        'output, error, model_used, cost_usd, revised, revision_feedback) '
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?) '
+        'output, error, model_used, cost_usd, revised, revision_feedback, '
+        'persona, skills_json, tools_json) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) '
         'ON CONFLICT(job_id, step_id) DO UPDATE SET '
         'status=excluded.status, started_at=excluded.started_at, '
         'finished_at=excluded.finished_at, output=excluded.output, '
         'error=excluded.error, model_used=excluded.model_used, cost_usd=excluded.cost_usd, '
-        'revised=excluded.revised, revision_feedback=excluded.revision_feedback',
+        'revised=excluded.revised, revision_feedback=excluded.revision_feedback, '
+        'persona=excluded.persona, skills_json=excluded.skills_json, tools_json=excluded.tools_json',
         (step.job_id, step.step_id, step.status,
          step.started_at, step.finished_at,
          step.output or '',
          step.error, step.model_used, step.cost_usd,
-         step.revised, step.revision_feedback),
+         step.revised, step.revision_feedback,
+         step.persona,
+         json.dumps(step.skills, ensure_ascii=False),
+         json.dumps(step.tools, ensure_ascii=False)),
     )
     c.commit()
     c.close()
@@ -167,7 +187,13 @@ def get_steps(job_id: str) -> list[dict[str, Any]]:
         'SELECT * FROM job_steps WHERE job_id = ? ORDER BY rowid', (job_id,),
     ).fetchall()
     c.close()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        d['skills'] = json.loads(d.pop('skills_json', None) or '[]')
+        d['tools'] = json.loads(d.pop('tools_json', None) or '[]')
+        result.append(d)
+    return result
 
 
 # ── Gate CRUD ─────────────────────────────────────────────────────────────────
