@@ -142,6 +142,20 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
         {/* Gate Inbox */}
         <GateInboxButton activeChannel={activeChannel} selectChannel={selectChannel} />
+
+        {/* Component Library */}
+        <button
+          onClick={() => selectChannel('components')}
+          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
+            flex items-center gap-2 mt-0.5
+            ${activeChannel === 'components'
+              ? 'bg-blue-600/15 text-blue-400 font-medium'
+              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+        >
+          <MatIcon name="widgets" className="text-[16px]" />
+          <span>컴포넌트 라이브러리</span>
+        </button>
       </div>
 
       {/* 하단 메뉴 */}

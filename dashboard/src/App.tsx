@@ -7,6 +7,7 @@ import { ChatRoom } from './components/ChatRoom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { JobBoard } from './components/JobBoard'
 import { GateInbox } from './components/GateInbox'
+import { ComponentLibrary } from './components/ComponentLibrary'
 import type { ChannelId } from './types'
 
 const queryClient = new QueryClient({
@@ -18,7 +19,7 @@ const queryClient = new QueryClient({
   },
 })
 
-const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates']
+const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates', 'components']
 
 function isChannelId(v: unknown): v is ChannelId {
   return typeof v === 'string' && (VALID_CHANNELS as string[]).includes(v)
@@ -135,10 +136,7 @@ function MessengerApp() {
           md:relative md:translate-x-0
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}>
-        <Sidebar
-          onClose={() => setSidebarOpen(false)}
-          navigate={navigate}
-        />
+        <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* 중앙: 메인 뷰 */}
@@ -146,12 +144,11 @@ function MessengerApp() {
         {activeChannel === 'jobs' ? (
           <JobBoard />
         ) : activeChannel === 'gates' ? (
-          <GateInbox onBack={() => navigate('all')} />
+          <GateInbox />
+        ) : activeChannel === 'components' ? (
+          <ComponentLibrary onBack={() => navigate('all')} />
         ) : (
-          <ChatRoom
-            onMenuClick={() => setSidebarOpen(true)}
-            onBack={() => navigate('all')}
-          />
+          <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
         )}
       </div>
 
