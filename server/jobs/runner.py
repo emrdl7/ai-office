@@ -98,6 +98,86 @@ async def resolve_gate(job_id: str, gate_id: str, decision: str, feedback: str =
     return True
 
 
+async def resume_job(job_id: str) -> tuple[bool, str]:
+    """중단(failed / cancelled)된 Job을 마지막 완료 step 이후부터 재개한다.
+
+    Returns:
+        (success, message) — success=False면 message에 사유
+    """
+    from db.job_store import get_job, get_steps
+    from jobs.registry import get as get_spec
+
+    if job_id in _running:
+        return False, '이미 실행 중'
+
+    job_dict = get_job(job_id)
+    if not job_dict:
+        return False, 'Job 없음'
+
+    prev_status = job_dict.get('status', '')
+    if prev_status not in ('failed', 'cancelled'):
+        return False, f'재개 불가 (현재 상태: {prev_status})'
+
+    spec = get_spec(job_dict['spec_id'])
+    if not spec:
+        return False, f'Job spec 없음: {job_dict["spec_id"]}'
+
+    try:
+        steps_rows = get_steps(job_id)
+    except Exception:
+        steps_rows = []
+    steps_done = {s['step_id']: s for s in steps_rows if s['status'] == 'done'}
+
+    try:
+        input_data = json.loads(job_dict.get('input_json') or '{}')
+    except Exception:
+        input_data = {}
+    try:
+        artifacts = json.loads(job_dict.get('artifacts_json') or '{}')
+    except Exception:
+        artifacts = {}
+
+    # context 복원 — 입력 + 완료된 step 산출물
+    context: dict[str, str] = {k: str(v) for k, v in input_data.items()}
+    context.update({k: str(v) for k, v in artifacts.items()})
+
+    # 상태 리셋 — error 제거, running으로 전환
+    update_job(job_id, status='running', error='', finished_at='')
+
+    # 이벤트 발행
+    try:
+        from log_bus.event_bus import event_bus, LogEvent
+        await event_bus.publish(LogEvent(
+            agent_id='system',
+            event_type='job_resumed',
+            message=f'♻️ Job 재개: {job_dict.get("title", job_id)} (완료 step {len(steps_done)}개 스킵)',
+            data={'job_id': job_id, 'prev_status': prev_status,
+                  'done_step_count': len(steps_done),
+                  'done_step_ids': list(steps_done.keys())},
+        ))
+    except Exception:
+        pass
+
+    job = JobRun(
+        id=job_id,
+        spec_id=job_dict['spec_id'],
+        title=job_dict['title'],
+        status='running',
+        input=input_data,
+        artifacts=artifacts,
+    )
+
+    task = asyncio.create_task(
+        _execute(job, spec, resume_context=context, resume_steps_done=steps_done)
+    )
+    _running[job_id] = task
+    task.add_done_callback(lambda _: _running.pop(job_id, None))
+
+    logger.info('[resume_job] %s 재개 시작 (이전 상태: %s, 완료 step: %d)',
+                job_id, prev_status, len(steps_done))
+    return True, f'{len(steps_done)}개 step 스킵하고 재개'
+
+
 async def resume_orphan_jobs() -> None:
     """서버 재시작 후 중단된 Job을 복구한다. (1-1)
 

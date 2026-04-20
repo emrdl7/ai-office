@@ -1364,6 +1364,24 @@ export function JobDetailView({
     },
   })
 
+  const resume = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/jobs/${jobId}/resume`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: '재개 실패' }))
+        throw new Error(err.detail || '재개 실패')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+      qc.invalidateQueries({ queryKey: ['job', jobId] })
+    },
+    onError: (e: Error) => {
+      alert(`재개 실패: ${e.message}`)
+    },
+  })
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -1464,6 +1482,19 @@ export function JobDetailView({
               title="입력값 복제로 새 작업 시작"
             >
               <MatIcon name="content_copy" className="text-[16px]" />
+            </button>
+          )}
+          {(job.status === 'failed' || job.status === 'cancelled') && (
+            <button
+              onClick={() => resume.mutate()}
+              disabled={resume.isPending}
+              className="h-8 flex items-center gap-1 px-2 rounded-lg
+                text-white bg-emerald-600 hover:bg-emerald-700
+                transition-colors cursor-pointer disabled:opacity-50"
+              title={`중단 시점부터 재개 (완료된 ${job.steps?.filter(s => s.status === 'done').length ?? 0}개 step 스킵)`}
+            >
+              <MatIcon name="play_arrow" className="text-[16px]" />
+              <span className="text-[11px] font-medium">재개</span>
             </button>
           )}
           {(job.status === 'running' || job.status === 'queued' || job.status === 'waiting_gate') && (

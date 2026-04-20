@@ -353,6 +353,16 @@ async def decide_gate(
     return {'status': 'ok', 'decision': body.decision}
 
 
+@router.post('/api/jobs/{job_id}/resume')
+async def resume_failed_job(job_id: str) -> dict[str, Any]:
+    """실패/취소된 Job을 마지막 완료 step 이후부터 재개."""
+    from jobs.runner import resume_job
+    ok, msg = await resume_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return {'status': 'resuming', 'message': msg}
+
+
 @router.delete('/api/jobs/{job_id}')
 async def delete_job(job_id: str) -> dict[str, str]:
     """Job 삭제 — 완료/실패/취소 상태는 DB에서 영구 삭제, 실행 중은 취소."""
