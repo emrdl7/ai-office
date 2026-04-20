@@ -26,11 +26,6 @@ async def restart_server(request: Request) -> dict[str, Any]:
       detail='코드 패치가 진행 중입니다. 완료 후 재시작하거나 ?force=true로 강제하세요',
     )
   async def _bye() -> None:
-    await _a.sleep(1.0)
-    await event_bus.publish(LogEvent(
-      agent_id='teamlead', event_type='system_notice',
-      message='♻️ 서버 재시작 중... (약 5초 후 재연결)',
-    ))
     await _a.sleep(0.5)
     _os._exit(0)
   _a.create_task(_bye())
@@ -43,6 +38,46 @@ async def get_agent_rules(agent: str, request: Request) -> list[dict[str, Any]]:
   office: Office = request.app.state.office
   rules = office.improvement_engine.prompt_evolver.load_rules(agent)
   return [asdict(r) for r in rules]
+
+
+@router.get('/api/cost/today')
+async def get_cost_today() -> dict[str, Any]:
+  '''오늘 LLM 호출 통계 + Opus 잔여 횟수 + tier별 집계를 반환한다.'''
+  from runners.cost_tracker import get_today_stats
+  from runners.model_router import _DEEP_TIER_DAILY_LIMIT
+  stats = get_today_stats()
+
+  # tier별 집계 — 모델명 패턴으로 tier 추정
+  tier_map: dict[str, dict[str, Any]] = {
+    'nano/fast': {'label': 'nano/fast (Haiku)', 'calls': 0, 'cost_usd': 0.0, 'color': 'blue'},
+    'standard':  {'label': 'standard (Sonnet)', 'calls': 0, 'cost_usd': 0.0, 'color': 'green'},
+    'deep':      {'label': 'deep (Opus)',        'calls': 0, 'cost_usd': 0.0, 'color': 'purple'},
+    'research':  {'label': 'research (Gemini)',  'calls': 0, 'cost_usd': 0.0, 'color': 'cyan'},
+  }
+  for m in stats['by_model']:
+    model = (m.get('model') or '').lower()
+    if 'haiku' in model:
+      tier_map['nano/fast']['calls'] += m['calls']
+      tier_map['nano/fast']['cost_usd'] += m['cost_usd']
+    elif 'opus' in model:
+      tier_map['deep']['calls'] += m['calls']
+      tier_map['deep']['cost_usd'] += m['cost_usd']
+    elif 'sonnet' in model:
+      tier_map['standard']['calls'] += m['calls']
+      tier_map['standard']['cost_usd'] += m['cost_usd']
+    elif 'gemini' in model or m.get('runner') == 'gemini':
+      tier_map['research']['calls'] += m['calls']
+      tier_map['research']['cost_usd'] += m['cost_usd']
+
+  opus_calls = tier_map['deep']['calls']
+  stats['opus_calls_today'] = opus_calls
+  stats['opus_daily_limit'] = _DEEP_TIER_DAILY_LIMIT
+  stats['opus_remaining'] = max(0, _DEEP_TIER_DAILY_LIMIT - opus_calls)
+  stats['by_tier'] = [
+    {'tier': k, **v, 'cost_usd': round(v['cost_usd'], 4)}
+    for k, v in tier_map.items()
+  ]
+  return stats
 
 
 @router.post('/api/improvement/rules/{agent}/toggle')

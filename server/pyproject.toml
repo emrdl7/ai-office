@@ -12,11 +12,13 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "pymupdf>=1.27.2.2",
     "python-docx>=1.2.0",
+    "python-pptx>=1.0.2",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.24",
     "requests>=2.33.1",
     "sqlmodel>=0.0.22",
     "uvicorn[standard]>=0.34.0",
+    "wcag-contrast-ratio>=0.9",
     "weasyprint>=62.0",
 ]
 

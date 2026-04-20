@@ -8,6 +8,73 @@ import {
   AVATAR_IMG, formatTime, isSystemEvent, fileIcon, formatSize,
   linkify,
 } from './chatUtils'
+import { useStore } from '../../store'
+
+const STEP_EVENT_TYPES = new Set([
+  'job_step_started', 'job_step_done', 'job_step_failed', 'job_step_revised',
+])
+
+function isStepEvent(log: LogEntry): boolean {
+  return STEP_EVENT_TYPES.has(log.event_type)
+}
+
+function StepGroupCard({ logs }: { logs: LogEntry[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const jobTitle = (logs[0].data?.job_title as string) ?? '작업'
+  const jobId = (logs[0].data?.job_id as string) ?? ''
+  const doneCount = logs.filter((l) => l.event_type === 'job_step_done').length
+  const failedCount = logs.filter((l) => l.event_type === 'job_step_failed').length
+  const allDone = logs.at(-1)?.event_type === 'job_step_done' || logs.at(-1)?.event_type === 'job_step_failed'
+
+  return (
+    <div className="py-1">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl
+          bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700
+          hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer touch-manipulation"
+      >
+        <MatIcon
+          name={failedCount > 0 ? 'error' : allDone ? 'check_circle' : 'pending'}
+          className={`text-[16px] shrink-0
+            ${failedCount > 0 ? 'text-red-400' : allDone ? 'text-green-400' : 'text-blue-400'}`}
+        />
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate block">{jobTitle}</span>
+          <span className="text-[10px] text-gray-400">
+            {doneCount}완료{failedCount > 0 ? ` · ${failedCount}실패` : ''} · {logs.length}스텝
+            {jobId && <span className="font-mono ml-1">#{jobId.slice(0, 6)}</span>}
+          </span>
+        </div>
+        <MatIcon
+          name="expand_more"
+          className={`text-[16px] text-gray-400 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className="mt-1 ml-3 space-y-0.5">
+          {logs.map((log, i) => {
+            const icon = log.event_type === 'job_step_done'
+              ? 'check' : log.event_type === 'job_step_failed'
+              ? 'close' : log.event_type === 'job_step_revised'
+              ? 'refresh' : 'play_arrow'
+            const color = log.event_type === 'job_step_done'
+              ? 'text-green-500' : log.event_type === 'job_step_failed'
+              ? 'text-red-400' : log.event_type === 'job_step_revised'
+              ? 'text-orange-400' : 'text-blue-400'
+            return (
+              <div key={log.id ?? i} className="flex items-center gap-1.5 px-2 py-0.5">
+                <MatIcon name={icon} className={`text-[12px] shrink-0 ${color}`} />
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">{log.message}</span>
+                <span className="text-[10px] text-gray-400 ml-auto shrink-0">{formatTime(log.timestamp)}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface MessageListProps {
   logs: LogEntry[]
@@ -36,6 +103,25 @@ export function MessageList({ logs, onImageClick }: MessageListProps) {
   for (let i = 0; i < logs.length; i++) {
     const log = logs[i]
     if (isSystemEvent(log)) continue
+
+    // Step 이벤트는 같은 job_id로 묶어 카드로 렌더링
+    if (isStepEvent(log)) {
+      const jobId = log.data?.job_id as string | undefined
+      const group: LogEntry[] = [log]
+      while (i + 1 < logs.length) {
+        const next = logs[i + 1]
+        if (isStepEvent(next) && next.data?.job_id === jobId) {
+          group.push(next)
+          i++
+        } else {
+          break
+        }
+      }
+      elements.push(<StepGroupCard key={`step-group-${log.id ?? i}`} logs={group} />)
+      prevAgent = ''
+      prevTime = ''
+      continue
+    }
 
     const threadId = (log.data as Record<string, unknown>)?.thread_id as string ?? ''
     const threadColor = threadColorClass(threadId)
@@ -98,8 +184,8 @@ export function MessageList({ logs, onImageClick }: MessageListProps) {
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
             <div className="flex items-baseline gap-2 mb-0.5">
               <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                {profile.character || profile.name}</span>
-              <span className="text-[10px] text-gray-400">{profile.role}</span>
+                {profile.name}</span>
+              <span className="text-[10px] text-gray-400">{profile.character}</span>
               <span className="text-[10px] text-gray-400">{time}</span>
             </div>
             <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
@@ -237,6 +323,8 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClick }: {
   const isColleagueQ = log.event_type === 'colleague_question'
   const content = log.message.replace(/^\[.*?\]\s*/, '')
   const needsInput = !!log.data?.needs_input
+  const jobId = log.data?.job_id as string | undefined
+  const jobTitle = log.data?.job_title as string | undefined
   const isLong = content.length > COLLAPSE_THRESHOLD
   const displayContent = isLong && !expanded
     ? content.slice(0, COLLAPSED_PREVIEW).replace(/\s+\S*$/, '') + '…'
@@ -291,6 +379,28 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClick }: {
           </div>
         )}
       </div>
+      {jobId && (
+        <JobBadge jobId={jobId} jobTitle={jobTitle} />
+      )}
     </div>
+  )
+}
+
+function JobBadge({ jobId, jobTitle }: { jobId: string; jobTitle?: string }) {
+  const setActiveChannel = useStore((s) => s.setActiveChannel)
+  return (
+    <button
+      onClick={() => setActiveChannel('jobs')}
+      className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg
+        bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40
+        border border-blue-200 dark:border-blue-700/40
+        text-xs font-medium text-blue-700 dark:text-blue-300
+        cursor-pointer transition-colors touch-manipulation"
+    >
+      <MatIcon name="assignment" className="text-[13px]" />
+      <span className="truncate max-w-[180px]">{jobTitle || '작업'}</span>
+      <span className="text-blue-400 dark:text-blue-500 font-mono text-[10px]">#{jobId.slice(0, 6)}</span>
+      <MatIcon name="open_in_new" className="text-[11px] opacity-60" />
+    </button>
   )
 }

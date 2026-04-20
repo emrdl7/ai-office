@@ -106,6 +106,8 @@ def _build_selection_prompt(step, context: dict[str, str]) -> str:
     hint_block = ''
     if hints:
         hint_block = f'\n[힌트 — spec에 미리 지정된 값, 적절하면 그대로 사용]\n{json.dumps(hints, ensure_ascii=False)}\n'
+    if context.get('output_format'):
+        hint_block += f'\n[출력 형식 요청] {context["output_format"]} → deliver 스텝이면 반드시 이 형식에 맞는 툴 선택:\n  pdf → pdf_generate | docx → docx_generate | pptx → pptx_generate | notion → notion_write | slack → slack_post | drive → google_drive_upload\n'
 
     return f"""당신은 AI 에이전트 오케스트레이터입니다.
 아래 Step의 목적에 가장 적합한 페르소나 1개, 스킬 1-3개, 툴 0-3개를 선택하세요.

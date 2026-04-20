@@ -12,11 +12,12 @@ required_fields:
 steps:
   - id: reference_plan
     agent: planner
+    persona: design_director
+    skills: [structured_writing]
     tier: nano
     output_key: ref_plan
     tools: []
     prompt: |
-      당신은 UX 디자이너입니다.
       아래 프로젝트의 디자인 레퍼런스 수집 계획을 수립하세요.
 
       [프로젝트]
@@ -37,12 +38,14 @@ steps:
 
   - id: reference_gather
     agent: designer
+    persona: design_director
+    skills: [research_synthesis, source_citation]
     tier: research
     output_key: references
     tools:
       - web_search
+      - screenshot_url
     prompt: |
-      당신은 UX 디자이너입니다.
       아래 계획에 따라 디자인 레퍼런스를 수집하세요.
 
       [수집 계획]
@@ -65,6 +68,8 @@ steps:
 
   - id: direction_define
     agent: designer
+    persona: design_director
+    skills: [visual_design_standards, structured_writing]
     tier: standard
     output_key: direction
     system: |
@@ -125,7 +130,10 @@ steps:
 
   - id: direction_review
     agent: reviewer
+    persona: design_director
+    skills: [critique, visual_design_standards]
     tier: deep
+    optional: true
     output_key: direction_critique
     tools: []
     prompt: |
@@ -173,6 +181,8 @@ steps:
 
   - id: brief
     agent: designer
+    persona: design_director
+    skills: [structured_writing, visual_design_standards]
     tier: standard
     output_key: brief
     system: |
@@ -223,6 +233,106 @@ steps:
       - 변경된 섹션 앞에 (수정됨) 표시를 붙이세요
       수정된 전체 디자인 브리프를 완성된 형태로 출력하세요.
 
+  - id: palette_svg
+    agent: designer
+    persona: design_director
+    skills: [visual_design_standards]
+    tier: nano
+    optional: true
+    output_key: palette_svg
+    tools: []
+    prompt: |
+      아래 디자인 브리프에서 색상 코드를 추출해 팔레트 정보를 JSON으로 정리하세요.
+
+      [디자인 브리프]
+      {brief}
+
+      다음 형식으로만 출력하세요 (설명 없이):
+      {
+        "title": "프로젝트명 팔레트",
+        "colors": [
+          {"hex": "#1A73E8", "name": "Primary Blue", "usage": "주 버튼, 링크"},
+          {"hex": "#F8F9FA", "name": "Background", "usage": "페이지 배경"},
+          {"hex": "#202124", "name": "Text Primary", "usage": "본문 텍스트"}
+        ]
+      }
+
+      브리프에 언급된 모든 색상 코드를 포함하고, 없으면 방향에 맞게 3-5개 제안하세요.
+
+  - id: visual_mockup
+    agent: designer
+    persona: ui_designer
+    skills: [visual_design_standards, figma_execution]
+    tier: standard
+    output_key: visual_mockup
+    tools:
+      - stitch_generate
+      - figma_get_design
+    prompt: |
+      디자인 브리프 기반의 UI 시안을 생성하세요.
+
+      [디자인 브리프]
+      {brief}
+
+      [디자인 방향]
+      {direction}
+
+      stitch_generate 도구 결과를 확인하고 다음을 작성하세요:
+
+      ## 생성된 시안
+      (도구 결과 요약)
+
+      ## 시안 평가
+      - 브리프와의 일치도: (1-10)
+      - 개선 필요 사항: (있으면 기술)
+
+      ## 다음 단계
+      (시안을 바탕으로 퍼블리싱 단계에서 할 작업)
+
+  - id: summary
+    agent: designer
+    persona: design_director
+    skills: [structured_writing]
+    tier: nano
+    optional: true
+    output_key: summary
+    tools: []
+    prompt: |
+      아래 디자인 브리프를 팀원이 빠르게 공유할 수 있는 요약으로 압축하세요.
+
+      [디자인 브리프]
+      {brief}
+
+      **형식 (반드시 준수):**
+      ## 디자인 방향 한 줄
+      (컨셉 키워드 3개 + 1문장)
+
+      ## 핵심 비주얼 결정
+      - 색상: (Primary 1개 + 의도)
+      - 폰트: (추천 + 이유)
+      - 분위기: (형용사 2-3개)
+
+      ## 레퍼런스 Top 3
+      (가장 벤치마킹할 서비스명만)
+
+  - id: deliver
+    agent: designer
+    tier: nano
+    optional: true
+    output_key: delivery_result
+    tools: []
+    prompt: |
+      아래 결과물을 요청된 형식으로 내보내세요.
+
+      [결과물]
+      {brief}
+
+      [요청 형식]
+      {output_format}
+
+      적절한 도구를 사용해 내보내고 결과 경로/URL을 반환하세요.
+      output_format이 없으면 마크다운 그대로 반환하세요.
+
 gates:
   - id: direction_check
     after_step: direction_review
@@ -230,6 +340,6 @@ gates:
     auto_advance_after: null
 
   - id: brief_review
-    after_step: brief
-    prompt: "디자인 브리프를 확인하세요. 이상 없으면 승인, 추가 수정이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
+    after_step: summary
+    prompt: "디자인 브리프와 핵심 요약을 확인하세요. 이상 없으면 승인, 추가 수정이 필요하면 피드백을 입력하고 수정 후 재검토를 선택하세요."
     auto_advance_after: null

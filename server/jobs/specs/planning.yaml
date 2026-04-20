@@ -374,6 +374,24 @@ steps:
       ## 다음 단계
       (즉시 시작해야 할 액션 1-2개)
 
+  - id: deliver
+    agent: planner
+    tier: nano
+    optional: true
+    output_key: delivery_result
+    tools: []
+    prompt: |
+      아래 결과물을 요청된 형식으로 내보내세요.
+
+      [결과물]
+      {report}
+
+      [요청 형식]
+      {output_format}
+
+      적절한 도구를 사용해 내보내고 결과 경로/URL을 반환하세요.
+      output_format이 없으면 마크다운 그대로 반환하세요.
+
 gates:
   - id: problem_check
     after_step: problem_definition

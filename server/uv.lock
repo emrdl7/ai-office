@@ -1155,6 +1155,7 @@ dependencies = [
     { name = "requests" },
     { name = "sqlmodel" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "wcag-contrast-ratio" },
     { name = "weasyprint" },
 ]
 
@@ -1180,6 +1181,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.33.1" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+    { name = "wcag-contrast-ratio", specifier = ">=0.9" },
     { name = "weasyprint", specifier = ">=62.0" },
 ]
 
@@ -1443,6 +1445,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/66/1d/d0d200b10c9311ec25d2273f8aad8c3ef7cc7ea11808022501811208a750/watchfiles-1.1.1-cp314-cp314t-musllinux_1_1_aarch64.whl", hash = "sha256:311ff15a0bae3714ffb603e6ba6dbfba4065ab60865d15a6ec544133bdb21099", size = 629104, upload-time = "2025-10-14T15:05:49.908Z" },
     { url = "https://files.pythonhosted.org/packages/e3/bd/fa9bb053192491b3867ba07d2343d9f2252e00811567d30ae8d0f78136fe/watchfiles-1.1.1-cp314-cp314t-musllinux_1_1_x86_64.whl", hash = "sha256:a916a2932da8f8ab582f242c065f5c81bed3462849ca79ee357dd9551b0e9b01", size = 622112, upload-time = "2025-10-14T15:05:50.941Z" },
 ]
+
+[[package]]
+name = "wcag-contrast-ratio"
+version = "0.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/ec/faf3e7ee407a00081372632cdd9858302c8a9bb071e3767f8dac2ac3f9e2/wcag-contrast-ratio-0.9.tar.gz", hash = "sha256:69192b8e5c0a7d0dc5ff1187eeb3e398141633a4bde51c69c87f58fe87ed361c", size = 2131, upload-time = "2015-07-30T21:51:40.602Z" }
 
 [[package]]
 name = "weasyprint"

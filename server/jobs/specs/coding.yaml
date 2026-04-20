@@ -1,0 +1,169 @@
+id: coding
+title: 코딩
+description: 계획·구현·코드 리뷰·테스트까지 전체 개발 사이클을 수행한다.
+version: 1
+input_fields:
+  - task
+  - codebase
+  - language
+  - requirements
+required_fields:
+  - task
+field_questions:
+  language: "어떤 언어/프레임워크를 사용하나요? (Python / TypeScript / Go 등)"
+  codebase: "관련 코드 경로나 구조를 알려주세요 (없으면 건너뜀)"
+
+steps:
+  - id: plan
+    agent: developer
+    persona: product_manager
+    skills: [structured_writing, requirements_definition]
+    tier: standard
+    output_key: plan
+    tools:
+      - read_file
+      - list_files
+    prompt: |
+      아래 개발 태스크를 분석해 구체적인 구현 계획을 수립하세요.
+
+      [태스크]
+      {task}
+
+      [코드베이스 경로]
+      {codebase}
+
+      [언어/프레임워크]
+      {language}
+
+      [추가 요구사항]
+      {requirements}
+
+      다음을 JSON으로만 출력하세요 (설명 없이):
+      {
+        "summary": "구현 목적 1문장",
+        "approach": "기술적 접근 방법",
+        "steps": ["구현 단계1", "구현 단계2", "구현 단계3"],
+        "files_to_modify": ["파일1", "파일2"],
+        "edge_cases": ["엣지 케이스1", "엣지 케이스2"]
+      }
+
+  - id: implement
+    agent: developer
+    skills: [technical_spec]
+    tier: deep
+    output_key: implementation
+    tools:
+      - read_file
+      - write_file
+      - list_files
+      - run_shell
+    prompt: |
+      아래 계획에 따라 코드를 구현하세요.
+
+      [구현 계획]
+      {plan}
+
+      [태스크]
+      {task}
+
+      [언어/프레임워크]
+      {language}
+
+      지침:
+      - 계획의 구현 단계를 순서대로 실행하세요
+      - read_file로 기존 코드를 확인하고 write_file로 변경 사항을 저장하세요
+      - 각 파일 변경 후 간략한 설명을 포함하세요
+      - 엣지 케이스를 처리하세요
+      - 기존 코딩 컨벤션을 따르세요
+
+      구현이 완료되면 변경된 파일 목록과 주요 변경 내용을 마크다운으로 요약하세요.
+
+    revision_prompt: |
+      아래 구현에서 리뷰어가 지적한 사항을 수정하세요.
+
+      [기존 구현 요약]
+      {implementation}
+
+      [리뷰 지적 사항]
+      {revision_request}
+
+      지침:
+      - 지적된 사항만 수정하고 나머지는 유지하세요
+      - 수정 후 변경된 내용을 요약하세요
+
+  - id: review
+    agent: developer
+    persona: code_reviewer
+    skills: [code_review, critique]
+    tier: standard
+    optional: true
+    output_key: review_result
+    tools:
+      - read_file
+      - diff_files
+    prompt: |
+      아래 구현 내용을 코드 리뷰하세요.
+
+      [구현 계획]
+      {plan}
+
+      [구현 요약]
+      {implementation}
+
+      다음 관점에서 검토하세요:
+      1. 정확성: 요구사항을 올바르게 구현했는가?
+      2. 엣지 케이스: 예외 상황이 적절히 처리되었는가?
+      3. 코드 품질: 가독성, 중복, 불필요한 복잡성
+      4. 성능: 명백한 병목이나 비효율이 있는가?
+      5. 보안: SQL 인젝션, XSS, 인증 누락 등 취약점
+
+      ## 리뷰 결과
+      ### 합격 여부: (합격 / 수정 필요)
+      ### 잘된 점
+      ### 수정 필요 사항 (우선순위 순)
+      ### 권장 수정안 (구체적 코드 변경 지시)
+
+  - id: test
+    agent: developer
+    persona: qa_engineer
+    skills: [test_case_design]
+    tier: standard
+    optional: true
+    output_key: test_result
+    tools:
+      - run_python
+      - run_shell
+      - read_file
+    prompt: |
+      아래 구현을 테스트하세요.
+
+      [구현 계획]
+      {plan}
+
+      [구현 요약]
+      {implementation}
+
+      [코드베이스 경로]
+      {codebase}
+
+      지침:
+      - run_shell 또는 run_python으로 실제 테스트를 실행하세요
+      - 기존 테스트 스위트가 있으면 먼저 실행하세요
+      - 새로운 엣지 케이스 테스트를 작성하고 실행하세요
+      - 실패하는 테스트가 있으면 원인을 파악하세요
+
+      ## 테스트 결과
+      ### 실행한 테스트 목록
+      ### 결과 요약 (통과/실패 수)
+      ### 실패 원인 및 권장 수정 사항
+
+gates:
+  - id: plan_check
+    after_step: plan
+    prompt: "구현 계획을 확인하세요. [승인] 하면 코드 구현을 시작합니다. 접근 방법을 바꾸고 싶으면 피드백을 입력하고 [수정 후 재검토]를 선택하세요."
+    auto_advance_after: null
+
+  - id: review_check
+    after_step: review
+    prompt: "코드 리뷰 결과를 확인하세요. [승인] 하면 테스트 단계로 진행합니다. 수정이 필요하면 피드백을 입력하고 [수정 후 재검토]를 선택하세요."
+    auto_advance_after: 3600

@@ -5,6 +5,23 @@ import { MatIcon } from './icons'
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
+interface TierStat {
+  tier: string
+  label: string
+  calls: number
+  cost_usd: number
+  color: string
+}
+
+interface TodayCost {
+  opus_calls_today: number
+  opus_daily_limit: number
+  opus_remaining: number
+  total_cost_usd: number
+  budget_usd: number
+  by_tier: TierStat[]
+}
+
 interface JobInsights {
   total: number
   by_status: Record<string, number>
@@ -24,7 +41,7 @@ interface JobInsights {
 
 const STATUS_LABEL: Record<string, string> = {
   done: '완료', running: '실행중', queued: '대기', failed: '실패',
-  cancelled: '취소', waiting_gate: 'Gate 대기',
+  cancelled: '취소', waiting_gate: '게이트 대기',
 }
 const STATUS_COLOR: Record<string, string> = {
   done: 'bg-green-500', running: 'bg-blue-500', queued: 'bg-gray-400',
@@ -45,6 +62,12 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
     queryKey: ['job-insights'],
     queryFn: async () => (await fetch('/api/jobs/insights')).json(),
     refetchInterval: 15_000,
+  })
+
+  const { data: costData } = useQuery<TodayCost>({
+    queryKey: ['cost-today'],
+    queryFn: async () => (await fetch('/api/cost/today')).json(),
+    refetchInterval: 30_000,
   })
 
   const maxDaily = Math.max(...(data?.daily_done ?? []).map((d) => d.count), 1)
@@ -73,6 +96,81 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
 
         {/* 콘텐츠 */}
         <div className="overflow-y-auto p-4">
+          {/* Opus 잔여 횟수 */}
+          {costData && (
+            <div className="mb-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">오늘 Opus 사용량</p>
+              <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl px-3 py-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] text-purple-500 dark:text-purple-400 font-medium">
+                    claude-opus (deep tier)
+                  </span>
+                  <span className={`text-sm font-bold font-mono
+                    ${costData.opus_remaining === 0
+                      ? 'text-red-500'
+                      : costData.opus_remaining <= 3
+                        ? 'text-orange-500'
+                        : 'text-purple-600 dark:text-purple-300'
+                    }`}>
+                    {costData.opus_calls_today}/{costData.opus_daily_limit}회
+                  </span>
+                </div>
+                <div className="h-1.5 bg-purple-100 dark:bg-purple-900/40 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all
+                      ${costData.opus_remaining === 0
+                        ? 'bg-red-500'
+                        : costData.opus_remaining <= 3
+                          ? 'bg-orange-400'
+                          : 'bg-purple-500'
+                      }`}
+                    style={{ width: `${Math.min(100, Math.round((costData.opus_calls_today / costData.opus_daily_limit) * 100))}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-purple-400 mt-1">
+                  {costData.opus_remaining === 0
+                    ? '오늘 한도 소진 — Gemini로 자동 폴백 중'
+                    : `잔여 ${costData.opus_remaining}회`}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Tier별 호출 수 */}
+          {costData && costData.by_tier && costData.by_tier.some((t) => t.calls > 0) && (
+            <div className="mb-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">오늘 Tier별 호출</p>
+              <div className="space-y-1.5">
+                {costData.by_tier.map((t) => {
+                  const maxCalls = Math.max(...costData.by_tier.map((x) => x.calls), 1)
+                  const COLOR_BAR: Record<string, string> = {
+                    blue: 'bg-blue-400', green: 'bg-green-400',
+                    purple: 'bg-purple-500', cyan: 'bg-cyan-400',
+                  }
+                  const COLOR_TEXT: Record<string, string> = {
+                    blue: 'text-blue-500', green: 'text-green-500',
+                    purple: 'text-purple-500', cyan: 'text-cyan-500',
+                  }
+                  return (
+                    <div key={t.tier} className="flex items-center gap-2">
+                      <span className={`w-24 text-[10px] text-right shrink-0 truncate ${COLOR_TEXT[t.color] ?? 'text-gray-400'}`}>
+                        {t.label.split(' ')[0]}
+                      </span>
+                      <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${COLOR_BAR[t.color] ?? 'bg-gray-400'}`}
+                          style={{ width: `${Math.round((t.calls / maxCalls) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-8 text-[10px] text-gray-500 shrink-0 text-right">{t.calls}회</span>
+                      <span className="w-14 text-[10px] text-gray-400 shrink-0 text-right font-mono">${t.cost_usd.toFixed(4)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {isLoading && (
             <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-10">로딩 중...</p>
           )}
