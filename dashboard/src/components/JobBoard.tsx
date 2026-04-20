@@ -23,21 +23,22 @@ const STATUS_TABS = [
   { key: 'failed', label: '실패' },
 ] as const
 
-const STATUS_STYLE: Record<string, { dot: string; badge: string; label: string }> = {
-  queued:       { dot: 'bg-gray-400', badge: 'bg-gray-500/20 text-gray-400', label: '대기' },
-  running:      { dot: 'bg-blue-400 animate-pulse', badge: 'bg-blue-500/20 text-blue-400', label: '실행 중' },
-  waiting_gate: { dot: 'bg-yellow-400 animate-pulse', badge: 'bg-yellow-500/20 text-yellow-500', label: '게이트 대기' },
-  done:         { dot: 'bg-green-500', badge: 'bg-green-500/20 text-green-500', label: '완료' },
-  failed:       { dot: 'bg-red-500', badge: 'bg-red-500/20 text-red-500', label: '실패' },
-  cancelled:    { dot: 'bg-gray-500', badge: 'bg-gray-500/20 text-gray-500', label: '취소됨' },
+const STATUS_STYLE: Record<string, { dot: string; bar: string; badge: string; label: string }> = {
+  queued:       { dot: 'bg-slate-400', bar: 'bg-slate-400', badge: 'bg-slate-500/15 text-slate-500 dark:text-slate-400', label: '대기' },
+  running:      { dot: 'bg-sky-500 animate-pulse', bar: 'bg-sky-500', badge: 'bg-sky-500/15 text-sky-700 dark:text-sky-300', label: '실행 중' },
+  waiting_gate: { dot: 'bg-amber-500 animate-pulse', bar: 'bg-amber-500', badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', label: '게이트 대기' },
+  done:         { dot: 'bg-emerald-500', bar: 'bg-emerald-500', badge: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', label: '완료' },
+  failed:       { dot: 'bg-rose-500', bar: 'bg-rose-500', badge: 'bg-rose-500/15 text-rose-700 dark:text-rose-300', label: '실패' },
+  cancelled:    { dot: 'bg-slate-500', bar: 'bg-slate-500', badge: 'bg-slate-500/15 text-slate-500 dark:text-slate-400', label: '취소됨' },
 }
 
-const SPEC_ICONS: Record<string, string> = {
-  research: 'search',
-  planning: 'account_tree',
-  design_direction: 'palette',
-  review: 'rate_review',
-  publishing: 'code',
+const SPEC_META: Record<string, { icon: string; tone: string }> = {
+  research:         { icon: 'search',       tone: 'from-sky-500 to-blue-600' },
+  planning:         { icon: 'account_tree', tone: 'from-indigo-500 to-violet-600' },
+  design_direction: { icon: 'palette',      tone: 'from-pink-500 to-rose-600' },
+  review:           { icon: 'rate_review',  tone: 'from-amber-500 to-orange-600' },
+  publishing:       { icon: 'code',         tone: 'from-emerald-500 to-teal-600' },
+  coding:           { icon: 'terminal',     tone: 'from-fuchsia-500 to-purple-600' },
 }
 
 function timeAgo(ts: string): string {
@@ -55,63 +56,91 @@ function JobCard({
   job: Job; isSelected: boolean; onClick: () => void; onDelete: (e: React.MouseEvent) => void
 }) {
   const s = STATUS_STYLE[job.status] ?? STATUS_STYLE.queued
+  const meta = SPEC_META[job.spec_id] ?? { icon: 'work', tone: 'from-slate-500 to-slate-600' }
   const hasPendingGate = job.status === 'waiting_gate'
   const canDelete = DELETABLE_STATUSES.has(job.status)
+  const isLive = job.status === 'running' || job.status === 'waiting_gate' || job.status === 'queued'
+
+  // 완료 step 진행률
+  const doneSteps = (job.steps || []).filter(st => st.status === 'done').length
+  const totalSteps = (job.planned_steps || []).length || (job.steps || []).length
+  const progress = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0
 
   return (
     <div
-      className={`relative group w-full text-left px-3 py-3 rounded-xl transition-all
+      className={`relative group w-full rounded-2xl transition-all duration-200
         ${isSelected
-          ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
-          : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 hover:border-blue-300 dark:hover:border-blue-700'
+          ? 'bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/40 dark:to-slate-900 ring-2 ring-indigo-400 dark:ring-indigo-500/60 shadow-lg shadow-indigo-500/10'
+          : 'bg-white dark:bg-slate-900 ring-1 ring-slate-200 dark:ring-slate-800 hover:ring-slate-300 dark:hover:ring-slate-700 hover:-translate-y-0.5 hover:shadow-md'
         }`}
     >
-      <button onClick={onClick} className="w-full text-left cursor-pointer">
-        <div className="flex items-start gap-2.5">
-          {/* 아이콘 */}
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5
-            ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
-            <MatIcon name={SPEC_ICONS[job.spec_id] || 'work'} className="text-[16px]" />
+      {/* 좌측 상태 컬러바 */}
+      <span className={`absolute left-0 top-4 bottom-4 w-1 rounded-full ${s.bar} ${isLive ? 'animate-pulse' : ''}`} />
+
+      <button onClick={onClick} className="w-full text-left cursor-pointer p-3.5 pl-4">
+        <div className="flex items-start gap-3">
+          {/* spec 아이콘 — gradient tone */}
+          <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0
+            bg-gradient-to-br ${meta.tone} shadow-md ring-1 ring-black/5`}>
+            <MatIcon name={meta.icon} className="text-white text-[18px]" />
+            {isLive && totalSteps > 0 && (
+              <svg className="absolute -top-1 -right-1 w-5 h-5" viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor"
+                        className="text-white/40 dark:text-slate-900/80" strokeWidth="2" />
+                <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor"
+                        className="text-indigo-500" strokeWidth="2" strokeLinecap="round"
+                        strokeDasharray={`${(progress/100) * 50.27} 50.27`}
+                        transform="rotate(-90 10 10)" />
+              </svg>
+            )}
           </div>
 
           <div className="flex-1 min-w-0 pr-6">
             <div className="flex items-start justify-between gap-1">
-              <p className={`text-sm font-medium leading-snug truncate
-                ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-gray-100'}`}>
+              <p className={`text-[13.5px] font-semibold leading-snug line-clamp-2
+                ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100'}`}>
                 {job.title}
               </p>
               {hasPendingGate && (
-                <MatIcon name="notification_important" className="text-[14px] text-yellow-500 shrink-0 mt-0.5" />
+                <MatIcon name="pending_actions" className="text-[16px] text-amber-500 shrink-0 mt-0.5 animate-bounce" />
               )}
             </div>
 
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${s.badge}`}>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
                 {s.label}
               </span>
-              <span className="text-[10px] text-gray-400 truncate">{job.spec_id}</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{job.spec_id}</span>
+              {totalSteps > 0 && (
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                  {doneSteps}/{totalSteps}
+                </span>
+              )}
             </div>
 
-            <div className="flex items-center justify-between mt-1">
-              {job.current_step && (job.status === 'running' || job.status === 'waiting_gate') ? (
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{job.current_step}</p>
+            <div className="flex items-center justify-between mt-2">
+              {job.current_step && isLive ? (
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate font-medium flex items-center gap-1">
+                  <MatIcon name="play_arrow" className="text-[12px] text-indigo-500" />
+                  {job.current_step}
+                </p>
               ) : (
                 <span />
               )}
-              <p className="text-[10px] text-gray-400 shrink-0">{timeAgo(job.created_at)}</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{timeAgo(job.created_at)}</p>
             </div>
           </div>
         </div>
       </button>
 
-      {/* 삭제 버튼 — hover 시 표시, done/cancelled/failed만 */}
+      {/* 삭제 버튼 — hover 시 표시 */}
       {canDelete && (
         <button
           onClick={onDelete}
           title="삭제"
-          className="absolute top-2 right-2 p-1 rounded-lg opacity-0 group-hover:opacity-100
-            text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20
+          className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100
+            text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20
             transition-all cursor-pointer"
         >
           <MatIcon name="delete_outline" className="text-[15px]" />

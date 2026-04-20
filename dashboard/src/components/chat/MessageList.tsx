@@ -163,9 +163,11 @@ export function MessageList({ logs, onImageClick }: MessageListProps) {
           className={`flex gap-2 md:gap-3 py-1.5 transition-shadow rounded ${threadClasses}`}
           title={threadId ? `토론 스레드 ${threadId}` : undefined}>
           {sameThread && <div className="hidden" />}
-          <div className="flex-shrink-0 mt-0.5 relative self-start w-8 h-8 md:w-9 md:h-9">
+          <div className="flex-shrink-0 mt-0.5 relative self-start w-9 h-9 md:w-10 md:h-10">
             <div className={`w-full h-full rounded-full bg-gradient-to-br ${profile.color}
-              flex items-center justify-center shadow-sm overflow-hidden`}>
+              flex items-center justify-center overflow-hidden
+              ring-2 ring-white dark:ring-slate-900 shadow-md
+              transition-transform hover:scale-105`}>
               {AVATAR_IMG[log.agent_id]
                 ? <img src={AVATAR_IMG[log.agent_id]} alt={profile.character}
                     className="w-full h-full object-cover" loading="lazy" />
@@ -195,7 +197,7 @@ export function MessageList({ logs, onImageClick }: MessageListProps) {
     } else {
       elements.push(
         <div key={log.id ?? i} id={log.id ? `log-${log.id}` : undefined}
-          className={`flex gap-3 py-0.5 pl-10 md:pl-12 transition-shadow rounded ${threadClasses}`}
+          className={`flex gap-3 py-0.5 pl-11 md:pl-[52px] transition-shadow rounded ${threadClasses}`}
           title={threadId ? `토론 스레드 ${threadId}` : undefined}>
           <div className="flex-1 min-w-0 max-w-[85%] md:max-w-[80%]">
             <MessageBubble log={log} isResponse={isResponse} onImageClick={onImageClick} />
@@ -292,8 +294,10 @@ function UserMessageText({ text }: { text: string }) {
     : text
 
   return (
-    <div className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-md
-      text-sm leading-relaxed">
+    <div className="bg-gradient-to-br from-indigo-500 to-violet-600 text-white
+      px-4 py-3 rounded-[20px] rounded-tr-[6px]
+      text-sm leading-relaxed shadow-lg shadow-indigo-500/20
+      ring-1 ring-inset ring-white/10">
       {linkify(display)}
       {isLong && (
         <div className="flex justify-center mt-3 pt-2 border-t border-white/15">
@@ -332,16 +336,17 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClick }: {
 
   return (
     <div className="group relative">
-      <div className={`px-3 md:px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed
+      <div className={`px-3.5 md:px-4 py-3 rounded-[20px] rounded-tl-[6px] text-sm leading-relaxed
+        transition-all duration-150
         ${needsInput
-          ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 shadow-sm'
+          ? 'bg-amber-50 dark:bg-amber-900/25 border-2 border-amber-300 dark:border-amber-600/70 shadow-md shadow-amber-500/10'
           : isAutonomous
-            ? 'bg-indigo-50/60 dark:bg-indigo-900/15 border border-indigo-200/50 dark:border-indigo-700/30 shadow-sm'
+            ? 'bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200/60 dark:border-indigo-700/40 shadow-sm'
             : isColleagueQ
-              ? 'bg-teal-50/60 dark:bg-teal-900/15 border border-teal-200/50 dark:border-teal-700/30 shadow-sm'
+              ? 'bg-teal-50/70 dark:bg-teal-900/20 border border-teal-200/60 dark:border-teal-700/40 shadow-sm'
               : isResponse
-                ? 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm'
-                : 'bg-gray-100 dark:bg-gray-800/60'
+                ? 'bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/70 shadow-sm hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600'
+                : 'bg-slate-100 dark:bg-slate-800/60 border border-transparent'
         }`}>
         {needsInput && (
           <div className="flex items-center gap-1.5 mb-2 text-amber-600 dark:text-amber-400">
