@@ -145,9 +145,9 @@ function MessengerApp() {
       {/* 중앙: 메인 뷰 */}
       <div className="flex-1 flex flex-col min-w-0">
         {activeChannel === 'jobs' ? (
-          <JobBoard />
+          <JobBoard onBack={() => navigate('all')} />
         ) : activeChannel === 'gates' ? (
-          <GateInbox />
+          <GateInbox onBack={() => navigate('all')} />
         ) : activeChannel === 'components' ? (
           <ComponentLibrary onBack={() => navigate('all')} />
         ) : (

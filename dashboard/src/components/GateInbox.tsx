@@ -242,7 +242,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
   )
 }
 
-export function GateInbox() {
+export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
   const { data: gates = [], isLoading, error } = useQuery({
     queryKey: ['pending-gates'],
     queryFn: fetchPendingGates,
@@ -252,7 +252,18 @@ export function GateInbox() {
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
       {/* 헤더 */}
-      <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="md:hidden flex items-center justify-center w-8 h-8 -ml-1
+              rounded-lg text-slate-500 dark:text-slate-400
+              hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="뒤로"
+          >
+            <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
+          </button>
+        )}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
             <MatIcon name="rule" className="text-[18px] text-amber-600 dark:text-amber-400" />
