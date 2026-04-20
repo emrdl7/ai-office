@@ -196,29 +196,29 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
         ${selectedJobId ? 'hidden md:flex md:w-80 lg:w-96' : 'flex w-full md:w-80 lg:w-96'}`}>
 
         {/* 헤더 */}
-        <div className="px-4 md:px-5 py-3 border-b border-gray-200 dark:border-gray-800">
-          <div className="flex items-center justify-between mb-3">
+        <div className="border-b border-slate-200 dark:border-slate-800">
+          <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-1">
               {onBack && (
                 <button
                   onClick={onBack}
                   className="md:hidden flex items-center justify-center w-8 h-8 -ml-1 mr-0.5
-                    rounded-lg text-gray-500 dark:text-gray-400
-                    hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors
+                    rounded-lg text-slate-500 dark:text-slate-400
+                    hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors
                     touch-manipulation cursor-pointer"
                   aria-label="채팅으로 돌아가기"
                 >
                   <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
                 </button>
               )}
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">작업 보드</h2>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">작업 보드</h2>
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 items-center">
               <button
                 onClick={() => setShowPlaybook(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
-                  text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30
-                  hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium
+                  text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/30
+                  hover:bg-violet-200 dark:hover:bg-violet-900/50 rounded-lg transition-colors cursor-pointer"
                 title="플레이북 — 여러 작업을 순서대로 자동 실행"
               >
                 <MatIcon name="play_circle" className="text-[14px]" />
@@ -226,8 +226,8 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
               </button>
               <button
                 onClick={() => setShowNewJob(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white
-                  bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-white
+                  bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm shadow-indigo-500/20 transition-colors cursor-pointer"
               >
                 <MatIcon name="add" className="text-[14px]" />
                 새 Job
@@ -236,7 +236,7 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
           </div>
 
           {/* 상태 필터 탭 */}
-          <div className="flex gap-1 overflow-x-auto no-scrollbar">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar px-4 md:px-5 pb-2 border-t border-slate-100 dark:border-slate-800/60 pt-2">
             {STATUS_TABS.map(tab => (
               <button
                 key={tab.key}

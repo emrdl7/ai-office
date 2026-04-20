@@ -252,14 +252,14 @@ export function GateInbox() {
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
       {/* 헤더 */}
-      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+      <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-            <MatIcon name="pending_actions" className="text-[18px] text-yellow-600 dark:text-yellow-400" />
+          <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+            <MatIcon name="rule" className="text-[18px] text-amber-600 dark:text-amber-400" />
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">검토 수신함</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+          <div className="leading-tight">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">검토 수신함</h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {isLoading ? '로딩 중...' : `${gates.length}개 검토 대기 중`}
             </p>
           </div>

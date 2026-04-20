@@ -112,8 +112,8 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       )}
 
       {/* 헤더 */}
-      <header className="flex items-center justify-between px-4 md:px-5 py-3
-        bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+      <header className="flex items-center justify-between px-4 md:px-5 h-[60px] shrink-0
+        bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <button onClick={onMenuClick}
             className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
