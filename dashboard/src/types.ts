@@ -70,7 +70,14 @@ export interface ToolItem {
 }
 
 // Job 파이프라인 타입
-export interface JobStep {
+export interface JobStepMeta {
+  parallel?: boolean
+  when?: string
+  optional?: boolean
+  tier?: string
+}
+
+export interface JobStep extends JobStepMeta {
   step_id: string
   status: 'queued' | 'running' | 'done' | 'failed' | string
   output: string
@@ -94,6 +101,11 @@ export interface JobGate {
   decision: string
   feedback: string
   opened_at: string
+  // W1-3 Gate AI 대리 판단
+  ai_suggestion?: '' | 'approve' | 'revise' | 'reject' | string
+  ai_confidence?: number
+  ai_model?: string
+  ai_reason?: string
 }
 
 export interface Job {

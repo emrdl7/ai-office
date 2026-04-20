@@ -93,6 +93,16 @@ async def toggle_agent_rule(agent: str, request: Request) -> dict[str, Any]:
   return {'success': True, 'rule_id': rule_id, 'active': active}
 
 
+@router.get('/api/cost/daily')
+async def get_cost_daily(days: int = 7) -> dict[str, Any]:
+  '''최근 N일 일별 비용·호출 수 — InsightPanel 스파크라인용.'''
+  from runners.cost_tracker import get_daily_costs
+  data = get_daily_costs(days=days)
+  return {'days': days, 'points': data,
+          'total_cost_usd': round(sum(p['total_cost_usd'] for p in data), 4),
+          'total_calls': sum(p['calls'] for p in data)}
+
+
 @router.post('/api/improvement/capability-audit')
 async def run_capability_audit(request: Request) -> dict[str, Any]:
   '''능력 선언 ↔ 실제 사용 교차 검증 — 수동 트리거.

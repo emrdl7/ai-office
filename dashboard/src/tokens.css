@@ -1,85 +1,144 @@
 /* =============================================================
-   AI Office Design Tokens
-   WCAG 2.1 AA 기준(일반 텍스트 4.5:1, 큰 텍스트 3:1)을 충족하는
-   색상·여백 토큰을 CSS 커스텀 프로퍼티로 정의합니다.
-   검증: dashboard/scripts/check-contrast.mjs
+   AI Office Design Tokens (v2 리브랜딩)
+   - 폰트: Pretendard Variable (한국어 최적화 + 가변 웨이트)
+   - 컬러: Slate/Gray 기반 뉴트럴 + Indigo accent
+   - WCAG 2.1 AA: 본문 4.5:1, 큰 텍스트 3:1 이상
+   - 8-point 그리드, 반경 6단계, elevation 4단계
 
-   ── @against 어노테이션 ────────────────────────────────────────
-   색상 토큰 주석에 @against 어노테이션을 달면 check-contrast.mjs가
-   라이트·다크 양방향 WCAG 대비 검사를 자동으로 실행합니다.
-
-   형식:  --color-<fg-token>: #hex;  /* ... | @against <bg1>[,<bg2>] * /
-   예시:  --color-text-primary: #111827;  /* | @against bg-primary,bg-surface * /
-
-   규칙:
-   · <bg>는 --color- 접두사를 제외한 배경 토큰명 (예: bg-primary)
-   · 여러 배경을 쉼표로 구분 (공백 무방)
-   · 새 전경 토큰 추가 시 반드시 @against 1개 이상 기재
-   · 새 배경 토큰 추가 시 기존 전경의 @against 목록에 등록
-   · 어노테이션 없는 --color-* 토큰은 빌드 실패 원인이 됨
+   주석 어노테이션 (check-contrast.mjs):
+     --color-<fg>: #hex;  /* ... | @against <bg1>[,<bg2>] */
    ============================================================= */
 
 :root {
-  /* ── 배경색 ── */
-  --color-bg-primary:    #f3f4f6;  /* gray-100  — 앱 전체 배경 */
-  --color-bg-surface:    #ffffff;  /* white     — 카드·패널 배경 */
-  --color-bg-sidebar:    #1e293b;  /* slate-800 — 사이드바 배경 */
-  --color-bg-bubble-agent: #374151; /* gray-700 — 에이전트 말풍선 */
+  /* ── 배경 ── */
+  --color-bg-primary:       #f8fafc;  /* slate-50   — 앱 전체 배경 */
+  --color-bg-surface:       #ffffff;  /* white      — 카드·패널 */
+  --color-bg-surface-muted: #f1f5f9;  /* slate-100  — 비활성 카드 */
+  --color-bg-sidebar:       #0f172a;  /* slate-900  — 사이드바 */
+  --color-bg-bubble-agent:  #1e293b;  /* slate-800  — 에이전트 말풍선 */
+  --color-bg-subtle-accent: #eef2ff;  /* indigo-50  — 강조 카드 배경 */
 
-  /* ── 텍스트색 ── */
-  --color-text-primary:   #111827;  /* gray-900  | @against bg-primary,bg-surface */
-  --color-text-secondary: #4b5563;  /* gray-600  | @against bg-primary */
-  --color-text-inverse:   #f9fafb;  /* gray-50   | @against bg-sidebar */
-  --color-text-link:      #1d4ed8;  /* blue-700  | @against bg-primary */
-  --color-text-mention:   #93c5fd;  /* blue-300  | @against bg-bubble-agent */
+  /* ── 텍스트 ── */
+  --color-text-primary:    #0f172a;  /* slate-900 | @against bg-primary,bg-surface,bg-surface-muted,bg-subtle-accent,border,border-strong */
+  --color-text-secondary:  #475569;  /* slate-600 | @against bg-primary,bg-surface,bg-surface-muted */
+  --color-text-muted:      #64748b;  /* slate-500 | @against bg-primary,bg-surface */
+  --color-text-inverse:    #f8fafc;  /* slate-50  | @against bg-sidebar,bg-bubble-agent */
+  --color-text-link:       #4338ca;  /* indigo-700 | @against bg-primary,bg-surface */
+  --color-text-mention:    #a5b4fc;  /* indigo-300 | @against bg-bubble-agent */
 
-  /* ── 인터랙션색 ── */
-  --color-action-bg:      #2563eb;  /* blue-600 — 버튼·CTA 배경 */
-  --color-action-text:    #ffffff;  /* white    | @against action-bg,action-hover */
-  --color-action-hover:   #1d4ed8;  /* blue-700 */
+  /* ── 강조·상태 ── */
+  --color-accent:          #4f46e5;  /* indigo-600 — 브랜드 액션 */
+  --color-accent-hover:    #4338ca;  /* indigo-700 */
+  --color-accent-fg:       #ffffff;  /* | @against accent,accent-hover */
+  --color-success:         #047857;  /* emerald-700 | @against bg-surface,success-bg */
+  --color-success-bg:      #ecfdf5;  /* emerald-50 */
+  --color-warn:            #b45309;  /* amber-700   | @against bg-surface,bg-primary,warn-bg */
+  --color-warn-bg:         #fffbeb;  /* amber-50 */
+  --color-danger:          #b91c1c;  /* red-700     | @against bg-surface,bg-primary,danger-bg */
+  --color-danger-bg:       #fef2f2;  /* red-50 */
 
-  /* ── 여백 (8-point grid) ── */
-  --spacing-1:  4px;
-  --spacing-2:  8px;
+  /* ── 액션 (레거시 호환 별칭) ── */
+  --color-action-bg:    var(--color-accent);
+  --color-action-text:  var(--color-accent-fg);
+  --color-action-hover: var(--color-accent-hover);
+
+  /* ── 테두리 ── */
+  --color-border:        #e2e8f0;  /* slate-200 */
+  --color-border-strong: #cbd5e1;  /* slate-300 */
+
+  /* ── 간격 (4/8 그리드) ── */
+  --spacing-0: 0;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
   --spacing-3: 12px;
   --spacing-4: 16px;
+  --spacing-5: 20px;
   --spacing-6: 24px;
   --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
 
-  /* ── 테두리 반지름 ── */
-  --radius-sm:  4px;
-  --radius-md:  8px;
-  --radius-lg: 12px;
+  /* ── 반경 ── */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
 
+  /* ── Elevation (4단계) ── */
+  --shadow-1: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
+  --shadow-2: 0 2px 8px -2px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-3: 0 10px 24px -8px rgba(15, 23, 42, 0.15), 0 4px 8px -4px rgba(15, 23, 42, 0.08);
+  --shadow-4: 0 24px 48px -12px rgba(15, 23, 42, 0.25);
+
   /* ── 타이포그래피 ── */
-  --font-family-base: 'NexonLv1Gothic', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-family-base: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR', Roboto, 'Segoe UI', sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* 타입 스케일 (1.125 비율) */
+  --font-size-2xs:  11px;
   --font-size-xs:   12px;
   --font-size-sm:   13px;
   --font-size-base: 14px;
-  --font-size-lg:   16px;
+  --font-size-md:   15px;
+  --font-size-lg:   17px;
   --font-size-xl:   20px;
+  --font-size-2xl:  24px;
+  --font-size-3xl:  30px;
+
+  --line-height-tight: 1.25;
+  --line-height-snug:  1.4;
+  --line-height-base:  1.55;
+  --line-height-relaxed: 1.7;
+
+  --font-weight-regular: 400;
+  --font-weight-medium:  500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:    700;
+
+  /* ── 모션 ── */
+  --transition-fast: 120ms cubic-bezier(0.2, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.2, 0, 0.2, 1);
+  --transition-slow: 320ms cubic-bezier(0.2, 0, 0.2, 1);
 
   /* ── z-index 레이어 ── */
-  --z-backdrop: 30;
-  --z-sidebar:  40;
-  --z-modal:    50;
+  --z-backdrop:  30;
+  --z-sidebar:   40;
+  --z-modal:     50;
+  --z-toast:     60;
+  --z-tooltip:   70;
 }
 
 /* 다크 모드 오버라이드 */
 .dark {
-  /* ── 배경색 ── */
-  --color-bg-primary:    #030712;  /* gray-950 — 앱 전체 배경 */
-  --color-bg-surface:    #111827;  /* gray-900 — 카드·패널 배경 */
-  --color-bg-sidebar:    #0f172a;  /* slate-900 */
-  --color-bg-bubble-agent: #1f2937; /* gray-800 */
+  --color-bg-primary:       #020617;  /* slate-950 */
+  --color-bg-surface:       #0f172a;  /* slate-900 */
+  --color-bg-surface-muted: #1e293b;  /* slate-800 */
+  --color-bg-sidebar:       #020617;  /* slate-950 */
+  --color-bg-bubble-agent:  #1e293b;  /* slate-800 */
+  --color-bg-subtle-accent: #1e1b4b;  /* indigo-950 */
 
-  /* ── 텍스트색 ── */
-  --color-text-primary:   #f3f4f6;  /* gray-100  (on bg-primary: ~18.4:1 ✓) */
-  --color-text-secondary: #9ca3af;  /* gray-400  (on bg-primary: ~7.8:1  ✓) */
-  /* --color-text-inverse 다크 오버라이드 제거:
-     dark 팔레트에 밝은 배경이 없어 유효한 대비 쌍을 구성할 수 없음.
-     라이트 모드 값(#f9fafb)을 그대로 사용합니다. */
-  --color-text-link:      #60a5fa;  /* blue-400  (on bg-surface: ~5.8:1  ✓) */
-  --color-text-mention:   #93c5fd;  /* blue-300  (on bubble-agent: high  ✓) */
+  --color-text-primary:    #f1f5f9;  /* slate-100 */
+  --color-text-secondary:  #cbd5e1;  /* slate-300 */
+  --color-text-muted:      #94a3b8;  /* slate-400 */
+  --color-text-link:       #a5b4fc;  /* indigo-300 */
+
+  --color-accent:          #818cf8;  /* indigo-400 */
+  --color-accent-hover:    #a5b4fc;  /* indigo-300 */
+  --color-accent-fg:       #0f172a;
+  --color-success:         #34d399;  /* emerald-400 */
+  --color-success-bg:      #022c22;
+  --color-warn:            #fbbf24;  /* amber-400 */
+  --color-warn-bg:         #451a03;
+  --color-danger:          #f87171;  /* red-400 */
+  --color-danger-bg:       #450a0a;
+
+  --color-border:        #334155;  /* slate-700 */
+  --color-border-strong: #475569;  /* slate-600 */
+
+  --shadow-1: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 8px -2px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-3: 0 10px 24px -8px rgba(0, 0, 0, 0.6), 0 4px 8px -4px rgba(0, 0, 0, 0.4);
+  --shadow-4: 0 24px 48px -12px rgba(0, 0, 0, 0.7);
 }

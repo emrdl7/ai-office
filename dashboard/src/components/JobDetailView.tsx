@@ -427,6 +427,19 @@ function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[
 
   if (gate.status !== 'pending') return null
 
+  const aiSuggest = gate.ai_suggestion || ''
+  const aiDecisionMap: Record<string, 'approved' | 'revised' | 'rejected'> = {
+    approve: 'approved', revise: 'revised', reject: 'rejected',
+  }
+  const aiMapped = aiDecisionMap[aiSuggest]
+  const aiIcon = aiSuggest === 'approve' ? 'thumb_up' : aiSuggest === 'revise' ? 'edit' : aiSuggest === 'reject' ? 'block' : 'psychology'
+  const aiToneCls =
+    aiSuggest === 'approve'
+      ? 'border-emerald-300 dark:border-emerald-700/40 bg-emerald-50/60 dark:bg-emerald-900/10 text-emerald-800 dark:text-emerald-300'
+      : aiSuggest === 'reject'
+      ? 'border-red-300 dark:border-red-700/40 bg-red-50/60 dark:bg-red-900/10 text-red-800 dark:text-red-300'
+      : 'border-indigo-300 dark:border-indigo-700/40 bg-indigo-50/60 dark:bg-indigo-900/10 text-indigo-800 dark:text-indigo-300'
+
   return (
     <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-700/40 space-y-2.5">
       {/* 헤더 */}
@@ -437,6 +450,43 @@ function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[
           <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-0.5">{gate.prompt}</p>
         </div>
       </div>
+
+      {/* AI 제안 카드 */}
+      {aiSuggest && (
+        <div className={`rounded-lg border p-2.5 ${aiToneCls}`}>
+          <div className="flex items-start gap-2">
+            <MatIcon name={aiIcon} className="text-[16px] mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-semibold uppercase tracking-wide">AI 제안</span>
+                <span className="text-[11px] font-bold">{aiSuggest === 'approve' ? '승인' : aiSuggest === 'revise' ? '수정 재실행' : aiSuggest === 'reject' ? '반려' : aiSuggest}</span>
+                {(gate.ai_confidence ?? 0) > 0 && (
+                  <span className="text-[10px] opacity-70">신뢰도 {gate.ai_confidence}%</span>
+                )}
+                {gate.ai_model && (
+                  <span className="text-[10px] opacity-60 font-mono">{gate.ai_model.replace(/^claude-/,'').replace(/-20\d{6}$/, '')}</span>
+                )}
+              </div>
+              {gate.ai_reason && (
+                <p className="text-[11px] mt-1 leading-snug opacity-90">{gate.ai_reason}</p>
+              )}
+              {aiMapped && (
+                <button
+                  onClick={() => decide.mutate(aiMapped)}
+                  disabled={decide.isPending || (aiMapped === 'revised' && !feedback.trim())}
+                  title={aiMapped === 'revised' && !feedback.trim() ? '수정 재실행 제안 — 피드백을 먼저 입력하세요' : `AI 제안(${aiSuggest})대로 처리`}
+                  className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium
+                    bg-white/70 dark:bg-gray-900/60 rounded-md border border-current
+                    hover:bg-white dark:hover:bg-gray-900 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <MatIcon name="bolt" className="text-[13px]" />
+                  AI 제안대로 {aiMapped === 'approved' ? '승인' : aiMapped === 'revised' ? '재실행' : '반려'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 피드백 입력 — 항상 표시 */}
       <textarea
@@ -1538,14 +1588,55 @@ export function JobDetailView({
               </span>
             </div>
             <div className="space-y-1.5">
-              {job.steps?.map((step, idx) => (
-                <StepCard
-                  key={step.step_id}
-                  step={step}
-                  isActive={job.current_step === step.step_id && step.status === 'running'}
-                  isLast={idx === (job.steps?.length ?? 0) - 1}
-                />
-              ))}
+              {(() => {
+                const steps = job.steps ?? []
+                const out: React.ReactNode[] = []
+                let i = 0
+                while (i < steps.length) {
+                  const s = steps[i]
+                  // 연속된 parallel=true step 그룹 스캔
+                  if (s.parallel) {
+                    const group: typeof steps = []
+                    while (i < steps.length && steps[i].parallel) {
+                      group.push(steps[i]); i++
+                    }
+                    if (group.length >= 2) {
+                      out.push(
+                        <div
+                          key={`grp-${group[0].step_id}`}
+                          className="relative pl-3 rounded-lg border-l-2 border-indigo-400 dark:border-indigo-500/70 bg-indigo-50/40 dark:bg-indigo-900/10"
+                        >
+                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 px-1 pt-1.5">
+                            <MatIcon name="bolt" className="text-[12px]" />
+                            병렬 그룹 · {group.length}개 동시 실행
+                          </div>
+                          <div className="space-y-1.5 p-1">
+                            {group.map((g, gi) => (
+                              <StepCard
+                                key={g.step_id}
+                                step={g}
+                                isActive={job.current_step === g.step_id && g.status === 'running'}
+                                isLast={gi === group.length - 1}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )
+                      continue
+                    }
+                  }
+                  out.push(
+                    <StepCard
+                      key={s.step_id}
+                      step={s}
+                      isActive={job.current_step === s.step_id && s.status === 'running'}
+                      isLast={i === steps.length - 1}
+                    />
+                  )
+                  i++
+                }
+                return out
+              })()}
             </div>
           </div>
 

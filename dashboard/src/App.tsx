@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { JobBoard } from './components/JobBoard'
 import { GateInbox } from './components/GateInbox'
 import { ComponentLibrary } from './components/ComponentLibrary'
+import { ToastHost } from './components/ToastHost'
 import type { ChannelId } from './types'
 
 const queryClient = new QueryClient({
@@ -138,6 +139,8 @@ function MessengerApp() {
         `}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
+
+      <ToastHost />
 
       {/* 중앙: 메인 뷰 */}
       <div className="flex-1 flex flex-col min-w-0">

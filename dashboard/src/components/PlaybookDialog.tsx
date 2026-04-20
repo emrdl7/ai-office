@@ -2,10 +2,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MatIcon } from './icons'
+import { PlaybookDAG } from './PlaybookDAG'
 
 interface PlaybookStep {
+  id?: string
   spec_id: string
   title: string
+  after?: string[]
 }
 
 interface Playbook {
@@ -143,6 +146,16 @@ export function PlaybookDialog({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </div>
+          )}
+
+          {/* DAG 시각화 */}
+          {selected && selected.steps && selected.steps.length > 0 && (
+            <PlaybookDAG steps={selected.steps.map((s, i) => ({
+              id: s.id || s.spec_id || `step${i}`,
+              spec_id: s.spec_id,
+              title: s.title,
+              after: s.after,
+            }))} />
           )}
 
           {/* 입력 필드 */}

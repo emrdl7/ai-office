@@ -140,3 +140,27 @@ def get_today_stats() -> dict[str, Any]:
 def is_budget_exceeded() -> bool:
   '''자율 루프에서 호출 — 한도 초과 시 True 반환.'''
   return get_today_stats().get('budget_exceeded', False)
+
+
+def get_daily_costs(days: int = 7) -> list[dict[str, Any]]:
+  '''최근 N일 일별 비용·호출 수. 스파크라인용.'''
+  from datetime import timedelta, datetime as _dt
+  days = max(1, min(days, 90))
+  c = _conn()
+  c.row_factory = sqlite3.Row
+  end = _dt.now(timezone.utc)
+  start = end - timedelta(days=days - 1)
+  like = f'{start.strftime("%Y-%m")}%'  # 단순화 — 최근 1~2달만 스캔
+  rows = c.execute(
+    "SELECT substr(ts,1,10) AS d, sum(est_cost_usd) AS cost, count(*) AS calls "
+    "FROM llm_calls WHERE ts >= ? GROUP BY d ORDER BY d",
+    (start.strftime('%Y-%m-%dT00:00:00'),),
+  ).fetchall()
+  by_date = {r['d']: {'cost': float(r['cost'] or 0.0), 'calls': int(r['calls'] or 0)} for r in rows}
+  # 날짜 범위 채우기 (비어있어도 0으로)
+  out: list[dict[str, Any]] = []
+  for i in range(days):
+    d = (start + timedelta(days=i)).strftime('%Y-%m-%d')
+    slot = by_date.get(d, {'cost': 0.0, 'calls': 0})
+    out.append({'date': d, 'total_cost_usd': round(slot['cost'], 4), 'calls': slot['calls']})
+  return out

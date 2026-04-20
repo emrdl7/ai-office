@@ -1,8 +1,33 @@
 // 새 Job 제출 다이얼로그
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { JobSpec, ToolParam } from '../types'
 import { MatIcon } from './icons'
+
+// 입력 필드에 URL·도메인이 포함되면 자동 감지 뱃지 — gather 단계에서 url_fetch가 자동 fetch함을 사용자에게 명시
+const _URL_ABS_RE = /https?:\/\/[^\s<>"'()]+/i
+const _DOMAIN_RE  = /\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|io|co|kr|ai|dev|app|xyz|tech|site|page|me|info|biz|cloud|store|shop))(?:\/[^\s<>"'()]*)?/i
+
+function UrlDetectHint({ text }: { text: string }) {
+  const url = useMemo(() => {
+    if (!text) return ''
+    const a = _URL_ABS_RE.exec(text)
+    if (a) return a[0].replace(/[).,;:!?]+$/, '')
+    const d = _DOMAIN_RE.exec(text)
+    return d ? d[0].replace(/[).,;:!?]+$/, '') : ''
+  }, [text])
+  if (!url) return null
+  return (
+    <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px]
+      bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300
+      border border-indigo-200 dark:border-indigo-700/40">
+      <MatIcon name="language" className="text-[13px]" />
+      <span className="font-medium">URL 감지</span>
+      <span className="font-mono truncate max-w-[220px]">{url}</span>
+      <span className="opacity-70">· 실행 시 자동 fetch</span>
+    </div>
+  )
+}
 
 async function fetchSpecs(): Promise<JobSpec[]> {
   const res = await fetch('/api/jobs/specs')
@@ -230,6 +255,7 @@ export function NewJobDialog({
                       focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500
                       resize-none"
                   />
+                  <UrlDetectHint text={fields[field] || ''} />
                 </div>
               ))}
             </div>

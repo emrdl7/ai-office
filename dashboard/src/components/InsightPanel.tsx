@@ -70,6 +70,24 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 30_000,
   })
 
+  const { data: daily } = useQuery<{
+    days: number; total_cost_usd: number; total_calls: number
+    points: { date: string; total_cost_usd: number; calls: number }[]
+  }>({
+    queryKey: ['cost-daily', 7],
+    queryFn: async () => (await fetch('/api/cost/daily?days=7')).json(),
+    refetchInterval: 5 * 60_000,
+  })
+
+  const { data: agreement } = useQuery<{
+    days: number; total: number; matched: number; mismatched: number; match_rate: number
+    by_gate: { gate_id: string; count: number; matched: number; match_rate: number }[]
+  }>({
+    queryKey: ['gate-agreement', 7],
+    queryFn: async () => (await fetch('/api/jobs/gates/agreement_stats?days=7')).json(),
+    refetchInterval: 60_000,
+  })
+
   const maxDaily = Math.max(...(data?.daily_done ?? []).map((d) => d.count), 1)
 
   const panel = (
@@ -168,6 +186,78 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {/* 일별 비용 스파크라인 */}
+          {daily && daily.points.length > 1 && (() => {
+            const pts = daily.points
+            const max = Math.max(...pts.map(p => p.total_cost_usd), 0.0001)
+            const w = 180, h = 36
+            const sx = (i: number) => (i / (pts.length - 1)) * w
+            const sy = (v: number) => h - (v / max) * (h - 4) - 2
+            const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${sx(i).toFixed(1)},${sy(p.total_cost_usd).toFixed(1)}`).join(' ')
+            return (
+              <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/60 rounded-lg border border-gray-200 dark:border-gray-800">
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    최근 {daily.days}일 비용
+                  </span>
+                  <span className="text-xs font-mono text-gray-700 dark:text-gray-300">
+                    ${daily.total_cost_usd.toFixed(4)} · {daily.total_calls}회
+                  </span>
+                </div>
+                <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10" preserveAspectRatio="none">
+                  <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-indigo-500" />
+                  {pts.map((p, i) => (
+                    <circle key={i} cx={sx(i)} cy={sy(p.total_cost_usd)} r="1.5" className="fill-indigo-500" />
+                  ))}
+                </svg>
+                <div className="flex justify-between text-[9px] text-gray-400 mt-0.5 font-mono">
+                  <span>{pts[0].date.slice(5)}</span>
+                  <span>{pts[pts.length - 1].date.slice(5)}</span>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Gate AI ↔ 사람 일치율 */}
+          {agreement && agreement.total > 0 && (
+            <div className="mt-4 p-3 bg-indigo-50 dark:bg-indigo-900/15 rounded-lg border border-indigo-200 dark:border-indigo-700/30">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  Gate AI 일치율 (최근 {agreement.days}일)
+                </span>
+                <span className="text-[10px] text-gray-500 ml-auto">총 {agreement.total}건</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="flex-1 h-2 bg-white/60 dark:bg-gray-900/60 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-indigo-500 rounded-full"
+                    style={{ width: `${Math.round(agreement.match_rate * 100)}%` }}
+                  />
+                </div>
+                <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 tabular-nums">
+                  {Math.round(agreement.match_rate * 100)}%
+                </span>
+              </div>
+              <div className="text-[10px] text-gray-500 mt-1">
+                일치 {agreement.matched} · 불일치 {agreement.mismatched}
+              </div>
+              {agreement.by_gate.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {agreement.by_gate.slice(0, 5).map(g => (
+                    <div key={g.gate_id} className="flex items-center gap-2">
+                      <span className="w-24 text-[10px] text-right text-gray-600 dark:text-gray-400 truncate">{g.gate_id}</span>
+                      <div className="flex-1 h-1.5 bg-white/60 dark:bg-gray-900/60 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.round(g.match_rate * 100)}%` }} />
+                      </div>
+                      <span className="w-10 text-[10px] text-gray-500 text-right tabular-nums">{Math.round(g.match_rate * 100)}%</span>
+                      <span className="w-8 text-[10px] text-gray-400 text-right">({g.count})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

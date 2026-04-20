@@ -27,26 +27,10 @@ html, body, #root {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-@font-face {
-  font-family: 'NexonLv1Gothic';
-  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@2.1/NEXON Lv1 Gothic OTF Light.woff') format('woff');
-  font-weight: 300;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'NexonLv1Gothic';
-  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@2.1/NEXON Lv1 Gothic OTF.woff') format('woff');
-  font-weight: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'NexonLv1Gothic';
-  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@2.1/NEXON Lv1 Gothic OTF Bold.woff') format('woff');
-  font-weight: 700;
-  font-display: swap;
-}
+/* Pretendard Variable (한국어 최적화 가변 웨이트) */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+/* 코드용 고정폭 */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-jp.min.css');
 
 /* 전역 기본 설정 */
 * {
@@ -55,10 +39,39 @@ html, body, #root {
 
 body {
   margin: 0;
-  font-family: 'NexonLv1Gothic', system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'ss01' 1, 'tnum' 1;  /* 가독성 향상 + 고정폭 숫자 */
 }
+
+code, kbd, samp, pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.92em;
+}
+
+/* 헤딩 타입 스케일 */
+h1 { font-size: var(--font-size-2xl); font-weight: var(--font-weight-semibold); letter-spacing: -0.01em; line-height: var(--line-height-tight); }
+h2 { font-size: var(--font-size-xl);  font-weight: var(--font-weight-semibold); letter-spacing: -0.01em; line-height: var(--line-height-tight); }
+h3 { font-size: var(--font-size-lg);  font-weight: var(--font-weight-semibold); line-height: var(--line-height-snug); }
+
+/* 공용 유틸리티 (토큰 기반) */
+.surface      { background: var(--color-bg-surface); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.surface-muted{ background: var(--color-bg-surface-muted); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.elevated-1   { box-shadow: var(--shadow-1); }
+.elevated-2   { box-shadow: var(--shadow-2); }
+.elevated-3   { box-shadow: var(--shadow-3); }
+.btn-primary  { background: var(--color-accent); color: var(--color-accent-fg); border-radius: var(--radius-md); padding: var(--spacing-2) var(--spacing-4); transition: background var(--transition-fast); }
+.btn-primary:hover { background: var(--color-accent-hover); }
+.chip         { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-2xs); font-weight: var(--font-weight-medium); }
+.chip-success { background: var(--color-success-bg); color: var(--color-success); }
+.chip-warn    { background: var(--color-warn-bg);    color: var(--color-warn); }
+.chip-danger  { background: var(--color-danger-bg);  color: var(--color-danger); }
+.chip-accent  { background: var(--color-bg-subtle-accent); color: var(--color-accent); }
 
 #root {
   min-height: 100dvh;

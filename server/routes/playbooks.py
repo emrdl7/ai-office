@@ -28,7 +28,12 @@ async def list_playbooks() -> list[dict[str, Any]]:
             'input_fields': p.input_fields,
             'step_count': len(p.steps),
             'steps': [
-                {'spec_id': s.spec_id, 'title': s.title_template}
+                {
+                    'id': s.id or s.spec_id,
+                    'spec_id': s.spec_id,
+                    'title': s.title_template,
+                    'after': s.after,
+                }
                 for s in p.steps
             ],
         }

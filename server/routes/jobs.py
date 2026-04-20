@@ -320,6 +320,17 @@ async def get_job(job_id: str) -> dict[str, Any]:
 
     # Gate 목록
     spec = get_spec(job['spec_id'])
+
+    # steps에 spec 기반 메타(parallel/when/optional/tier) 주입 — UI 시각화용
+    if spec:
+        step_spec_by_id = {s.id: s for s in spec.steps}
+        for step in steps:
+            sp = step_spec_by_id.get(step.get('step_id'))
+            if sp:
+                step['parallel'] = bool(getattr(sp, 'parallel', False))
+                step['when'] = getattr(sp, 'when', '') or ''
+                step['optional'] = bool(getattr(sp, 'optional', False))
+                step['tier'] = getattr(sp, 'tier', step.get('tier', ''))
     gates = []
     if spec:
         for g in spec.gates:
@@ -332,6 +343,10 @@ async def get_job(job_id: str) -> dict[str, Any]:
                 'decision': row['decision'] if row else '',
                 'feedback': row['feedback'] if row else '',
                 'opened_at': row['opened_at'] if row else '',
+                'ai_suggestion': row.get('ai_suggestion', '') if row else '',
+                'ai_confidence': row.get('ai_confidence', 0) if row else 0,
+                'ai_model':      row.get('ai_model', '') if row else '',
+                'ai_reason':     row.get('ai_reason', '') if row else '',
             })
 
     return {**job, 'steps': steps, 'gates': gates}
