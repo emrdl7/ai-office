@@ -266,7 +266,6 @@ steps:
     tier: standard
     output_key: visual_mockup
     tools:
-      - stitch_generate
       - figma_get_design
     prompt: |
       디자인 브리프 기반의 UI 시안을 생성하세요.
@@ -277,7 +276,7 @@ steps:
       [디자인 방향]
       {direction}
 
-      stitch_generate 도구 결과를 확인하고 다음을 작성하세요:
+      figma_get_design 도구 결과(있으면)를 참조해 다음을 작성하세요:
 
       ## 생성된 시안
       (도구 결과 요약)

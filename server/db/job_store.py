@@ -72,6 +72,10 @@ def _conn() -> sqlite3.Connection:
         ('jobs', 'total_cost_usd', 'REAL DEFAULT 0.0'),
         ('jobs', 'artifact_kinds_json', "TEXT DEFAULT '{}'"),
         ('jobs', 'planned_steps_json', "TEXT DEFAULT '[]'"),
+        ('job_gates', 'ai_suggestion', "TEXT DEFAULT ''"),
+        ('job_gates', 'ai_confidence', 'INTEGER DEFAULT 0'),
+        ('job_gates', 'ai_model', "TEXT DEFAULT ''"),
+        ('job_gates', 'ai_reason', "TEXT DEFAULT ''"),
     ]:
         try:
             c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
@@ -231,6 +235,72 @@ def get_gate(job_id: str, gate_id: str) -> dict[str, Any] | None:
     ).fetchone()
     c.close()
     return dict(row) if row else None
+
+
+def update_gate_ai(
+    job_id: str, gate_id: str,
+    suggestion: str, confidence: int = 0,
+    model: str = '', reason: str = '',
+) -> None:
+    """Gate AI 제안을 job_gates에 저장."""
+    c = _conn()
+    c.execute(
+        'UPDATE job_gates SET ai_suggestion=?, ai_confidence=?, ai_model=?, ai_reason=? '
+        'WHERE job_id=? AND gate_id=?',
+        (suggestion, int(confidence), model, reason[:500], job_id, gate_id),
+    )
+    c.commit()
+    c.close()
+
+
+def gate_agreement_stats(days: int = 7) -> dict[str, Any]:
+    """최근 N일간 Gate AI 제안과 사람 결정의 일치율 집계.
+
+    반환: {total, matched, mismatched, pending_ai, by_gate:[{gate_id, count, match_rate}]}
+    """
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, days))).isoformat()
+    c = _conn()
+    rows = c.execute(
+        "SELECT gate_id, ai_suggestion, decision, ai_confidence, ai_model "
+        "FROM job_gates "
+        "WHERE opened_at >= ? AND decision != '' AND ai_suggestion != ''",
+        (cutoff,),
+    ).fetchall()
+    c.close()
+
+    # AI 제안('approve'/'revise'/'reject') ↔ 사람 결정('approved'/'revised'/'rejected') 매핑
+    ai_to_decision = {'approve': 'approved', 'revise': 'revised', 'reject': 'rejected'}
+    total = 0
+    matched = 0
+    by_gate: dict[str, dict[str, int]] = {}
+    for r in rows:
+        total += 1
+        ai = (r['ai_suggestion'] or '').strip().lower()
+        human = (r['decision'] or '').strip().lower()
+        gid = r['gate_id']
+        slot = by_gate.setdefault(gid, {'count': 0, 'matched': 0})
+        slot['count'] += 1
+        if ai_to_decision.get(ai) == human:
+            matched += 1
+            slot['matched'] += 1
+
+    return {
+        'days': days,
+        'total': total,
+        'matched': matched,
+        'mismatched': total - matched,
+        'match_rate': round(matched / total, 3) if total else 0.0,
+        'by_gate': [
+            {
+                'gate_id': gid,
+                'count': v['count'],
+                'matched': v['matched'],
+                'match_rate': round(v['matched'] / v['count'], 3) if v['count'] else 0.0,
+            }
+            for gid, v in sorted(by_gate.items(), key=lambda x: -x[1]['count'])
+        ],
+    }
 
 
 def list_pending_gates() -> list[dict[str, Any]]:

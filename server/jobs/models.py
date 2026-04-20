@@ -34,6 +34,7 @@ class StepSpec:
     skills: list[str] = field(default_factory=list)  # 스킬 ID 목록 (data/skills/)
     inputs: list[str] = field(default_factory=list)  # 선택적 컨텍스트 주입 키 (비어있으면 전체)
     optional: bool = False                   # True이면 job_planner가 스킵 결정 가능
+    when: str = ''                           # 결정적 skip 조건 — _eval_gate_condition 문법 (contains/equals/not_empty)
 
 
 @dataclass

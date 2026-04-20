@@ -57,8 +57,40 @@ async def submit(
 
 
 async def resolve_gate(job_id: str, gate_id: str, decision: str, feedback: str = '') -> bool:
-    """Human Gate 결정을 DB에 저장하고, 대기 중인 runner를 즉시 깨운다."""
+    """Human Gate 결정을 DB에 저장하고, 대기 중인 runner를 즉시 깨운다.
+
+    AI 제안이 있었으면 일치/불일치를 이벤트로 발행해 학습 신호로 수집.
+    """
+    # 결정 저장 전 AI 제안 조회
+    ai_suggestion = ''
+    try:
+        row = get_gate(job_id, gate_id) or {}
+        ai_suggestion = (row.get('ai_suggestion') or '').strip().lower()
+    except Exception:
+        pass
+
     decide_gate(job_id, gate_id, decision, feedback)
+
+    # AI ↔ 사람 결정 비교 이벤트
+    if ai_suggestion:
+        ai_to_decision = {'approve': 'approved', 'revise': 'revised', 'reject': 'rejected'}
+        matched = ai_to_decision.get(ai_suggestion) == decision
+        try:
+            from log_bus.event_bus import event_bus, LogEvent
+            await event_bus.publish(LogEvent(
+                agent_id='system',
+                event_type='gate_ai_agreement',
+                message=(
+                    f'{"✓" if matched else "✗"} Gate AI vs Human — '
+                    f'AI={ai_suggestion} / Human={decision}'
+                ),
+                data={'job_id': job_id, 'gate_id': gate_id,
+                      'ai_suggestion': ai_suggestion, 'human_decision': decision,
+                      'matched': matched},
+            ))
+        except Exception:
+            pass
+
     # 이벤트로 polling 없이 즉시 깨움 (1-4)
     key = (job_id, gate_id)
     if key in _gate_events:
@@ -235,8 +267,13 @@ async def _execute(
     else:
         planned_steps = spec.steps
 
+    # 병렬 그룹 캐시: 그룹 첫 step에서 gather로 미리 실행한 결과
+    # key: step_id → (configured StepSpec, StepRun)
+    parallel_cache: dict[str, tuple[StepSpec, StepRun]] = {}
+    group_end_emit: set[str] = set()  # 그룹 마지막 step id (완료 이벤트 대상)
+
     try:
-        for step in planned_steps:
+        for idx, step in enumerate(planned_steps):
             # 재시작 복구: 이미 완료된 step은 건너뜀
             if step.id in steps_done:
                 logger.debug('[resume] step 건너뜀 (이미 완료): %s', step.id)
@@ -266,17 +303,60 @@ async def _execute(
                     # 승인 후 다음 step으로
                     continue
 
+            # when 조건부 skip — 결정적 규칙 (optional과 직교)
+            if step.when and not _eval_gate_condition(step.when, context):
+                await emit(
+                    f'⏭ Step 스킵 (when: {step.when}): {step.id}',
+                    'job_step_skipped',
+                    {'step_id': step.id, 'reason': step.when},
+                )
+                continue
+
             update_job(job.id, current_step=step.id)
 
-            # Haiku 동적 설정: persona/skills/tools 자동 선택 (spec 힌트 우선)
+            # 병렬 그룹 처리: 그룹 첫 step에서 gather로 선제 실행 후 캐시
             from jobs.step_configurator import configure_step
-            step = await configure_step(step, context)
+            if step.parallel and step.id not in parallel_cache:
+                # idx부터 연속된 parallel=True step 그룹 스캔
+                group_steps: list[StepSpec] = []
+                for s in planned_steps[idx:]:
+                    if not s.parallel:
+                        break
+                    if s.id in steps_done:
+                        continue
+                    group_steps.append(s)
+                if len(group_steps) >= 2:
+                    await emit(
+                        f'⚡ 병렬 그룹 시작 ({len(group_steps)}): {[s.id for s in group_steps]}',
+                        'job_step_group_started',
+                        {'step_ids': [s.id for s in group_steps]},
+                    )
+                    configured_group = await asyncio.gather(
+                        *[configure_step(s, context) for s in group_steps]
+                    )
+                    ctx_snapshot = dict(context)
+                    runs = await asyncio.gather(
+                        *[_run_step(job.id, cs, ctx_snapshot) for cs in configured_group]
+                    )
+                    for cs, r in zip(configured_group, runs):
+                        parallel_cache[cs.id] = (cs, r)
+                    group_end_emit.add(group_steps[-1].id)
 
-            await emit(f'▶ Step: {step.id}', 'job_step_started',
-                       {'step_id': step.id, 'tier': step.tier,
-                        'persona': step.persona, 'skills': step.skills})
-
-            step_run = await _run_step(job.id, step, context)
+            if step.parallel and step.id in parallel_cache:
+                step, step_run = parallel_cache.pop(step.id)
+                await emit(
+                    f'▶ Step: {step.id} (parallel)', 'job_step_started',
+                    {'step_id': step.id, 'tier': step.tier,
+                     'persona': step.persona, 'skills': step.skills,
+                     'parallel': True},
+                )
+            else:
+                # 단일 step 경로 (parallel=False이거나 그룹 size=1)
+                step = await configure_step(step, context)
+                await emit(f'▶ Step: {step.id}', 'job_step_started',
+                           {'step_id': step.id, 'tier': step.tier,
+                            'persona': step.persona, 'skills': step.skills})
+                step_run = await _run_step(job.id, step, context)
             # Haiku가 결정한 persona/skills/tools를 step_run에 기록
             step_run.persona = step.persona
             step_run.skills = step.skills
@@ -352,6 +432,12 @@ async def _execute(
 
             await emit(f'✅ Step 완료: {step.id}', 'job_step_done',
                        {'step_id': step.id, 'output_len': len(step_run.output)})
+
+            # 병렬 그룹 마지막 step이면 그룹 완료 이벤트
+            if step.id in group_end_emit:
+                group_end_emit.discard(step.id)
+                await emit('⚡ 병렬 그룹 완료', 'job_step_group_done',
+                           {'last_step_id': step.id})
 
             # Gate 체크
             if gate:

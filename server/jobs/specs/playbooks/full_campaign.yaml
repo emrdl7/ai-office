@@ -1,26 +1,33 @@
 id: full_campaign
 title: 풀 캠페인
-description: 리서치 → 디자인 방향 → 기획 → 퍼블리싱 전 과정을 자동 체이닝합니다.
+description: 리서치 → (디자인 방향 ∥ 기획) → 퍼블리싱 DAG 체이닝. research 끝나면 design_direction과 planning이 병렬 실행.
 input_fields:
   - topic
   - product
 
 steps:
-  - spec_id: research
+  - id: r
+    spec_id: research
     title: "{topic} 리서치"
     input_map:
       topic: "{topic}"
       scope: "시장 및 UX 전반"
       depth: "표준"
 
-  - spec_id: design_direction
+  - id: d
+    spec_id: design_direction
     title: "{topic} 디자인 방향"
+    after: [r]
     input_map:
       project: "{product}"
       goals: "{topic} 중심 디자인 개선"
+      research_notes: "{r.report}"
 
-  - spec_id: planning
+  - id: p
+    spec_id: planning
     title: "{topic} 기획"
+    after: [r]
     input_map:
       product: "{product}"
       goals: "{topic} 서비스 기획"
+      research_notes: "{r.report}"

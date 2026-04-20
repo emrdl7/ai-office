@@ -168,6 +168,7 @@ steps:
     skills: [structured_writing]
     tier: nano
     optional: true
+    parallel: true
     output_key: summary
     tools: []
     prompt: |
@@ -192,6 +193,7 @@ steps:
     agent: planner
     tier: nano
     optional: true
+    parallel: true
     output_key: delivery_result
     tools: []
     prompt: |

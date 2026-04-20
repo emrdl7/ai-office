@@ -111,6 +111,17 @@ async def suggest_gate_decision(
     )
     await emit(msg, 'job_gate_ai_suggestion', payload)
 
+    # DB 영속화 — 이후 사람 결정과 일치율 집계용
+    try:
+        from db.job_store import update_gate_ai
+        update_gate_ai(
+            job_id=job_id, gate_id=gate_id,
+            suggestion=decision, confidence=payload['confidence'],
+            model=model_used, reason=payload['reason'],
+        )
+    except Exception as _e:
+        logger.debug('[gate_ai] DB 저장 실패: %s', _e)
+
 
 def fire_and_forget(
     job_id: str,

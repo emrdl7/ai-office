@@ -66,6 +66,14 @@ async def toggle_tool(tool_id: str, body: dict[str, Any]) -> dict[str, Any]:
     return {'id': tool_id, 'enabled': _BUILTIN_TOOLS[tool_id].enabled}
 
 
+@router.get('/api/jobs/gates/agreement_stats')
+async def gate_agreement_stats(days: int = 7) -> dict[str, Any]:
+    """Gate AI 제안 vs 사람 결정 일치율 — 최근 N일 집계."""
+    from db.job_store import gate_agreement_stats as _stats
+    days = max(1, min(days, 90))
+    return _stats(days=days)
+
+
 @router.get('/api/jobs/gates/pending')
 async def pending_gates() -> list[dict[str, Any]]:
     """승인 대기 중인 Gate 전체 — Gate Inbox용."""

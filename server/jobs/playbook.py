@@ -40,8 +40,10 @@ _registry: dict[str, 'PlaybookSpec'] = {}
 @dataclass
 class PlaybookStepSpec:
     spec_id: str                           # Job spec ID
+    id: str = ''                           # Playbook 내부 step id (미지정 시 spec_id 사용)
     title_template: str = ''              # e.g. "{topic} 리서치"
     input_map: dict[str, str] = field(default_factory=dict)
+    after: list[str] = field(default_factory=list)  # 선행 step id 목록 — 빈 리스트면 root
     # input_map 값에서 "{stepid.artifact_key}" 패턴을 이전 Job 산출물로 치환
 
 
@@ -91,8 +93,10 @@ def _parse(data: dict[str, Any]) -> PlaybookSpec:
     steps = [
         PlaybookStepSpec(
             spec_id=s['spec_id'],
+            id=s.get('id', s['spec_id']),  # id 미지정 시 spec_id 사용 (하위 호환)
             title_template=s.get('title', ''),
             input_map=s.get('input_map', {}),
+            after=s.get('after', []) or [],
         )
         for s in data.get('steps', [])
     ]
@@ -234,65 +238,93 @@ async def _execute_playbook(
     # context: input_data + 이전 job artifacts (stepid.key 형태)
     context: dict[str, str] = {k: str(v) for k, v in input_data.items()}
 
+    # DAG 실행: 의존 해결 step을 레벨별로 병렬 gather
+    done_ids: set[str] = set()
+    remaining: list[PlaybookStepSpec] = list(spec.steps)
+
+    async def _run_one(step_spec: PlaybookStepSpec, ctx_snapshot: dict[str, str]) -> tuple[bool, str, dict]:
+        """Playbook step 1개 실행 — (성공여부, job_id, artifacts) 반환."""
+        job_spec = get_job_spec(step_spec.spec_id)
+        if not job_spec:
+            return False, '', {}
+
+        step_input: dict[str, str] = {}
+        for field_key, template in step_spec.input_map.items():
+            step_input[field_key] = _fill_template(template, ctx_snapshot)
+
+        missing = [
+            f for f in job_spec.required_fields
+            if f not in step_input or not step_input[f].strip()
+        ]
+        if missing:
+            try:
+                auto = await _auto_map_inputs(job_spec, missing, ctx_snapshot)
+                for k, v in auto.items():
+                    if v and (k not in step_input or not step_input[k].strip()):
+                        step_input[k] = v
+                        await emit(f'  🔗 auto-map: {step_spec.id}.{k} ← {v[:40]}...',
+                                   {'step_id': step_spec.id, 'field': k})
+            except Exception as _am_err:
+                logger.debug('[auto_map] 실패(%s): %s', step_spec.id, _am_err)
+
+        attachments_text = _build_attachments(ctx_snapshot)
+        title = _fill_template(step_spec.title_template or job_spec.title, ctx_snapshot)
+
+        await emit(f'  ▶ Step {step_spec.id} ({step_spec.spec_id}): {title}',
+                   {'step_id': step_spec.id, 'spec_id': step_spec.spec_id})
+
+        job = await job_submit(job_spec, step_input, title=title,
+                               attachments_text=attachments_text)
+        ok = await _wait_job(job.id)
+        row = get_job(job.id) if ok else None
+        arts = (row.get('artifacts') if row else {}) or {}
+        return ok, job.id, arts
+
     try:
-        for idx, step_spec in enumerate(spec.steps):
-            update_run(run_id, current_step=idx, job_ids=job_ids)
+        level = 0
+        while remaining:
+            level += 1
+            ready = [s for s in remaining if all(dep in done_ids for dep in _effective_deps(s, spec.steps))]
+            if not ready:
+                raise RuntimeError('Playbook DAG 사이클 또는 잘못된 after 참조')
+            update_run(run_id, current_step=len(done_ids), job_ids=job_ids)
 
-            job_spec = get_job_spec(step_spec.spec_id)
-            if not job_spec:
-                raise ValueError(f'Job spec 없음: {step_spec.spec_id}')
+            if len(ready) > 1:
+                await emit(f'⚡ 레벨 {level} 병렬 ({len(ready)}): {[s.id for s in ready]}',
+                           {'level': level, 'step_ids': [s.id for s in ready]})
 
-            # input 구성 — {prev_step.artifact} 패턴 치환
-            step_input: dict[str, str] = {}
-            for field_key, template in step_spec.input_map.items():
-                step_input[field_key] = _fill_template(template, context)
+            ctx_snapshot = dict(context)
+            results = await asyncio.gather(
+                *[_run_one(s, ctx_snapshot) for s in ready],
+                return_exceptions=True,
+            )
 
-            # 자동 매핑: 누락된 required_fields를 Haiku가 context에서 추론
-            missing = [
-                f for f in job_spec.required_fields
-                if f not in step_input or not step_input[f].strip()
-            ]
-            if missing:
-                try:
-                    auto = await _auto_map_inputs(job_spec, missing, context)
-                    for k, v in auto.items():
-                        if v and (k not in step_input or not step_input[k].strip()):
-                            step_input[k] = v
-                            await emit(
-                                f'  🔗 auto-map: {k} ← {v[:40]}...',
-                                {'step_idx': idx, 'field': k},
-                            )
-                except Exception as _am_err:
-                    logger.debug('[auto_map] 실패(%s): %s',
-                                 step_spec.spec_id, _am_err)
-
-            # 이전 Job 산출물 전체를 attachments_text로 주입
-            attachments_text = _build_attachments(context)
-
-            title = _fill_template(step_spec.title_template or job_spec.title, context)
-
-            await emit(f'  ▶ Step {idx + 1}/{len(spec.steps)}: {title}',
-                       {'step_idx': idx, 'spec_id': step_spec.spec_id})
-
-            job = await job_submit(job_spec, step_input, title=title,
-                                   attachments_text=attachments_text)
-            job_ids.append(job.id)
-
-            # Job 완료 대기 (gate 포함)
-            finished = await _wait_job(job.id)
-            if not finished:
-                update_run(run_id, status='failed',
-                           error=f'Step {idx + 1} Job {job.id} 실패',
-                           finished_at=datetime.now(timezone.utc).isoformat())
-                await emit(f'❌ Playbook 실패: Step {idx + 1}')
-                return
-
-            # 산출물을 context에 추가 (step_spec.spec_id.artifact_key)
-            row = get_job(job.id)
-            if row:
-                arts = row.get('artifacts') or {}
+            for s, r in zip(ready, results):
+                if isinstance(r, Exception):
+                    logger.exception('Playbook step 예외: %s', s.id)
+                    update_run(run_id, status='failed',
+                               error=f'Step {s.id} 예외: {r!s:.200}',
+                               finished_at=datetime.now(timezone.utc).isoformat())
+                    await emit(f'❌ Playbook 실패: {s.id} — {r!s:.120}')
+                    return
+                ok, job_id, arts = r
+                if job_id:
+                    job_ids.append(job_id)
+                if not ok:
+                    update_run(run_id, status='failed',
+                               error=f'Step {s.id} Job 실패',
+                               finished_at=datetime.now(timezone.utc).isoformat(),
+                               job_ids=job_ids)
+                    await emit(f'❌ Playbook 실패: {s.id}')
+                    return
+                done_ids.add(s.id)
+                # artifacts를 context에 추가 (step.id 와 spec_id 둘 다 키로 — 하위 호환)
                 for k, v in arts.items():
-                    context[f'{step_spec.spec_id}.{k}'] = str(v)
+                    context[f'{s.id}.{k}'] = str(v)
+                    if s.id != s.spec_id:
+                        context[f'{s.spec_id}.{k}'] = str(v)
+
+            remaining = [s for s in remaining if s.id not in done_ids]
 
         update_run(run_id, status='done', job_ids=job_ids,
                    finished_at=datetime.now(timezone.utc).isoformat())
@@ -363,6 +395,17 @@ async def _wait_job(job_id: str, max_wait: float = 7200.0) -> bool:
                 return False
     finally:
         event_bus.unsubscribe(q)
+
+
+def _effective_deps(step: PlaybookStepSpec, all_steps: list[PlaybookStepSpec]) -> list[str]:
+    """after가 지정되면 그대로, 없으면 '앞 step 전부'를 의존으로 간주 (하위 호환)."""
+    if step.after:
+        return step.after
+    ids = [s.id for s in all_steps]
+    if step.id not in ids:
+        return []
+    idx = ids.index(step.id)
+    return ids[:idx]
 
 
 def _fill_template(template: str, context: dict[str, str]) -> str:

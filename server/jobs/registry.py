@@ -61,6 +61,7 @@ def _parse(data: dict[str, Any]) -> JobSpec:
             skills=s.get('skills', []),
             inputs=s.get('inputs', []),
             optional=s.get('optional', False),
+            when=s.get('when', ''),
         )
         for s in data.get('steps', [])
     ]
@@ -77,6 +78,20 @@ def _parse(data: dict[str, Any]) -> JobSpec:
     input_fields = data.get('input_fields', [])
     # required_fields 미지정 시 input_fields 전체를 필수로 (하위 호환)
     required_fields = data.get('required_fields', input_fields)
+
+    # 검증: parallel 그룹 내부(마지막 step 제외)에 gate가 걸려있으면 경고
+    gate_after = {g['after_step'] for g in data.get('gates', [])}
+    for i, s in enumerate(steps):
+        if not s.parallel:
+            continue
+        # 다음 step도 parallel이면 그룹 내부 — 이 step에 gate 걸리면 흐름 꼬임
+        nxt = steps[i + 1] if i + 1 < len(steps) else None
+        if s.id in gate_after and nxt is not None and nxt.parallel:
+            logger.warning(
+                'Job spec %s: parallel 그룹 내부 step %s 에 gate — 그룹 완료 전 대기로 동시성 무의미',
+                data.get('id', '?'), s.id,
+            )
+
     return JobSpec(
         id=data['id'],
         title=data['title'],

@@ -61,20 +61,7 @@ class ToolSpec:
 # ── 내장 도구 목록 ─────────────────────────────────────────────────────────────
 
 _BUILTIN_TOOLS: dict[str, ToolSpec] = {
-    'current_date': ToolSpec(
-        id='current_date',
-        name='현재 날짜',
-        description='오늘 날짜와 현재 시각을 반환한다. 시의성 있는 리서치/기획 step에 추가하면 좋다.',
-        category='general',
-        params=[],
-    ),
-    'job_context': ToolSpec(
-        id='job_context',
-        name='이전 Job 산출물 참조',
-        description='최근 완료된 Job의 산출물을 가져온다. Job 체이닝 시 이전 결과를 참조하려면 추가하라.',
-        category='general',
-        params=['source_job_id'],
-    ),
+    # 'current_date', 'job_context' → jobs/tools/current_date.py, job_context.py 로 이동됨
     'web_search': ToolSpec(
         id='web_search',
         name='웹 검색',
@@ -82,13 +69,7 @@ _BUILTIN_TOOLS: dict[str, ToolSpec] = {
         category='research',
         params=['topic', 'plan'],
     ),
-    'url_fetch': ToolSpec(
-        id='url_fetch',
-        name='URL 페이지 가져오기',
-        description='지정된 URL의 웹 페이지 내용을 가져온다.',
-        category='research',
-        params=['url'],
-    ),
+    # 'url_fetch' → jobs/tools/url_fetch.py 로 이동됨
     'read_file': ToolSpec(
         id='read_file',
         name='파일 읽기',
@@ -282,19 +263,15 @@ _BUILTIN_TOOLS: dict[str, ToolSpec] = {
 
 
 def list_tools() -> list[dict[str, Any]]:
-    """등록된 모든 도구 목록 반환."""
-    tools = list(_BUILTIN_TOOLS.values())
-    # tools/ 디렉토리의 플러그인 도구 로드
-    if _TOOLS_DIR.exists():
-        for f in sorted(_TOOLS_DIR.glob('*.py')):
-            if f.stem.startswith('_'):
-                continue
-            try:
-                mod = importlib.import_module(f'jobs.tools.{f.stem}')
-                if hasattr(mod, 'TOOL_SPEC') and isinstance(mod.TOOL_SPEC, ToolSpec):
-                    tools.append(mod.TOOL_SPEC)
-            except Exception:
-                logger.debug('플러그인 도구 로드 실패: %s', f.stem)
+    """등록된 모든 도구 목록 반환 (플러그인 + legacy builtin 병합)."""
+    from jobs.tools import load_plugin_tools
+    plugins = load_plugin_tools()
+
+    # 플러그인이 같은 id를 제공하면 legacy builtin 덮어쓰기
+    merged: dict[str, ToolSpec] = dict(_BUILTIN_TOOLS)
+    for tid, (spec, _fn) in plugins.items():
+        merged[tid] = spec
+
     cfg = _load_config()
     import os
     return [
@@ -309,21 +286,25 @@ def list_tools() -> list[dict[str, Any]]:
             'env_var': t.env_var,
             'token_set': bool(t.env_var and (os.environ.get(t.env_var) or cfg.get(t.env_var))),
         }
-        for t in tools
+        for t in merged.values()
     ]
 
 
 def execute_tool(tool_id: str, context: dict[str, str]) -> str:
-    """동기 도구 실행 — runner의 _execute_tool 대체 가능."""
-    # 내장 도구
-    if tool_id == 'current_date':
-        return _current_date(context)
-    if tool_id == 'job_context':
-        return _job_context(context)
+    """동기 도구 실행 — plugin 우선, legacy builtin fallback."""
+    # 플러그인 우선 — jobs/tools/<id>.py
+    try:
+        from jobs.tools import load_plugin_tools
+        plugins = load_plugin_tools()
+        if tool_id in plugins:
+            _spec, exec_fn = plugins[tool_id]
+            return exec_fn(context)
+    except Exception as e:
+        logger.debug('plugin 조회 실패 %s: %s', tool_id, e)
+
+    # Legacy 내장 도구 (점진 이동 중)
     if tool_id == 'web_search':
         return _web_search(context)
-    if tool_id == 'url_fetch':
-        return _url_fetch(context)
     if tool_id == 'read_file':
         return _read_file(context)
     if tool_id == 'list_files':
@@ -396,34 +377,6 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
 
 # ── 내장 도구 구현 ─────────────────────────────────────────────────────────────
 
-def _current_date(context: dict[str, str]) -> str:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    return f'오늘 날짜: {now.strftime("%Y년 %m월 %d일")} ({now.strftime("%A")}, UTC 기준)'
-
-
-def _job_context(context: dict[str, str]) -> str:
-    """이전 Job 산출물 참조 — context의 source_job_id를 사용한다."""
-    source_job_id = context.get('source_job_id', '')
-    if not source_job_id:
-        return ''
-    try:
-        from db.job_store import get_job as _get_job
-        job = _get_job(source_job_id)
-        if not job:
-            return f'[Job {source_job_id} 없음]'
-        arts = job.get('artifacts') or {}
-        if not arts:
-            return f'[Job {source_job_id} 산출물 없음]'
-        parts = [f'[이전 Job: {job.get("title", source_job_id)}]']
-        for k, v in arts.items():
-            if v:
-                parts.append(f'\n## {k}\n{str(v)[:1500]}')
-        return '\n'.join(parts)[:4000]
-    except Exception as e:
-        return f'[job_context 실패: {e}]'
-
-
 def _web_search(context: dict[str, str]) -> str:
     import json as _json, re
 
@@ -472,14 +425,6 @@ def _web_search_brave(queries: list[str], api_key: str) -> str:
         except Exception as e:
             results.append(f'[Brave 검색 실패: {q} — {e}]')
     return '\n\n'.join(results)
-
-
-def _url_fetch(context: dict[str, str]) -> str:
-    from harness.file_reader import _fetch_web_page
-    url = context.get('url', '')
-    if url:
-        return _fetch_web_page(url)
-    return ''
 
 
 def _read_file(context: dict[str, str]) -> str:
