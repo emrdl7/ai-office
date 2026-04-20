@@ -186,3 +186,56 @@ async def configure_step(step, context: dict[str, str]):
         logger.debug('[step_configurator] %s → %s', step.id, updates)
 
     return step
+
+
+async def suggest_alternative_tools(
+    step,
+    failed_tools: list[str],
+    reason: str = '',
+) -> list[str]:
+    """실패한 툴을 대체할 툴 목록을 Haiku에게 요청한다.
+
+    반환값이 비면 재시도 스킵. spec 고정 툴은 유지하지 않음 — step.tools 자체를 교체한다.
+    """
+    if not failed_tools:
+        return []
+    try:
+        from runners import model_router
+    except Exception:
+        return []
+
+    tools = _load_tool_catalog()
+    tool_list = '\n'.join(
+        f'- {t["id"]}: {t["name"]} — {t["description"][:80]}' for t in tools
+    )
+
+    prompt = (
+        f'아래 Step에서 툴 {failed_tools} 이 실패했습니다.\n'
+        f'실패 사유: {reason[:200] or "(미상)"}\n\n'
+        f'[Step 목적]\n{step.prompt_template[:300]}\n\n'
+        f'[선택 가능한 툴]\n{tool_list}\n\n'
+        f'실패한 툴을 대체해 동일한 목적을 달성할 수 있는 툴 0-3개를 선택하세요.\n'
+        f'대체 가능한 게 없으면 빈 배열을 반환하세요.\n'
+        f'JSON만 출력: {{"tools":["tool_id1"]}}'
+    )
+
+    try:
+        raw, _ = await model_router.run(
+            tier='nano', prompt=prompt,
+            system='JSON만 출력하세요. 절대 설명을 추가하지 마세요.',
+            agent_id=f'step_retry:{step.id}', timeout=20.0,
+        )
+        raw = raw.strip()
+        if raw.startswith('```'):
+            raw = raw.split('```')[1]
+            if raw.startswith('json'):
+                raw = raw[4:]
+        config = json.loads(raw.strip())
+    except Exception as e:
+        logger.debug('[step_retry] 대체 툴 선택 실패(%s): %s', step.id, e)
+        return []
+
+    alts = config.get('tools') or []
+    # 실패한 툴은 제외
+    alts = [t for t in alts if t not in failed_tools]
+    return alts[:3]

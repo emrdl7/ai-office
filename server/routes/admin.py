@@ -91,3 +91,38 @@ async def toggle_agent_rule(agent: str, request: Request) -> dict[str, Any]:
   if not success:
     raise HTTPException(status_code=404, detail='규칙을 찾을 수 없습니다')
   return {'success': True, 'rule_id': rule_id, 'active': active}
+
+
+@router.post('/api/improvement/capability-audit')
+async def run_capability_audit(request: Request) -> dict[str, Any]:
+  '''능력 선언 ↔ 실제 사용 교차 검증 — 수동 트리거.
+
+  쿼리 ?register=true 이면 unused 있을 때 팀장 건의게시판에도 등록.
+  '''
+  import asyncio as _a
+  from pathlib import Path as _Path
+  register = request.query_params.get('register') == 'true'
+  repo_root = _Path(__file__).parent.parent.parent
+  script = repo_root / 'scripts' / 'capability_audit.py'
+  if not script.exists():
+    raise HTTPException(status_code=500, detail='capability_audit.py 없음')
+  args = ['python3', str(script)]
+  if register:
+    args.append('--register')
+  proc = await _a.create_subprocess_exec(
+    *args,
+    stdout=_a.subprocess.PIPE,
+    stderr=_a.subprocess.PIPE,
+    cwd=str(repo_root),
+  )
+  try:
+    out, err = await _a.wait_for(proc.communicate(), timeout=120.0)
+  except _a.TimeoutError:
+    proc.kill()
+    raise HTTPException(status_code=504, detail='감사 스크립트 타임아웃')
+  return {
+    'ok': proc.returncode == 0,
+    'registered': register,
+    'stdout': out.decode('utf-8', errors='ignore')[-4000:],
+    'stderr': err.decode('utf-8', errors='ignore')[-1000:],
+  }

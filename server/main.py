@@ -85,9 +85,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
   archive_task = asyncio.create_task(_archive_loop())
   # draft 건의 자동 승격 루프 — 24h 경과 draft를 pending으로
   draft_promotion_task = asyncio.create_task(_draft_promotion_loop())
+  # 주 1회 페르소나 드리프트 + 능력 감사 루프
+  weekly_audit_task = asyncio.create_task(_weekly_audit_loop())
   yield
   archive_task.cancel()
   draft_promotion_task.cancel()
+  weekly_audit_task.cancel()
   message_bus.close()
 
 
@@ -123,6 +126,42 @@ async def _archive_loop() -> None:
       logger.exception('chat_logs quarterly dump failed')
     try:
       await asyncio.sleep(24 * 60 * 60)
+    except asyncio.CancelledError:
+      break
+
+
+async def _weekly_audit_loop() -> None:
+  '''주 1회 페르소나 드리프트 감사 + 능력 감사 실행.
+
+  - 페르소나 드리프트: 최근 48h 발화 10건 샘플 LLM-as-judge 채점
+  - 능력 감사: agents/*.md 역할 키워드 vs 최근 로그 교차 검증
+  부팅 10분 뒤 첫 실행, 이후 7일 주기.
+  '''
+  from improvement.persona_drift import run_persona_drift_audit
+  try:
+    await asyncio.sleep(600)  # 부팅 후 10분 대기
+  except asyncio.CancelledError:
+    return
+  while True:
+    try:
+      drift = await run_persona_drift_audit(hours=48)
+      if drift.get('drift_agents'):
+        logger.info('주간 페르소나 드리프트 감지: %s', drift['drift_agents'])
+      # 능력 감사 — 스크립트 실행, --register로 팀장 건의 자동 등록
+      import subprocess as _sp
+      from pathlib import Path as _P
+      repo_root = _P(__file__).parent.parent
+      script = repo_root / 'scripts' / 'capability_audit.py'
+      if script.exists():
+        await asyncio.to_thread(
+          _sp.run,
+          ['python3', str(script), '--register'],
+          capture_output=True, timeout=120,
+        )
+    except Exception:
+      logger.exception('주간 감사 실패')
+    try:
+      await asyncio.sleep(60 * 60 * 24 * 7)
     except asyncio.CancelledError:
       break
 

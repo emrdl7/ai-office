@@ -247,6 +247,25 @@ async def _execute_playbook(
             for field_key, template in step_spec.input_map.items():
                 step_input[field_key] = _fill_template(template, context)
 
+            # 자동 매핑: 누락된 required_fields를 Haiku가 context에서 추론
+            missing = [
+                f for f in job_spec.required_fields
+                if f not in step_input or not step_input[f].strip()
+            ]
+            if missing:
+                try:
+                    auto = await _auto_map_inputs(job_spec, missing, context)
+                    for k, v in auto.items():
+                        if v and (k not in step_input or not step_input[k].strip()):
+                            step_input[k] = v
+                            await emit(
+                                f'  🔗 auto-map: {k} ← {v[:40]}...',
+                                {'step_idx': idx, 'field': k},
+                            )
+                except Exception as _am_err:
+                    logger.debug('[auto_map] 실패(%s): %s',
+                                 step_spec.spec_id, _am_err)
+
             # 이전 Job 산출물 전체를 attachments_text로 주입
             attachments_text = _build_attachments(context)
 
@@ -363,3 +382,70 @@ def _build_attachments(context: dict[str, str]) -> str:
         if '.' in k and v and len(v) > 50:
             parts.append(f'[{k}]\n{v[:1500]}')
     return '\n\n'.join(parts)[:4000]
+
+
+async def _auto_map_inputs(
+    job_spec: Any,
+    missing_fields: list[str],
+    context: dict[str, str],
+) -> dict[str, str]:
+    """Playbook에서 누락된 required_fields를 이전 Job 산출물에서 Haiku로 자동 매핑.
+
+    반환: {field_id: 값(문자열)} — 매핑 실패 시 빈 dict
+    """
+    if not missing_fields:
+        return {}
+
+    # context에서 이전 Job 산출물만 후보로 (키에 점(.) 포함 = spec_id.output_key)
+    candidates = {
+        k: v for k, v in context.items()
+        if '.' in k and v and not k.startswith('_')
+    }
+    if not candidates:
+        return {}
+
+    try:
+        from runners import model_router
+    except Exception:
+        return {}
+
+    cand_block = '\n'.join(
+        f'- {k}: {v[:120].strip()}' for k, v in list(candidates.items())[:20]
+    )
+    field_block = '\n'.join(f'- {f}' for f in missing_fields)
+
+    prompt = (
+        f'아래 Job "{job_spec.title}"에 필요한 필드를 이전 Job 산출물에서 찾아 매핑하세요.\n\n'
+        f'[필요 필드]\n{field_block}\n\n'
+        f'[사용 가능한 산출물 키]\n{cand_block}\n\n'
+        '각 필드에 가장 적합한 산출물 키를 선택하세요. 적합한 게 없으면 null.\n'
+        'JSON만 출력: {"field_id":"산출물_키_또는_null"}'
+    )
+
+    try:
+        raw, _ = await model_router.run(
+            tier='nano', prompt=prompt,
+            system='JSON만 출력하세요. 설명 금지.',
+            agent_id='playbook_auto_map', timeout=20.0,
+        )
+    except Exception:
+        return {}
+
+    raw = raw.strip()
+    if raw.startswith('```'):
+        raw = raw.split('```')[1]
+        if raw.startswith('json'):
+            raw = raw[4:]
+    try:
+        mapping = json.loads(raw.strip())
+    except Exception:
+        return {}
+
+    out: dict[str, str] = {}
+    for f, key in (mapping or {}).items():
+        if not key or f not in missing_fields:
+            continue
+        val = candidates.get(str(key).strip())
+        if val:
+            out[f] = val
+    return out

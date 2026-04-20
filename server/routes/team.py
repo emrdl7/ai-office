@@ -217,6 +217,14 @@ async def get_agent_growth(agent_id: str, days: int = 30) -> dict[str, Any]:
   }
 
 
+@router.get('/api/team/persona-drift')
+async def get_persona_drift(hours: int = 48) -> dict[str, Any]:
+  '''페르소나 드리프트 감사 — 최근 N시간 발화의 일치도 채점.'''
+  from improvement.persona_drift import run_persona_drift_audit
+  hours = max(1, min(hours, 168))  # 최대 7일
+  return await run_persona_drift_audit(hours=hours)
+
+
 @router.get('/api/team-memory')
 async def get_team_memory() -> dict[str, Any]:
   '''팀 공유 메모리 조회 — 교훈, 협업 패턴, 프로젝트 이력'''

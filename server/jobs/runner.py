@@ -372,6 +372,14 @@ async def _execute(
                     {'gate_id': gate.id, 'prompt': gate.prompt},
                 )
 
+                # Gate AI 대리 판단 — fire-and-forget, 결과는 event로만 전달
+                try:
+                    from jobs.gate_ai import fire_and_forget as _gate_ai_suggest
+                    _gate_ai_suggest(job.id, job.title, gate.id, gate.prompt,
+                                     step_run.output, emit)
+                except Exception:
+                    pass
+
                 gate_result = await _wait_gate(job.id, gate, step, context, emit)
                 if gate_result == 'cancelled':
                     return
@@ -584,7 +592,24 @@ async def _run_step(
             prompt = _fill(step.prompt_template, effective_context)
 
         if step.tools:
-            tool_results = await _run_tools(step.tools, effective_context)
+            tool_results, tool_failures = await _run_tools(step.tools, effective_context)
+            # 실패한 툴이 있으면 Haiku에게 대체 툴 재선택 1회 요청
+            if tool_failures and len(tool_failures) == len(step.tools):
+                # 전부 실패 → 대체 툴 재시도
+                try:
+                    from jobs.step_configurator import suggest_alternative_tools
+                    reason = '; '.join(f'{tid}: {err}' for tid, err in tool_failures)
+                    alt_tools = await suggest_alternative_tools(
+                        step, [t for t, _ in tool_failures], reason
+                    )
+                    if alt_tools:
+                        logger.info('[step_retry] %s tools=%s → %s',
+                                    step.id, step.tools, alt_tools)
+                        alt_results, _alt_failures = await _run_tools(alt_tools, effective_context)
+                        if alt_results:
+                            tool_results = alt_results
+                except Exception as _e:
+                    logger.debug('[step_retry] 재시도 실패: %s', _e)
             if tool_results:
                 prompt = prompt + '\n\n[수집된 참고 자료]\n' + tool_results
 
@@ -637,19 +662,30 @@ async def _run_step(
         return step_run
 
 
-async def _run_tools(tool_ids: list[str], context: dict[str, str]) -> str:
-    """도구 목록을 실행하고 결과를 합친다."""
+async def _run_tools(
+    tool_ids: list[str], context: dict[str, str]
+) -> tuple[str, list[tuple[str, str]]]:
+    """도구 목록을 실행하고 결과를 합친다.
+
+    Returns:
+        (합쳐진 결과 텍스트, [(실패 tool_id, 사유), ...])
+    """
     from jobs.tool_registry import execute_tool
 
     results: list[str] = []
+    failures: list[tuple[str, str]] = []
     for tid in tool_ids:
         try:
             result = await asyncio.to_thread(execute_tool, tid, context)
             if result:
                 results.append(f'[{tid}]\n{result}')
+            else:
+                failures.append((tid, '결과 없음'))
         except Exception as e:
-            logger.warning('Tool 실행 실패: %s — %s', tid, e)
-    return '\n\n'.join(results)
+            msg = str(e)[:200]
+            logger.warning('Tool 실행 실패: %s — %s', tid, msg)
+            failures.append((tid, msg))
+    return '\n\n'.join(results), failures
 
 
 async def _postprocess_html_validation(
