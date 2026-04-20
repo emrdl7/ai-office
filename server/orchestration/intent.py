@@ -334,6 +334,55 @@ async def classify_project_type(user_input: str, context: str = '') -> ProjectTy
   return ProjectType.GENERAL
 
 
+# ── 자연어 → Job spec 매핑 ─────────────────────────────────────────
+
+async def map_to_job_spec(
+  user_input: str, recent_context: str = '',
+) -> tuple[str, dict, float]:
+  '''자연어 입력을 Job spec으로 매핑하고 입력 필드를 추출한다.
+
+  Returns:
+    (spec_id, input_dict, confidence) — spec_id 빈 문자열이면 매핑 실패
+  '''
+  import re as _re
+  import json as _json
+
+  specs_context = _build_specs_context()
+  if not specs_context:
+    return '', {}, 0.0
+
+  ctx_section = f'[최근 대화]\n{recent_context}\n\n' if recent_context else ''
+  prompt = (
+    f'{ctx_section}'
+    f'{specs_context}\n'
+    f'[사용자 요청]\n{user_input}\n\n'
+    f'위 요청을 가장 적합한 Job spec 하나로 매핑하고, 해당 spec의 입력 필드 값을 요청에서 추출하세요.\n'
+    f'중요: 사용자 텍스트에 명시된 값만 추출하세요. 추론하거나 지어내지 마세요. 명시되지 않은 필드는 반드시 빈 문자열("")로 두세요.\n'
+    f'반드시 JSON 한 줄만 출력: {{"spec_id":"spec명","input":{{"필드":"값"}},"confidence":0.0~1.0}}\n'
+    f'매핑 불가하면: {{"spec_id":"","input":{{}},"confidence":0.0}}\n'
+    f'confidence 기준: 0.8+ 확실, 0.6~0.79 가능성 높음, 0.5~0.59 불확실, 0.5 미만 매핑 포기'
+  )
+
+  try:
+    response = await run_claude_isolated(
+      prompt,
+      model='claude-haiku-4-5-20251001',
+      timeout=20.0,
+      max_turns=1,
+    )
+    m = _re.search(r'\{[\s\S]*\}', response)
+    if m:
+      data = _json.loads(m.group())
+      spec_id = str(data.get('spec_id', ''))
+      inp = data.get('input', {})
+      conf = float(data.get('confidence', 0.0))
+      return spec_id, inp, conf
+  except Exception:
+    logger.debug('map_to_job_spec 실패', exc_info=True)
+
+  return '', {}, 0.0
+
+
 # ── 팀장 대화 응답 생성 ─────────────────────────────────────────
 
 async def generate_teamlead_reply(
