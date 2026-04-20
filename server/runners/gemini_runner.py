@@ -143,8 +143,8 @@ async def _call_gemini(full_prompt: str, timeout: float, system: str = '') -> st
             except GeminiRunnerError as e:
                 if '일시 불가' in str(e):
                     if attempt == 0:
-                        _logger.warning('[gemini] %s 일시 불가, 5초 후 재시도', model)
-                        await asyncio.sleep(5)
+                        _logger.warning('[gemini] %s 일시 불가, 15초 후 재시도', model)
+                        await asyncio.sleep(15)
                         continue
                     _logger.warning('[gemini] %s 실패 → 다음 모델', model)
                     break  # 다음 모델로

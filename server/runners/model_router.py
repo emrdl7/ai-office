@@ -196,10 +196,42 @@ async def run(
     return text, fb_model
 
   except Exception as fallback_err:
-    raise RuntimeError(
-      f'[model_router] {tier} primary+fallback 모두 실패 — '
-      f'primary: {_primary_err_str}, fallback: {fallback_err}'
-    ) from fallback_err
+    # 2차 폴백 — Haiku (쿼터/토큰 제약 가장 약함, 최후 안전망)
+    logger.warning(
+      '[model_router] %s fallback(%s) 실패 → Haiku 2차 폴백 시도 | %s',
+      tier, fallback, fallback_err,
+    )
+    try:
+      from log_bus.event_bus import event_bus, LogEvent
+      await event_bus.publish(LogEvent(
+        agent_id='system',
+        event_type='model_fallback',
+        message=(
+          f'[모델 폴백 2차] {fallback} 실패 → haiku 비상 폴백 | '
+          f'{str(fallback_err)[:120]}'
+        ),
+        data={'tier': tier, 'stage': 'emergency',
+              'reason': str(fallback_err)[:300]},
+      ))
+    except Exception:
+      pass
+    try:
+      text = await run_claude_isolated(
+        full_prompt,
+        model='claude-haiku-4-5-20251001',
+        timeout=min(timeout, 120.0),
+        max_turns=max_turns,
+      )
+      fb_model = 'claude-haiku-4-5-20251001'
+      _record(tier, {'runner': 'claude', 'model': fb_model}, agent_id, prompt, text)
+      return text, fb_model
+    except Exception as emergency_err:
+      raise RuntimeError(
+        f'[model_router] {tier} 3단계 전부 실패 — '
+        f'primary: {_primary_err_str[:150]} | '
+        f'fallback({fallback}): {str(fallback_err)[:150]} | '
+        f'haiku: {str(emergency_err)[:150]}'
+      ) from emergency_err
 
 
 async def classify_tier(prompt: str, agent_id: str = '') -> str:
