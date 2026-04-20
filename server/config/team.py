@@ -112,6 +112,12 @@ def display_name(agent_id: str) -> str:
     return m.display_name if m else agent_id
 
 
+def role_name(agent_id: str) -> str:
+    '''에이전트 ID → 직책명 (팀장/기획자/디자이너/개발자/QA). TALK 노출용.'''
+    m = BY_ID.get(agent_id)
+    return m.role_ko if m else agent_id
+
+
 def display_with_role(agent_id: str) -> str:
     '''"잡스 팀장" 형식. 팀장만 쓰임.'''
     m = BY_ID.get(agent_id)

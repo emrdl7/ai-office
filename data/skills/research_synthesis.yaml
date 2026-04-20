@@ -1,0 +1,20 @@
+id: research_synthesis
+display_name: 리서치 종합
+category: research
+tags:
+  - synthesis
+  - research
+  - insight
+  - pattern
+description: 수집된 정보에서 핵심 패턴·인사이트·반례를 정리하는 종합 기법
+thinking_frame: |
+  1) 클러스터링 — 유사 관찰을 묶어 주제별 그룹 생성
+  2) 빈도 vs 강도 — 많이 나온 것과 드물지만 강한 신호를 구분
+  3) 패턴 추출 — 3건 이상에서 반복 확인되는 현상만 '패턴'으로 승격
+  4) 반례 점검 — 패턴과 어긋나는 사례를 의도적으로 수집
+  5) 시사점 — 우리 맥락에 적용 가능한 형태로 번역
+output_checklist:
+  - 각 발견에 출처 링크 또는 인용 표기
+  - 강한 단정("반드시") 사용 시 표본 규모 병기
+  - 반례·한계를 별도 섹션으로 기록
+  - 시사점은 "그래서 무엇을 할 것인가" 형식으로

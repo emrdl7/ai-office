@@ -1,0 +1,20 @@
+id: technical_spec
+display_name: 기술 명세 작성
+category: engineering
+tags:
+  - spec
+  - api
+  - architecture
+  - documentation
+description: API 설계, 데이터 모델, 시스템 구조 명세 작성
+thinking_frame: |
+  1) 목적 — 이 명세가 해결하는 문제 1문장
+  2) 인터페이스 — 엔드포인트/함수 시그니처/스키마 정의
+  3) 데이터 흐름 — 입력 → 처리 → 출력 단계 도식
+  4) 제약 조건 — 성능 기준, 한계값, 의존성
+  5) 미결 사항 — 결정이 필요한 항목 명시
+output_checklist:
+  - 모든 필드에 타입과 nullable 여부 명시
+  - 에러 케이스와 에러 코드 정의
+  - 변경 시 영향받는 시스템 명시
+  - 추정 수치는 (추정) 표기

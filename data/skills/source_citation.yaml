@@ -1,0 +1,20 @@
+id: source_citation
+display_name: 출처 인용
+category: research
+tags:
+  - citation
+  - source
+  - reference
+  - evidence
+description: 모든 주장에 검증 가능한 출처를 병기하는 기록 원칙
+thinking_frame: |
+  1) 일차 출처 — 공식 문서·원본 발표·원저자 논문 우선
+  2) 인용 형식 — 제목, URL, 발행자, 접속일 포함
+  3) 발췌 정확성 — 원문을 왜곡 없이 인용, 필요 시 [...] 생략 표기
+  4) 신뢰도 등급 — Tier 1(공식) / Tier 2(주요 매체) / Tier 3(블로그·SNS)
+  5) 2차 인용 주의 — 원본을 직접 확인, "A가 B라고 주장했다" 체인 지양
+output_checklist:
+  - 각 주요 주장 뒤에 출처 링크 병기
+  - 인용은 원문 표현 유지, 번역 시 번역 표기
+  - 접속일 또는 발행일 명시 (시점 의존 정보일 때)
+  - Tier 3 출처 사용 시 다른 출처로 교차 검증

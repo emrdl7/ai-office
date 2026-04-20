@@ -1,0 +1,21 @@
+id: test_case_design
+display_name: 테스트 케이스 설계
+category: qa
+tags:
+  - testing
+  - qa
+  - edge-case
+  - boundary
+description: 경계값·동등 분할·엣지케이스 기반 체계적 테스트 설계
+thinking_frame: |
+  1) 정상 경로 (Happy Path) — 기대 동작 확인
+  2) 경계값 분석 — 최솟값, 최댓값, 경계±1
+  3) 동등 분할 — 유효/무효 입력 그룹
+  4) 엣지케이스 — 빈 값, null, 특수문자, 동시 요청
+  5) 부정 케이스 — 잘못된 입력, 권한 없는 접근
+  각 케이스: ID / 전제조건 / 입력 / 기대결과 / 심각도.
+output_checklist:
+  - 테스트 케이스 ID 부여 (TC-001 형식)
+  - 재현 단계 번호순 명시
+  - 심각도 Critical/High/Medium/Low 분류
+  - 자동화 가능 여부 표기

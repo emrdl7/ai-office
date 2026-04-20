@@ -72,14 +72,6 @@ export function linkify(text: string) {
   })
 }
 
-export function filterLogs(logs: LogEntry[], channel: ChannelId): LogEntry[] {
-  if (channel === 'all') {
-    return logs.filter((log) => !log.data?.dm && !AGENT_IDS_SET.has(log.data?.to as string))
-  }
-  return logs.filter((log) => {
-    if (log.agent_id === channel && log.data?.dm) return true
-    if (log.agent_id === 'user' && log.data?.to === channel) return true
-    if (log.agent_id === channel && ['typing', 'autonomous', 'system_notice', 'autonomous_pass', 'autonomous_stuck'].includes(log.event_type)) return true
-    return false
-  })
+export function filterLogs(logs: LogEntry[], _channel: ChannelId): LogEntry[] {
+  return logs.filter((log) => !log.data?.dm && !AGENT_IDS_SET.has(log.data?.to as string))
 }

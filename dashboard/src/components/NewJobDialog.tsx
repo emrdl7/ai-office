@@ -1,7 +1,7 @@
 // 새 Job 제출 다이얼로그
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { JobSpec } from '../types'
+import type { JobSpec, ToolParam } from '../types'
 import { MatIcon } from './icons'
 
 async function fetchSpecs(): Promise<JobSpec[]> {
@@ -66,8 +66,10 @@ export function NewJobDialog({
   const [selectedSpec, setSelectedSpec] = useState<JobSpec | null>(null)
   const [title, setTitle] = useState(initialValues?.title ?? '')
   const [fields, setFields] = useState<Record<string, string>>(initialValues?.fields ?? {})
+  const [toolCtx, setToolCtx] = useState<Record<string, string>>({})
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [sourceJob, setSourceJob] = useState(initialValues?.sourceJob)
 
   const { data: specs = [] } = useQuery({
     queryKey: ['job-specs'],
@@ -92,8 +94,11 @@ export function NewJobDialog({
       fd.append('spec_id', selectedSpec.id)
       fd.append('title', title)
       fd.append('input', JSON.stringify(fields))
-      if (initialValues?.sourceJob?.id) {
-        fd.append('source_job_id', initialValues.sourceJob.id)
+      if (Object.keys(toolCtx).length > 0) {
+        fd.append('tool_context', JSON.stringify(toolCtx))
+      }
+      if (sourceJob?.id) {
+        fd.append('source_job_id', sourceJob.id)
       }
       for (const f of attachedFiles) {
         fd.append('files', f)
@@ -135,12 +140,8 @@ export function NewJobDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50">
-      <div className="bg-white dark:bg-gray-900
-        w-full md:max-w-lg
-        rounded-t-2xl md:rounded-2xl shadow-2xl
-        max-h-[90dvh] flex flex-col
-        pb-[env(safe-area-inset-bottom)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">
@@ -162,7 +163,7 @@ export function NewJobDialog({
               {specs.map(spec => (
                 <button
                   key={spec.id}
-                  onClick={() => { setSelectedSpec(spec); setFields({}) }}
+                  onClick={() => { setSelectedSpec(spec); setFields({}); setToolCtx({}) }}
                   className={`text-left px-3 py-2.5 rounded-xl border transition-all cursor-pointer
                     ${selectedSpec?.id === spec.id
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
@@ -203,7 +204,7 @@ export function NewJobDialog({
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   placeholder={`예: ${selectedSpec.title} — 프로젝트명`}
-                  className="w-full px-3 py-2 text-base md:text-sm rounded-lg border border-gray-200 dark:border-gray-700
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700
                     bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                     focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
                 />
@@ -224,7 +225,7 @@ export function NewJobDialog({
                     value={fields[field] || ''}
                     onChange={e => setFields(prev => ({ ...prev, [field]: e.target.value }))}
                     placeholder={FIELD_PLACEHOLDERS[field] || ''}
-                    className="w-full px-3 py-2 text-base md:text-sm rounded-lg border border-gray-200 dark:border-gray-700
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700
                       bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                       focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500
                       resize-none"
@@ -234,8 +235,44 @@ export function NewJobDialog({
             </div>
           )}
 
+          {/* 툴 파라미터 */}
+          {selectedSpec && (selectedSpec.tool_params ?? []).length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                툴 파라미터
+              </p>
+              <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700/40 mb-2">
+                <p className="text-[11px] text-blue-600 dark:text-blue-400">
+                  이 Job의 스텝에서 아래 툴을 사용합니다. 필요한 값을 입력하세요.
+                </p>
+              </div>
+              {(selectedSpec.tool_params ?? []).map((tp: ToolParam) => (
+                <div key={tp.param}>
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                    <span className="font-mono">{tp.param}</span>
+                    <span className="ml-1.5 text-gray-400 font-normal">({tp.tool_name})</span>
+                    {tp.env_var && (
+                      <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono">
+                        {tp.env_var}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    value={toolCtx[tp.param] || ''}
+                    onChange={e => setToolCtx(prev => ({ ...prev, [tp.param]: e.target.value }))}
+                    placeholder={`예: ${tp.param === 'file_key' ? 'abc123XYZ' : tp.param === 'channel' ? '#general' : tp.param === 'page_id' ? 'notion-page-id' : tp.param}`}
+                    className="w-full px-3 py-2 text-base md:text-sm rounded-lg border border-gray-200 dark:border-gray-700
+                      bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+                      focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 이전 Job 산출물 참조 (체이닝) */}
-          {selectedSpec && initialValues?.sourceJob && (
+          {selectedSpec && sourceJob && (
             <div>
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                 이전 Job 산출물 <span className="font-normal normal-case text-gray-400">(자동 참조)</span>
@@ -245,14 +282,20 @@ export function NewJobDialog({
                   <MatIcon name="link" className="text-[16px] text-purple-500 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-purple-700 dark:text-purple-300 truncate">
-                      {initialValues.sourceJob.title}
+                      {sourceJob.title}
                     </p>
                     <p className="text-[10px] text-purple-500 dark:text-purple-400">
-                      {initialValues.sourceJob.specId} ·{' '}
-                      {Object.keys(initialValues.sourceJob.artifacts).filter(k => initialValues.sourceJob!.artifacts[k]?.length > 10).length}개 산출물 포함
+                      {sourceJob.specId} ·{' '}
+                      {Object.keys(sourceJob.artifacts).filter(k => sourceJob!.artifacts[k]?.length > 10).length}개 산출물 포함
                     </p>
                   </div>
-                  <MatIcon name="check_circle" className="text-[14px] text-purple-400 shrink-0" />
+                  <button
+                    type="button"
+                    onClick={() => setSourceJob(undefined)}
+                    className="shrink-0 p-0.5 rounded-full text-purple-400 hover:text-purple-700 dark:hover:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-800/40 transition-colors"
+                    title="참조 해제">
+                    <MatIcon name="close" className="text-[14px]" />
+                  </button>
                 </div>
               </div>
             </div>

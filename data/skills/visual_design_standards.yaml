@@ -1,0 +1,20 @@
+id: visual_design_standards
+display_name: 비주얼 디자인 표준
+category: design
+tags:
+  - design-system
+  - typography
+  - color
+  - accessibility
+description: 디자인 토큰·타이포·컬러·간격·접근성 기준을 준수하는 작업 원칙
+thinking_frame: |
+  1) 디자인 토큰 — 색상·간격·반경은 하드코드 금지, 토큰 참조
+  2) 타이포 스케일 — 모듈러 스케일(예: 1.25) 기반, 임의 크기 지양
+  3) 컬러 대비 — 본문 WCAG AA(4.5:1), 보조 AA Large(3:1) 최소 준수
+  4) 간격 — 4/8 px 그리드 기준, 예외는 사유 명시
+  5) 상태 — default/hover/focus/active/disabled/error 빠짐없이 정의
+output_checklist:
+  - 색상·타이포·간격 전부 토큰명으로 참조
+  - 상호작용 가능한 요소의 hit-target ≥ 44×44 px
+  - 상태 전체 스펙 제공
+  - WCAG 대비 비율 표기 (본문/버튼 등)

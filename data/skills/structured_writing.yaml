@@ -1,0 +1,20 @@
+id: structured_writing
+display_name: 구조적 글쓰기
+category: writing
+tags:
+  - writing
+  - structure
+  - communication
+  - clarity
+description: 독자의 의사결정을 돕는 계층적·목적지향 글쓰기
+thinking_frame: |
+  1) 독자·목적 — 누가 읽고 무엇을 결정해야 하는가를 먼저 정의
+  2) 결론 우선 — 핵심 메시지를 첫 단락에 배치 (BLUF)
+  3) 섹션 구성 — 제목만 훑어도 요지가 잡히도록 설계
+  4) 계층 — H2(주제) > H3(논점) > 목록 3~5개 원칙
+  5) 언어 — 모호한 수식어 제거, 구체 수치·행위 동사 우선
+output_checklist:
+  - 첫 단락에 핵심 요지 1-2문장
+  - 섹션 제목만으로도 내용 개요 파악 가능
+  - 모든 주장에 근거 또는 출처
+  - 중복 표현·빈 말("~이 중요합니다") 제거

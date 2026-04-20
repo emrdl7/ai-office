@@ -1,0 +1,20 @@
+id: code_review
+display_name: 코드 리뷰
+category: engineering
+tags:
+  - code
+  - review
+  - quality
+  - security
+description: 코드 품질, 보안, 패턴 관점의 구조적 검토
+thinking_frame: |
+  1) 정확성 — 로직 버그, 엣지케이스 누락
+  2) 보안 — 입력 검증, 인젝션, 권한 누락
+  3) 설계 — 단일 책임, 중복, 추상화 수준
+  4) 가독성 — 네이밍, 주석 필요성, 복잡도
+  각 항목은 (위치 → 문제 → 개선 코드 예시) 형식으로.
+output_checklist:
+  - 파일명:라인번호 형식으로 위치 명시
+  - 심각도 Critical/High/Medium/Low 분류
+  - 개선 코드 스니펫 포함 (변경 전/후)
+  - 칭찬 없이 개선 사항만

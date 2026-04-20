@@ -62,21 +62,17 @@ export function PlaybookDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white dark:bg-gray-900
-        w-full md:max-w-lg
-        rounded-t-2xl md:rounded-2xl shadow-2xl
-        border border-gray-200 dark:border-gray-700
-        flex flex-col max-h-[90dvh]
-        pb-[env(safe-area-inset-bottom)]">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg
+        border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]">
 
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
             <MatIcon name="play_circle" className="text-[20px] text-purple-500" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Playbook 실행</h2>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">플레이북 실행</h2>
           </div>
           <button onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white
@@ -94,7 +90,7 @@ export function PlaybookDialog({ onClose }: { onClose: () => void }) {
           {!isLoading && (
             <div>
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                Playbook 선택
+                플레이북 선택
               </p>
               <div className="space-y-2">
                 {playbooks.map(pb => (
@@ -142,7 +138,7 @@ export function PlaybookDialog({ onClose }: { onClose: () => void }) {
 
                 {playbooks.length === 0 && (
                   <p className="text-sm text-gray-400 text-center py-4">
-                    등록된 Playbook이 없습니다
+                    등록된 플레이북이 없습니다
                   </p>
                 )}
               </div>
@@ -167,7 +163,7 @@ export function PlaybookDialog({ onClose }: { onClose: () => void }) {
                       value={fields[f] ?? ''}
                       onChange={e => setFields(prev => ({ ...prev, [f]: e.target.value }))}
                       placeholder={`${f} 입력`}
-                      className="w-full px-3 py-2 text-base md:text-sm rounded-lg border border-gray-200 dark:border-gray-700
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700
                         bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                         focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400"
                     />
@@ -193,7 +189,7 @@ export function PlaybookDialog({ onClose }: { onClose: () => void }) {
               rounded-lg transition-colors cursor-pointer"
           >
             <MatIcon name="play_arrow" className="text-[16px]" />
-            {run.isPending ? '시작 중...' : 'Playbook 실행'}
+            {run.isPending ? '시작 중...' : '플레이북 실행'}
           </button>
         </div>
 

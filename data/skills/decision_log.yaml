@@ -1,0 +1,21 @@
+id: decision_log
+display_name: 의사결정 기록
+category: common
+tags:
+  - decision
+  - adr
+  - rationale
+  - documentation
+description: 주요 결정의 맥락·대안·근거를 ADR 형식으로 기록
+thinking_frame: |
+  각 주요 결정에 대해:
+  1) 상태 — 제안 / 채택 / 폐기 / 대체됨
+  2) 맥락 — 이 결정이 필요해진 배경과 제약
+  3) 검토한 대안 — 고려했던 옵션들과 각각의 장단점
+  4) 결정 — 선택한 방향과 핵심 근거
+  5) 결과 — 예상되는 트레이드오프와 후속 과제
+output_checklist:
+  - 대안은 최소 2개 이상 포함
+  - '"더 좋아서" 같은 주관적 표현 금지 — 수치나 기준으로 대체'
+  - 폐기한 대안의 이유 명시
+  - 재검토 트리거 조건 포함 (예 — 사용자 10만 초과 시 재검토)

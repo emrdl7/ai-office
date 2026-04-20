@@ -28,15 +28,15 @@ function GateInboxButton({
   return (
     <button
       onClick={() => selectChannel('gates')}
-      className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors touch-manipulation
-        flex items-center gap-2 mt-0.5 min-h-[44px] md:min-h-0
+      className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
+        flex items-center gap-2 mt-0.5
         ${activeChannel === 'gates'
           ? 'bg-blue-600/15 text-blue-400 font-medium'
           : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
         }`}
     >
       <MatIcon name="pending_actions" className="text-[16px]" />
-      <span className="flex-1">Gate Inbox</span>
+      <span className="flex-1">검토 수신함</span>
       {gates.length > 0 && (
         <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-yellow-500 text-white">
           {gates.length}
@@ -58,9 +58,8 @@ function SidebarBtn({
     <button
       onClick={onClick}
       title={title}
-      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg touch-manipulation
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg
         text-sm text-gray-600 dark:text-gray-400
-        min-h-[44px] md:min-h-0
         hover:bg-gray-100 dark:hover:bg-gray-800
         cursor-pointer transition-colors"
     >
@@ -70,46 +69,34 @@ function SidebarBtn({
   )
 }
 
-interface SidebarProps {
-  onClose?: () => void
-  navigate?: (ch: ChannelId) => void
-}
-
-export function Sidebar({ onClose, navigate }: SidebarProps) {
+export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { activeChannel, setActiveChannel, toggleTheme, theme } = useStore()
   const [showSearch, setShowSearch] = useState(false)
   const [showInsight, setShowInsight] = useState(false)
 
   function selectChannel(channel: ChannelId) {
-    if (navigate) {
-      navigate(channel)
-    } else {
-      setActiveChannel(channel)
-      onClose?.()
-    }
+    setActiveChannel(channel)
+    onClose?.()
   }
 
   return (
     <aside
-      className="w-[min(288px,85vw)] md:w-72 h-full flex-shrink-0 flex flex-col
+      className="w-72 h-full flex-shrink-0 flex flex-col
         bg-white dark:bg-gray-950
-        border-r border-gray-200 dark:border-gray-800
-        pt-[env(safe-area-inset-top)]"
+        border-r border-gray-200 dark:border-gray-800"
       aria-label="채널 목록"
     >
       {/* 헤더 */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
+      <div className="px-4 md:px-5 h-[52px] flex items-center justify-between shrink-0 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-2">
-          <span className="text-blue-400 font-bold text-lg">AI</span>
+          <span className="text-blue-400 font-bold text-sm">AI</span>
           <h1 className="text-sm font-semibold text-gray-900 dark:text-white">Office</h1>
         </div>
-        <div className="flex gap-1 items-center">
+        <div className="flex gap-1">
           <button
             onClick={toggleTheme}
-            className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800
-              min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0
-              flex items-center justify-center
-              cursor-pointer transition-colors touch-manipulation"
+            className="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800
+              cursor-pointer transition-colors"
             aria-label="테마 전환"
             title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
           >
@@ -118,19 +105,6 @@ export function Sidebar({ onClose, navigate }: SidebarProps) {
               : <MatIcon name="dark_mode" className="text-[16px]" />
             }
           </button>
-          {/* 모바일 전용 닫기 버튼 */}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="md:hidden p-2 rounded-lg min-w-[44px] min-h-[44px]
-                flex items-center justify-center
-                text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800
-                cursor-pointer touch-manipulation"
-              aria-label="사이드바 닫기"
-            >
-              <MatIcon name="close" className="text-[18px]" />
-            </button>
-          )}
         </div>
       </div>
 
@@ -141,29 +115,29 @@ export function Sidebar({ onClose, navigate }: SidebarProps) {
         </h3>
         <button
           onClick={() => selectChannel('all')}
-          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors touch-manipulation
-            flex items-center gap-2 min-h-[44px] md:min-h-0
+          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
+            flex items-center gap-2
             ${activeChannel === 'all'
               ? 'bg-blue-600/15 text-blue-400 font-medium'
               : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
         >
           <span className="text-base">#</span>
-          <span>팀 채널</span>
+          <span>TALK</span>
         </button>
 
         {/* Job Board */}
         <button
           onClick={() => selectChannel('jobs')}
-          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors touch-manipulation
-            flex items-center gap-2 mt-0.5 min-h-[44px] md:min-h-0
+          className={`w-full text-left px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors
+            flex items-center gap-2 mt-0.5
             ${activeChannel === 'jobs'
               ? 'bg-blue-600/15 text-blue-400 font-medium'
               : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
         >
           <MatIcon name="work" className="text-[16px]" />
-          <span>Job Board</span>
+          <span>작업 보드</span>
         </button>
 
         {/* Gate Inbox */}
@@ -171,8 +145,7 @@ export function Sidebar({ onClose, navigate }: SidebarProps) {
       </div>
 
       {/* 하단 메뉴 */}
-      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-0.5
-        pb-[max(12px,env(safe-area-inset-bottom))]">
+      <div className="mt-auto p-3 border-t border-gray-200 dark:border-gray-800 space-y-0.5">
         <SidebarBtn icon="search" label="통합 검색" onClick={() => setShowSearch(true)} />
         <SidebarBtn icon="insights" label="인사이트" onClick={() => setShowInsight(true)} />
         <SidebarBtn

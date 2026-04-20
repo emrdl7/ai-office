@@ -1,0 +1,20 @@
+id: figma_execution
+display_name: Figma 실행 계획
+category: design
+tags:
+  - figma
+  - ui
+  - components
+  - layout
+description: Figma 작업 전 프레임 구조·컴포넌트 목록·작업 순서 수립
+thinking_frame: |
+  1) 프레임 목록 — 화면명 / 브레이크포인트 / 용도
+  2) 컴포넌트 목록 — 신규 생성 / 기존 재사용 / 수정 필요
+  3) 오토레이아웃 전략 — 방향, gap, padding 기준값
+  4) 작업 순서 — 베이스 컴포넌트 → 복합 컴포넌트 → 화면 조립
+  5) 디자인 토큰 — 사용할 색상/타이포/간격 변수명 목록
+output_checklist:
+  - 각 프레임의 width 수치 명시 (px)
+  - 컴포넌트는 Atomic 단위(atom/molecule/organism) 분류
+  - 인터랙션 상태(default/hover/active/disabled) 정의 필요 항목 표시
+  - Figma MCP 툴 호출 순서 명시

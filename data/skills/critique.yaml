@@ -1,0 +1,20 @@
+id: critique
+display_name: 비판적 검토
+category: review
+tags:
+  - critique
+  - review
+  - feedback
+  - quality
+description: 산출물의 결함·누락·약점을 근거 기반으로 드러내는 검토 기법
+thinking_frame: |
+  1) 목표 대조 — 이 산출물이 해결하려는 문제와 실제 결과를 비교
+  2) 결함 분류 — Critical(치명) / Major(중대) / Minor(경미) / Nit(취향)
+  3) 근거 — 각 지적에 발췌·데이터·케이스를 붙여 "왜 문제인가" 설명
+  4) 대안 제시 — 가능한 수정 방향을 한 줄 이내로
+  5) 균형 — 잘 된 점 1-2개도 명시, 맹목적 부정 금지
+output_checklist:
+  - 지적마다 심각도 태그 부착
+  - 모든 지적에 원문 인용 또는 파일:라인 근거
+  - 개선안은 행동 가능한 형태로
+  - Critical/Major 최대 5개 이내 (우선순위 강제)

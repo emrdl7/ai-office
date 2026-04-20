@@ -1,0 +1,18 @@
+id: requirements_definition
+display_name: 요구사항 정의
+category: product
+tags:
+  - requirements
+  - user-story
+  - acceptance-criteria
+description: 사용자 스토리와 수용 기준(AC) 기반 요구사항 작성
+thinking_frame: |
+  1) 사용자 스토리 — "나는 [역할]로서 [목표]를 위해 [기능]을 원한다" 형식
+  2) 수용 기준 — Given/When/Then 형식으로 3개 이상
+  3) Out of Scope — 이번 범위에서 제외되는 것 명시
+  4) 의존성 — 선행되어야 할 조건이나 다른 기능
+output_checklist:
+  - 모호한 표현("빠르게", "쉽게") 금지 — 수치로 대체
+  - 각 스토리에 우선순위(Must/Should/Could) 표기
+  - AC는 테스트 가능한 형태로 작성
+  - 비기능 요구사항(성능, 보안) 별도 섹션 포함

@@ -21,7 +21,7 @@ async def list_all_artifacts(task_id: str = '') -> list[dict[str, Any]]:
   workspace 디렉토리명이 project_id인 경우 projects 테이블에서 메타데이터를 가져온다.
   task_id인 경우 tasks 테이블에서 instruction을 가져온다.
   '''
-  if not paths.WORKSPACE_ROOT.exists():
+  if not WORKSPACE_ROOT.exists():
     return []
 
   from db.task_store import list_projects
@@ -35,7 +35,7 @@ async def list_all_artifacts(task_id: str = '') -> list[dict[str, Any]]:
       project_to_task[pid] = t
 
   result: list[dict[str, Any]] = []
-  dirs = [paths.WORKSPACE_ROOT / task_id] if task_id else sorted(paths.WORKSPACE_ROOT.iterdir())
+  dirs = [WORKSPACE_ROOT / task_id] if task_id else sorted(WORKSPACE_ROOT.iterdir())
   for task_dir in dirs:
     if not task_dir.is_dir() or task_dir.name.startswith('.'):
       continue
@@ -62,7 +62,7 @@ async def list_all_artifacts(task_id: str = '') -> list[dict[str, Any]]:
 
     for f in sorted(task_dir.rglob('*')):
       if f.is_file() and f.name != '.gitkeep':
-        rel = f.relative_to(paths.WORKSPACE_ROOT)
+        rel = f.relative_to(WORKSPACE_ROOT)
         ext = f.suffix.lower()
         ftype = 'code' if ext in {'.py','.ts','.js','.tsx','.jsx','.sh','.html','.css'} else 'doc' if ext in {'.md','.txt'} else 'data' if ext in {'.json','.yaml','.yml','.csv'} else 'image' if ext in {'.png','.jpg','.svg'} else 'unknown'
         if 'uploads' in str(rel):
@@ -81,26 +81,29 @@ async def list_all_artifacts(task_id: str = '') -> list[dict[str, Any]]:
 
 
 @router.get('/api/uploads/{task_id}/{filename}')
-async def get_upload_file(task_id: str, filename: str) -> FileResponse:
+async def get_upload_file(task_id: str, filename: str):
   '''업로드된 파일을 바이너리로 반환한다 (이미지 썸네일 등).'''
   if '..' in task_id or '..' in filename:
     raise HTTPException(status_code=400, detail='유효하지 않은 경로')
-  target = paths.WORKSPACE_ROOT / task_id / 'uploads' / filename
+  target = WORKSPACE_ROOT / task_id / 'uploads' / filename
   if not target.exists() or not target.is_file():
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
+  from fastapi.responses import FileResponse
   return FileResponse(str(target), filename=filename)
 
 
 @router.get('/api/artifacts/{file_path:path}')
-async def get_artifact_content(file_path: str, request: Request) -> Any:
+async def get_artifact_content(file_path: str, request: Request):
   '''산출물 파일 내용을 반환한다.'''
+  from fastapi.responses import HTMLResponse, PlainTextResponse
   if '..' in file_path:
     raise HTTPException(status_code=400, detail='유효하지 않은 경로')
-  target = paths.WORKSPACE_ROOT / file_path
+  target = WORKSPACE_ROOT / file_path
   if not target.exists() or not target.is_file():
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
 
   if file_path.endswith('.pdf'):
+    from fastapi.responses import FileResponse
     return FileResponse(str(target), media_type='application/pdf', filename=target.name)
 
   content = target.read_text(encoding='utf-8', errors='replace')
@@ -149,12 +152,12 @@ async def list_files(task_id: str) -> list[dict[str, Any]]:
   if '..' in task_id or '/' in task_id or '\\' in task_id:
     raise HTTPException(status_code=400, detail='유효하지 않은 task_id입니다')
 
-  task_dir = paths.WORKSPACE_ROOT / task_id
+  task_dir = WORKSPACE_ROOT / task_id
 
   if not task_dir.exists():
     return []
 
-  wm = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
+  wm = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
   artifacts = wm.list_artifacts()
 
   result: list[dict[str, Any]] = []
@@ -177,7 +180,7 @@ async def get_file(task_id: str, file_path: str) -> dict[str, str]:
   if '..' in task_id or '/' in task_id or '\\' in task_id:
     raise HTTPException(status_code=400, detail='유효하지 않은 task_id입니다')
 
-  wm = WorkspaceManager(task_id=task_id, workspace_root=str(paths.WORKSPACE_ROOT))
+  wm = WorkspaceManager(task_id=task_id, workspace_root=str(WORKSPACE_ROOT))
   try:
     target = wm.safe_path(file_path)
   except ValueError:
@@ -260,19 +263,19 @@ async def get_project_status(request: Request) -> dict[str, Any]:
 
 
 @router.get('/api/exports/{task_id}')
-async def get_exportable_formats(task_id: str) -> dict[str, list[str]]:
+async def get_exportable_formats(task_id: str):
   '''태스크의 내보내기 가능 포맷 목록을 반환한다.'''
   from harness.export_engine import get_exportable_formats
-  task_dir = paths.WORKSPACE_ROOT / task_id
+  task_dir = WORKSPACE_ROOT / task_id
   return {'formats': get_exportable_formats(task_dir)}
 
 
 @router.post('/api/exports/{task_id}/{fmt}')
-async def export_artifact(task_id: str, fmt: str) -> dict[str, str]:
+async def export_artifact(task_id: str, fmt: str):
   '''온디맨드 내보내기 — PDF, DOCX, ZIP 생성.'''
   from harness.export_engine import md_to_pdf, md_to_docx, folder_to_zip
 
-  task_dir = paths.WORKSPACE_ROOT / task_id
+  task_dir = WORKSPACE_ROOT / task_id
   if not task_dir.exists():
     raise HTTPException(status_code=404, detail='태스크를 찾을 수 없습니다')
 

@@ -162,7 +162,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
           </button>
 
           {outputOpen && (
-            <div className="px-3 py-3 max-h-[50dvh] overflow-y-auto border-t border-gray-200 dark:border-gray-700">
+            <div className="px-3 py-3 max-h-[50vh] overflow-y-auto border-t border-gray-200 dark:border-gray-700">
               {isCode ? (
                 <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
                   {gate.step_output}
@@ -186,19 +186,18 @@ function GateItem({ gate }: { gate: PendingGate }) {
           value={feedback}
           onChange={e => setFeedback(e.target.value)}
           placeholder="수정 요청 시 피드백을 입력하세요 (없으면 비워두고 승인/거절)"
-          className="w-full px-3 py-2 text-base md:text-sm rounded-lg border border-gray-200 dark:border-gray-700
+          className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700
             bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 resize-none
             focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
         />
 
-        <div className="flex flex-col md:flex-row gap-2">
+        <div className="flex gap-2">
           <button
             onClick={() => decide.mutate('approved')}
             disabled={decide.isPending}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5
-              px-4 py-3 md:py-2 min-h-[44px] text-sm font-medium text-white
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white
               bg-green-600 hover:bg-green-700 rounded-xl transition-colors cursor-pointer
-              touch-manipulation disabled:opacity-50"
+              disabled:opacity-50"
           >
             <MatIcon name="check" className="text-[16px]" />
             승인
@@ -208,11 +207,10 @@ function GateItem({ gate }: { gate: PendingGate }) {
             onClick={() => decide.mutate('revised')}
             disabled={decide.isPending || !feedback.trim()}
             title={!feedback.trim() ? '피드백을 먼저 입력하세요' : ''}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5
-              px-4 py-3 md:py-2 min-h-[44px] text-sm font-medium
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium
               text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30
               hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-xl transition-colors
-              cursor-pointer touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
+              cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <MatIcon name="refresh" className="text-[16px]" />
             수정 후 재검토
@@ -221,11 +219,10 @@ function GateItem({ gate }: { gate: PendingGate }) {
           <button
             onClick={() => decide.mutate('rejected')}
             disabled={decide.isPending}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5
-              px-4 py-3 md:py-2 min-h-[44px] text-sm font-medium
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium
               text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20
               hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl transition-colors
-              cursor-pointer touch-manipulation disabled:opacity-50"
+              cursor-pointer disabled:opacity-50"
           >
             <MatIcon name="cancel" className="text-[16px]" />
             거절
@@ -245,7 +242,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
   )
 }
 
-export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
+export function GateInbox() {
   const { data: gates = [], isLoading, error } = useQuery({
     queryKey: ['pending-gates'],
     queryFn: fetchPendingGates,
@@ -255,22 +252,13 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
       {/* 헤더 */}
-      <div className="px-4 md:px-5 py-3 md:py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
         <div className="flex items-center gap-3">
-          {onBack && (
-            <button onClick={onBack}
-              className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
-                dark:hover:bg-gray-800 cursor-pointer touch-manipulation
-                min-w-[44px] min-h-[44px] flex items-center justify-center"
-              aria-label="뒤로가기">
-              <MatIcon name="arrow_back_ios_new" className="text-[18px]" />
-            </button>
-          )}
-          <div className="w-8 h-8 rounded-xl bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
             <MatIcon name="pending_actions" className="text-[18px] text-yellow-600 dark:text-yellow-400" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Gate Inbox</h2>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">검토 수신함</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {isLoading ? '로딩 중...' : `${gates.length}개 검토 대기 중`}
             </p>
@@ -292,14 +280,14 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
               <MatIcon name="check_circle" className="text-[32px] text-green-500" />
             </div>
             <p className="text-base font-semibold text-gray-700 dark:text-gray-300">검토 대기 없음</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">모든 Gate가 처리되었습니다</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">모든 게이트가 처리되었습니다</p>
           </div>
         )}
 
         {error && (
           <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl text-red-600 dark:text-red-400">
             <MatIcon name="error" className="text-[18px]" />
-            <p className="text-sm">Gate 목록을 불러오지 못했습니다</p>
+            <p className="text-sm">검토 목록을 불러오지 못했습니다</p>
           </div>
         )}
 

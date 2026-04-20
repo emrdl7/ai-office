@@ -18,7 +18,7 @@ async function fetchJobs(): Promise<Job[]> {
 const STATUS_TABS = [
   { key: 'all', label: '전체' },
   { key: 'running', label: '실행 중' },
-  { key: 'waiting_gate', label: 'Gate 대기' },
+  { key: 'waiting_gate', label: '게이트 대기' },
   { key: 'done', label: '완료' },
   { key: 'failed', label: '실패' },
 ] as const
@@ -26,7 +26,7 @@ const STATUS_TABS = [
 const STATUS_STYLE: Record<string, { dot: string; badge: string; label: string }> = {
   queued:       { dot: 'bg-gray-400', badge: 'bg-gray-500/20 text-gray-400', label: '대기' },
   running:      { dot: 'bg-blue-400 animate-pulse', badge: 'bg-blue-500/20 text-blue-400', label: '실행 중' },
-  waiting_gate: { dot: 'bg-yellow-400 animate-pulse', badge: 'bg-yellow-500/20 text-yellow-500', label: 'Gate 대기' },
+  waiting_gate: { dot: 'bg-yellow-400 animate-pulse', badge: 'bg-yellow-500/20 text-yellow-500', label: '게이트 대기' },
   done:         { dot: 'bg-green-500', badge: 'bg-green-500/20 text-green-500', label: '완료' },
   failed:       { dot: 'bg-red-500', badge: 'bg-red-500/20 text-red-500', label: '실패' },
   cancelled:    { dot: 'bg-gray-500', badge: 'bg-gray-500/20 text-gray-500', label: '취소됨' },
@@ -128,7 +128,7 @@ interface NewJobValues {
   sourceJob?: { id: string; title: string; specId: string; artifacts: Record<string, string> }
 }
 
-export function JobBoard() {
+export function JobBoard({ onBack }: { onBack?: () => void }) {
   const qc = useQueryClient()
   const [filter, setFilter] = useState<string>('all')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
@@ -160,32 +160,44 @@ export function JobBoard() {
     counts[j.status] = (counts[j.status] || 0) + 1
   }
   return (
-    <div className="flex-1 flex min-h-0 bg-gray-50 dark:bg-gray-950">
+    <div className="flex-1 flex min-h-0 overflow-x-hidden bg-gray-50 dark:bg-gray-950">
       {/* 좌측: Job 목록 */}
       <div className={`flex flex-col border-r border-gray-200 dark:border-gray-800
         bg-white dark:bg-gray-950
         ${selectedJobId ? 'hidden md:flex md:w-80 lg:w-96' : 'flex w-full md:w-80 lg:w-96'}`}>
 
         {/* 헤더 */}
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+        <div className="px-4 md:px-5 py-3 border-b border-gray-200 dark:border-gray-800">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Job Board</h2>
+            <div className="flex items-center gap-1">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="md:hidden flex items-center justify-center w-8 h-8 -ml-1 mr-0.5
+                    rounded-lg text-gray-500 dark:text-gray-400
+                    hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors
+                    touch-manipulation cursor-pointer"
+                  aria-label="채팅으로 돌아가기"
+                >
+                  <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
+                </button>
+              )}
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">작업 보드</h2>
+            </div>
             <div className="flex gap-1.5">
               <button
                 onClick={() => setShowPlaybook(true)}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
-                  min-h-[44px] md:min-h-0 touch-manipulation
                   text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30
                   hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
-                title="Playbook — 여러 Job을 순서대로 자동 실행"
+                title="플레이북 — 여러 작업을 순서대로 자동 실행"
               >
                 <MatIcon name="play_circle" className="text-[14px]" />
-                Playbook
+                플레이북
               </button>
               <button
                 onClick={() => setShowNewJob(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white
-                  min-h-[44px] md:min-h-0 touch-manipulation
                   bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
               >
                 <MatIcon name="add" className="text-[14px]" />
@@ -195,37 +207,32 @@ export function JobBoard() {
           </div>
 
           {/* 상태 필터 탭 */}
-          <div className="relative">
-            <div className="flex gap-1 overflow-x-auto no-scrollbar pb-1">
-              {STATUS_TABS.map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setFilter(tab.key)}
-                  className={`shrink-0 px-2.5 py-1.5 text-[11px] font-medium rounded-lg transition-colors cursor-pointer touch-manipulation
-                    ${filter === tab.key
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                    }`}
-                >
-                  {tab.label}
-                  {tab.key !== 'all' && counts[tab.key] ? (
-                    <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
-                      ${filter === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
-                      {counts[tab.key]}
-                    </span>
-                  ) : null}
-                  {tab.key === 'all' && jobs.length > 0 && (
-                    <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
-                      ${filter === 'all' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
-                      {jobs.length}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="absolute right-0 top-0 bottom-1 w-8
-              bg-gradient-to-l from-white dark:from-gray-950 to-transparent
-              pointer-events-none md:hidden" />
+          <div className="flex gap-1 overflow-x-auto no-scrollbar">
+            {STATUS_TABS.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setFilter(tab.key)}
+                className={`shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer
+                  ${filter === tab.key
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+              >
+                {tab.label}
+                {tab.key !== 'all' && counts[tab.key] ? (
+                  <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
+                    ${filter === tab.key ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                    {counts[tab.key]}
+                  </span>
+                ) : null}
+                {tab.key === 'all' && jobs.length > 0 && (
+                  <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px]
+                    ${filter === 'all' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                    {jobs.length}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -272,21 +279,7 @@ export function JobBoard() {
 
       {/* 우측: Job 상세 */}
       {selectedJobId ? (
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* 모바일 전용 목록 뒤로가기 */}
-          <button
-            onClick={() => setSelectedJobId(null)}
-            className="md:hidden flex items-center gap-1 px-3 py-2 min-h-[44px]
-              text-sm text-gray-600 dark:text-gray-400
-              border-b border-gray-200 dark:border-gray-800
-              bg-white dark:bg-gray-950
-              hover:bg-gray-50 dark:hover:bg-gray-900
-              transition-colors cursor-pointer touch-manipulation"
-            aria-label="Job 목록으로 돌아가기"
-          >
-            <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
-            <span>목록</span>
-          </button>
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
           <JobDetailView
             jobId={selectedJobId}
             onClose={() => setSelectedJobId(null)}

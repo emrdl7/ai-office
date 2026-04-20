@@ -1,0 +1,22 @@
+id: prioritization
+display_name: 우선순위 결정
+category: product
+tags:
+  - prioritization
+  - rice
+  - moscow
+  - strategy
+description: RICE/MoSCoW 기반 근거 있는 우선순위 도출
+thinking_frame: |
+  각 항목에 대해:
+  1) Reach — 영향받는 사용자 수 (월 기준)
+  2) Impact — 개인당 임팩트 (0.25/0.5/1/2/3)
+  3) Confidence — 근거 신뢰도 % (20~100)
+  4) Effort — 작업량 (person-weeks)
+  RICE Score = (Reach × Impact × Confidence) / Effort
+  최종적으로 Must Have / Should Have / Could Have / Won't Have 분류.
+output_checklist:
+  - 각 항목의 RICE 점수 계산 과정 표시
+  - 수치 근거 출처 명시 (데이터 없으면 (추정) 표기)
+  - 상위 3개 항목에 실행 이유 한 줄 요약
+  - Won't Have 항목은 제외 이유 명시
