@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function WorkingIndicator({ workingAgents, typingAgents }: Props) {
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(() => Date.now())
   const hasWorking = workingAgents.length > 0
   const hasTyping = typingAgents.size > 0
 
@@ -16,7 +16,7 @@ export function WorkingIndicator({ workingAgents, typingAgents }: Props) {
     if (!hasWorking) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [workingAgents.length])
+  }, [hasWorking, workingAgents.length])
 
   if (!hasWorking && !hasTyping) return null
 

@@ -319,7 +319,7 @@ function UserMessageText({ text }: { text: string }) {
 const COLLAPSE_THRESHOLD = 400
 const COLLAPSED_PREVIEW = 280
 
-function MessageBubble({ log, isResponse, onImageClick: _onImageClick }: {
+function MessageBubble({ log, isResponse, onImageClick: _onImageClickProp }: {
   log: LogEntry; isResponse: boolean; onImageClick: (url: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)

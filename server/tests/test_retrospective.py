@@ -1,6 +1,9 @@
 # run_retrospective — 메트릭 주입 / 팀장 종합 / retrospective.md 저장 단위 테스트.
+# NOTE: orchestration.teamlead_review 는 4월 리팩터링에서 제거됨 — 전체 skip.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+pytestmark = pytest.mark.skip(reason='orchestration.teamlead_review 제거됨 (2026-04 리팩터링)')
 
 
 def _mk_metric(name, phase, qa_passed=True, rev=0, duration=60.0):

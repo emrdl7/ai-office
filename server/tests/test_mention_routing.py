@@ -20,7 +20,6 @@ def office_stub(tmp_path, monkeypatch):
     return LogEvent(agent_id=agent_id, event_type=event_type, message=message)
 
   office._emit = AsyncMock(side_effect=_fake_emit)
-  office._file_commitment_suggestion = AsyncMock()
 
   # 대상 에이전트들
   def _mk_agent():
@@ -103,16 +102,17 @@ async def test_max_three_mentions(office_stub):
 async def test_mention_triggers_commitment_filing(office_stub):
   '''멘션 응답이 성공하면 _file_commitment_suggestion이 호출된다.'''
   from orchestration import agent_interactions
+  import orchestration.suggestion_filer as sf
 
-  await agent_interactions._route_agent_mentions(
-    office_stub, speaker='planner',
-    content='@튜링 이 기능 테스트 커버리지 챙겨주세요.',
-  )
+  with patch.object(sf, '_file_commitment_suggestion', new=AsyncMock()) as mock_commit:
+    await agent_interactions._route_agent_mentions(
+      office_stub, speaker='planner',
+      content='@튜링 이 기능 테스트 커버리지 챙겨주세요.',
+    )
 
-  office_stub._file_commitment_suggestion.assert_awaited_once()
-  kwargs = office_stub._file_commitment_suggestion.await_args.kwargs
+  mock_commit.assert_awaited_once()
+  kwargs = mock_commit.await_args.kwargs
   assert kwargs['committer_id'] == 'developer'
   assert kwargs['source_speaker'] == 'planner'
-  # source_log_id는 응답 emit 이벤트의 UUID가 전파되어야 함
   assert kwargs.get('source_log_id')
   assert len(kwargs['source_log_id']) >= 16

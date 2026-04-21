@@ -322,7 +322,7 @@ async def _execute(
     gate_map = {g.after_step: g for g in spec.gates}
 
     # context 초기화 (재시작 복구면 이전 context 사용)
-    context: dict[str, str] = resume_context.copy() if is_resume else {}
+    context: dict[str, str] = resume_context.copy() if resume_context is not None else {}
     if not is_resume:
         context.update({k: str(v) for k, v in job.input.items()})
         if attachments_text:

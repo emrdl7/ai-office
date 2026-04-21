@@ -39,6 +39,7 @@ async def test_conversation_intent_direct_response(office_setup):
     assert result['artifacts'] == []
 
 
+@pytest.mark.skip(reason='QUICK_TASK 직접 라우팅 제거됨 — 현재는 Job 파이프라인으로 처리 (2026-04)')
 @pytest.mark.asyncio
 async def test_quick_task_routes_to_single_agent(office_setup):
     '''단순 요청은 담당 팀원 한 명에게만 전달된다'''
@@ -74,6 +75,7 @@ async def test_quick_task_routes_to_single_agent(office_setup):
             agent.handle.assert_not_called()
 
 
+@pytest.mark.skip(reason='_handle_project 메서드 제거됨 (2026-04 리팩터링)')
 @pytest.mark.asyncio
 async def test_project_triggers_meeting(office_setup):
     '''프로젝트 의도일 때 회의가 소집된다'''
@@ -107,6 +109,7 @@ async def test_agents_have_personalities(office_setup):
         assert '## 판단력' in prompt, f'{name} 에이전트에 판단력 섹션이 없습니다'
 
 
+@pytest.mark.skip(reason='orchestration.agent.run_gemini 제거됨 (2026-04 리팩터링)')
 @pytest.mark.asyncio
 async def test_agent_can_speak_in_meeting(office_setup):
     '''에이전트가 회의에서 자기 관점으로 발언할 수 있다'''

@@ -300,7 +300,7 @@ async def _execute_playbook(
             )
 
             for s, r in zip(ready, results):
-                if isinstance(r, Exception):
+                if isinstance(r, BaseException):
                     logger.exception('Playbook step 예외: %s', s.id)
                     update_run(run_id, status='failed',
                                error=f'Step {s.id} 예외: {r!s:.200}',

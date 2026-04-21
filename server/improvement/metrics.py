@@ -43,6 +43,44 @@ METRICS_DIR = Path(__file__).parent.parent / 'data' / 'metrics'
 METRICS_DB = Path(__file__).parent.parent / 'data' / 'metrics.db'
 
 
+@dataclass
+class ArtifactQuality:
+  '''Job 산출물 품질 측정값.'''
+  job_id: str
+  output_key: str
+  length: int
+  overall: float       # 0.0 ~ 10.0
+  measured_at: str
+
+
+def measure_artifact_quality(job_id: str, output_key: str, content: str) -> ArtifactQuality:
+  '''산출물 품질을 휴리스틱으로 측정한다.'''
+  length = len(content)
+  score = min(10.0, length / 500.0)
+  if length < 100:
+    score = max(0.0, score - 3.0)
+  return ArtifactQuality(
+    job_id=job_id,
+    output_key=output_key,
+    length=length,
+    overall=round(score, 2),
+    measured_at=datetime.now(timezone.utc).isoformat(),
+  )
+
+
+def save_artifact_quality(aq: ArtifactQuality) -> None:
+  '''ArtifactQuality를 JSON Lines 파일에 추가 저장한다.'''
+  out_dir = METRICS_DIR.parent / 'artifact_quality'
+  out_dir.mkdir(parents=True, exist_ok=True)
+  line = json.dumps({
+    'job_id': aq.job_id, 'output_key': aq.output_key,
+    'length': aq.length, 'overall': aq.overall,
+    'measured_at': aq.measured_at,
+  }, ensure_ascii=False)
+  with open(out_dir / 'quality.jsonl', 'a', encoding='utf-8') as f:
+    f.write(line + '\n')
+
+
 def _ensure_db(db_path: Path | None = None) -> sqlite3.Connection:
   '''SQLite 집계 테이블을 생성/연결한다.'''
   path = db_path or METRICS_DB

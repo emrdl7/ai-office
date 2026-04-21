@@ -150,7 +150,6 @@ def get_daily_costs(days: int = 7) -> list[dict[str, Any]]:
   c.row_factory = sqlite3.Row
   end = _dt.now(timezone.utc)
   start = end - timedelta(days=days - 1)
-  like = f'{start.strftime("%Y-%m")}%'  # 단순화 — 최근 1~2달만 스캔
   rows = c.execute(
     "SELECT substr(ts,1,10) AS d, sum(est_cost_usd) AS cost, count(*) AS calls "
     "FROM llm_calls WHERE ts >= ? GROUP BY d ORDER BY d",

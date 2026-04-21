@@ -116,8 +116,8 @@ async def suggest_gate_decision(
         from db.job_store import update_gate_ai
         update_gate_ai(
             job_id=job_id, gate_id=gate_id,
-            suggestion=decision, confidence=payload['confidence'],
-            model=model_used, reason=payload['reason'],
+            suggestion=decision, confidence=int(payload['confidence']),
+            model=model_used, reason=str(payload['reason']),
         )
     except Exception as _e:
         logger.debug('[gate_ai] DB 저장 실패: %s', _e)

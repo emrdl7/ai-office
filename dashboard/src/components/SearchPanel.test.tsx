@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 function stubFetch(payload: unknown) {
-  const fetchMock = vi.fn(async (_url: string) => ({
+  const fetchMock = vi.fn(async (_u: string) => ({
     json: async () => payload,
   })) as unknown as typeof fetch
   global.fetch = fetchMock

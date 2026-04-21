@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 
 from db.task_store import list_tasks
 from orchestration.office import Office
@@ -12,6 +12,8 @@ from workspace.manager import WorkspaceManager
 router = APIRouter()
 
 from core import paths
+
+WORKSPACE_ROOT = paths.WORKSPACE_ROOT
 
 
 @router.get('/api/artifacts')

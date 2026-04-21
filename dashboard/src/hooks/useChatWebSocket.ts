@@ -16,6 +16,7 @@ export function useChatWebSocket({ addLog, setLogs }: Props) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const connectRef = useRef<(() => void) | null>(null)
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
@@ -38,7 +39,7 @@ export function useChatWebSocket({ addLog, setLogs }: Props) {
       }
       ws.onclose = () => {
         setConnected(false)
-        reconnectTimer.current = setTimeout(connect, 2000)
+        reconnectTimer.current = setTimeout(() => connectRef.current?.(), 2000)
       }
       ws.onmessage = (event) => {
         try {
@@ -79,11 +80,16 @@ export function useChatWebSocket({ addLog, setLogs }: Props) {
   }, [addLog, qc, setLogs])
 
   useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
+
+  useEffect(() => {
     connect()
     return () => {
       clearTimeout(reconnectTimer.current)
-      typingTimers.current.forEach(clearTimeout)
-      typingTimers.current.clear()
+      const timers = typingTimers.current
+      timers.forEach(clearTimeout)
+      timers.clear()
       wsRef.current?.close()
     }
   }, [connect])

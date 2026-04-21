@@ -72,6 +72,6 @@ export function linkify(text: string) {
   })
 }
 
-export function filterLogs(logs: LogEntry[], _channel: ChannelId): LogEntry[] {
+export function filterLogs(logs: LogEntry[], _channelId: ChannelId): LogEntry[] {
   return logs.filter((log) => !log.data?.dm && !AGENT_IDS_SET.has(log.data?.to as string))
 }

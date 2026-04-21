@@ -101,7 +101,8 @@ export function NewJobDialog({
     queryFn: fetchSpecs,
   })
 
-  // specs 로드 완료 후 initialValues.specId 매칭
+  // specs 로드 완료 후 initialValues.specId 매칭 (의도된 외부 상태 동기화)
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialValues?.specId && specs.length > 0) {
       const matched = specs.find(s => s.id === initialValues.specId)
@@ -111,6 +112,7 @@ export function NewJobDialog({
       }
     }
   }, [specs, initialValues?.specId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const submit = useMutation({
     mutationFn: async () => {

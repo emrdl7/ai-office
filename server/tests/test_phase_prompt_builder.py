@@ -1,6 +1,6 @@
 # _build_phase_prompt 단위 테스트 — 프롬프트 조립 규칙 고정.
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 @pytest.fixture
@@ -67,8 +67,12 @@ async def test_other_group_results_via_handoff_guide(office):
     'description': '구현', 'output_format': 'md',
   }
   all_results = {'기획-요구사항': 'A', '기획-IA': 'B'}
-  prompt = await _build_phase_prompt(office, phase, all_results, '입력', '')
-  office._create_handoff_guide.assert_awaited_once()
+  with patch(
+    'orchestration.project_runner._create_handoff_guide',
+    new=AsyncMock(return_value='가이드 본문'),
+  ) as mock_guide:
+    prompt = await _build_phase_prompt(office, phase, all_results, '입력', '')
+  mock_guide.assert_awaited_once()
   assert '[기획 단계 참조 가이드]\n가이드 본문' in prompt
 
 
