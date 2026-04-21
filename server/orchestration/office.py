@@ -370,7 +370,7 @@ class Office:
       return {'state': self._state.value, 'response': '', 'artifacts': []}
 
     # 1. 파일 참조 해석
-    reference_context = resolve_references(user_input)
+    resolve_references(user_input)
 
     # 2. 팀장 판단 — 최근 대화 맥락을 함께 전달 ("그거 조사해봐" 같은 지시어 해석용)
     recent_context = ''
@@ -648,7 +648,6 @@ async def _generate_clarification_questions(
     [{"field": "output_format", "question": "...결과물 형식은?..."}, ...]
     최대 3개, 빈 리스트면 즉시 제출.
   """
-  from runners.claude_runner import run_claude_isolated
   from jobs.tool_registry import list_tools
   import json as _json
 
@@ -707,7 +706,6 @@ async def _generate_clarification_questions(
 
 async def _parse_clarification_answer(user_answer: str, fields: list[str]) -> dict[str, str]:
   """사용자의 자유응답을 field→value dict로 파싱한다 (Haiku 사용)."""
-  from runners.claude_runner import run_claude_isolated
   import json as _json
 
   fields_str = ', '.join(fields)
@@ -735,8 +733,6 @@ async def _parse_clarification_answer(user_answer: str, fields: list[str]) -> di
 
 async def _generate_job_title(spec_title: str, job_input: dict, user_input: str) -> str:
   """Job 제목을 LLM으로 생성한다. 실패 시 spec 제목 + 핵심 키워드 조합으로 대체."""
-  from runners.claude_runner import run_claude_isolated
-
   # job_input에서 핵심 값 추출 (첫 번째 non-empty 값)
   main_value = next((str(v)[:60] for v in job_input.values() if v and str(v).strip()), '')
   context = main_value or user_input[:80]

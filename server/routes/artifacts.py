@@ -90,7 +90,6 @@ async def get_upload_file(task_id: str, filename: str):
   target = WORKSPACE_ROOT / task_id / 'uploads' / filename
   if not target.exists() or not target.is_file():
     raise HTTPException(status_code=404, detail='파일을 찾을 수 없습니다')
-  from fastapi.responses import FileResponse
   return FileResponse(str(target), filename=filename)
 
 

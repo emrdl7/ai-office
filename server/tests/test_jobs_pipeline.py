@@ -13,9 +13,13 @@ import json
 import re
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from jobs.models import JobRun, JobSpec
 
 
 # ─── 1. Intent Parser ────────────────────────────────────────────────────────
