@@ -103,7 +103,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="검색어 (2글자 이상) — 로그·건의·팀 다이내믹"
+              placeholder="검색어 (2글자 이상) — 로그·건의·활동 내역"
               className="flex-1 px-3 py-2 rounded-lg text-sm
                 bg-gray-50 dark:bg-gray-900
                 border border-gray-200 dark:border-gray-700
@@ -238,7 +238,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
           {data?.dynamics && data.dynamics.length > 0 && (
             <section>
               <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                팀 다이내믹 ({data.dynamics.length})
+                활동 내역 ({data.dynamics.length})
               </h3>
               <ul className="space-y-1.5">
                 {data.dynamics.map((d, i) => (

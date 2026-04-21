@@ -30,7 +30,7 @@ export function WorkingIndicator({ workingAgents, typingAgents }: Props) {
     const min = Math.floor(elapsed / 60)
     const sec = elapsed % 60
     const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`
-    const statusText = workingAgents[0]?.status === 'meeting' ? '회의 중' : '작업 중'
+    const statusText = workingAgents[0]?.status === 'meeting' ? '처리 중' : '작업 중'
     const text = names.length === 1
       ? `${names[0]} ${statusText}`
       : names.length <= 3

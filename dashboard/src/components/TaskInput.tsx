@@ -90,7 +90,7 @@ export function TaskInput() {
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="팀장에게 작업을 지시하세요... (Cmd+Enter)"
+          placeholder="Job을 지시하세요... (Cmd+Enter)"
           rows={3}
           className="w-full px-3 py-2 rounded-lg border text-sm resize-none
             bg-white dark:bg-gray-800

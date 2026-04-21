@@ -202,7 +202,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             <div className="h-full flex flex-col items-center justify-center text-gray-400 py-40">
               <p className="text-sm">
                 {activeChannel === 'all'
-                  ? '팀장에게 지시하세요.'
+                  ? 'Job을 지시하거나 질문하세요.'
                   : `${profile?.name}에게 메시지를 보내세요.`}
               </p>
             </div>
@@ -270,7 +270,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder={activeChannel === 'all'
-                  ? '팀에게 메시지 보내기...'
+                  ? '메시지를 입력하세요...'
                   : `${profile?.character || profile?.name}에게 메시지 보내기...`}
                 rows={1}
                 className="w-full text-sm resize-none bg-transparent

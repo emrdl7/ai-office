@@ -235,7 +235,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
           </p>
         )}
         {decide.isSuccess && (
-          <p className="text-xs text-blue-500">수정 요청 완료 — 에이전트가 재작업 중입니다</p>
+          <p className="text-xs text-blue-500">수정 요청 완료 — 재작업이 시작되었습니다</p>
         )}
       </div>
     </div>
