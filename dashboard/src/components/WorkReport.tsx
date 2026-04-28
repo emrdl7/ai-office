@@ -1,5 +1,5 @@
 // 업무일지 — 일별 작업 기록 / 등록 / 진행도 관리 + 주간 취합
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MatIcon } from './icons'
 
@@ -367,6 +367,24 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     },
     refetchInterval: 10000,
   })
+
+  // 최근 기록 — 오늘 데이터 없을 때 안내용
+  const { data: recentTasks = [] } = useQuery<WRTask[]>({
+    queryKey: ['wr-recent'],
+    queryFn: async () => {
+      const res = await fetch('/api/workreport/tasks/recent?limit=1')
+      if (!res.ok) return []
+      return res.json()
+    },
+  })
+
+  // 오늘 로드 완료 후 데이터 없으면 최근 데이터 있는 날짜로 자동 이동
+  useEffect(() => {
+    if (!isLoading && tasks.length === 0 && viewDate === today && recentTasks.length > 0) {
+      const lastDate = recentTasks[0].date
+      if (lastDate && lastDate !== today) setViewDate(lastDate)
+    }
+  }, [isLoading, tasks.length, viewDate, today, recentTasks])
 
   const { data: dash } = useQuery<Dashboard>({
     queryKey: ['wr-dashboard'],
