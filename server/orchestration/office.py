@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from core import paths
-from orchestration.intent import IntentType, classify_intent, classify_project_type, detect_worklog_intent
+from orchestration.intent import IntentType, classify_intent, classify_project_type
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
@@ -125,6 +125,9 @@ class Office:
     # 자발적 활동 제어
     self._autonomous_running = False
     self._autonomous_task: asyncio.Task[None] | None = None
+
+    # 업무일지 등록 세션
+    self._worklog_session: dict | None = None  # 진행 중인 등록 대화 상태
 
     # receive() 중복 실행 방지
     self._receive_lock: asyncio.Lock = asyncio.Lock()
@@ -392,10 +395,14 @@ class Office:
     if self._context_summary and self._context_summary not in recent_context:
       combined_context = f'{self._context_summary}\n---\n{recent_context}' if recent_context else self._context_summary
 
-    # 1-a. 업무일지 키워드 빠른 감지 (LLM 호출 전)
-    _wl = detect_worklog_intent(user_input)
-    if _wl is not None:
-      return await self._handle_worklog(_wl.worklog, user_input)
+    # 1-a. 업무일지 등록 세션 처리
+    if self._worklog_session is not None:
+      return await self._step_worklog_session(user_input)
+
+    # 업무일지 등록 시작 트리거
+    _wl_triggers = ['업무일지 추가', '업무일지 등록', '업무 기록', '작업 기록']
+    if any(t in user_input for t in _wl_triggers):
+      return await self._start_worklog_session()
 
     intent_result = await classify_intent(
       user_input,
@@ -512,24 +519,120 @@ class Office:
     self._state = OfficeState.COMPLETED
     return {'state': self._state.value, 'response': '처리할 수 없는 입력입니다.', 'artifacts': []}
 
-  async def _handle_worklog(self, worklog: dict, raw_input: str) -> dict:
-    '''업무일지에 작업을 자동 등록하고 확인 응답을 반환한다.'''
-    from db.workreport_store import create_task
-    try:
-      task = await asyncio.to_thread(
-        create_task,
-        task_name=worklog.get('task_name', raw_input[:50]),
-        progress=worklog.get('progress', 0),
-        task_detail=raw_input,
-      )
-      progress = task['progress']
-      status = '완료' if progress >= 100 else f'{progress}% 진행 중' if progress > 0 else '시작'
-      response = f'업무일지에 등록했습니다. **{task["task_name"]}** — {status} (#{task["id"]})'
-    except Exception:
-      logger.exception('업무일지 등록 실패')
-      response = '업무일지 등록에 실패했습니다.'
+  def _reply(self, text: str) -> dict:
     self._state = OfficeState.COMPLETED
-    return {'state': self._state.value, 'response': response, 'artifacts': []}
+    return {'state': self._state.value, 'response': text, 'artifacts': []}
+
+  async def _start_worklog_session(self) -> dict:
+    '''업무일지 등록 세션 시작 — 프로젝트 목록 제시.'''
+    from db.workreport_store import list_projects
+    projects = await asyncio.to_thread(list_projects)
+    project_names = [p['project'] for p in projects if p.get('project')]
+
+    lines = ['어느 프로젝트인가요?', '']
+    for i, name in enumerate(project_names, 1):
+      lines.append(f'{i}. {name}')
+    lines.append(f'{len(project_names) + 1}. 기타 (신규 프로젝트)')
+    lines.append('')
+    lines.append('취소하려면 "취소"를 입력하세요.')
+
+    self._worklog_session = {
+      'step': 'project',
+      'projects': project_names,
+      'project': '',
+      'task_name': '',
+      'task_detail': '',
+      'progress': 0,
+    }
+    return self._reply('\n'.join(lines))
+
+  async def _step_worklog_session(self, user_input: str) -> dict:
+    '''업무일지 등록 대화 세션 단계별 처리.'''
+    s = self._worklog_session
+    text = user_input.strip()
+
+    # 취소
+    if text in ('취소', 'cancel', '그만', '종료'):
+      self._worklog_session = None
+      return self._reply('업무일지 등록을 취소했습니다.')
+
+    if s['step'] == 'project':
+      projects = s['projects']
+      # 번호 선택
+      if text.isdigit():
+        idx = int(text) - 1
+        if idx == len(projects):  # 기타
+          s['step'] = 'new_project'
+          return self._reply('신규 프로젝트명을 입력하세요.')
+        if 0 <= idx < len(projects):
+          s['project'] = projects[idx]
+          s['step'] = 'task_name'
+          return self._reply(f'**{s["project"]}** 선택됐습니다.\n작업명을 입력하세요.')
+      # 텍스트로 직접 입력
+      matched = next((p for p in projects if p == text or p in text or text in p), None)
+      if matched:
+        s['project'] = matched
+        s['step'] = 'task_name'
+        return self._reply(f'**{s["project"]}** 선택됐습니다.\n작업명을 입력하세요.')
+      # 신규 프로젝트로 간주
+      s['project'] = text
+      s['step'] = 'task_name'
+      return self._reply(f'신규 프로젝트 **{text}** 로 등록합니다.\n작업명을 입력하세요.')
+
+    if s['step'] == 'new_project':
+      s['project'] = text
+      s['step'] = 'task_name'
+      return self._reply(f'신규 프로젝트 **{text}** 로 등록합니다.\n작업명을 입력하세요.')
+
+    if s['step'] == 'task_name':
+      s['task_name'] = text
+      s['step'] = 'progress'
+      return self._reply(f'진행도를 입력하세요. (0~100, 완료면 100)\n없으면 엔터로 건너뛰세요.')
+
+    if s['step'] == 'progress':
+      if text == '' or text in ('없음', '스킵', '-'):
+        s['progress'] = 0
+      elif text.isdigit():
+        s['progress'] = min(100, int(text))
+      elif text in ('완료', '100%', '다됨'):
+        s['progress'] = 100
+      s['step'] = 'confirm'
+      progress_label = f'{s["progress"]}%' if s['progress'] > 0 else '미입력'
+      return self._reply(
+        f'아래 내용으로 등록할까요?\n\n'
+        f'프로젝트: **{s["project"]}**\n'
+        f'작업명: **{s["task_name"]}**\n'
+        f'진행도: {progress_label}\n\n'
+        f'등록하려면 **확인** / 취소하려면 **취소**'
+      )
+
+    if s['step'] == 'confirm':
+      if text in ('확인', '예', 'yes', 'ㅇ', 'ㅇㅇ', '응', '네'):
+        from db.workreport_store import create_task, upsert_project_meta
+        try:
+          # 신규 프로젝트면 meta 생성
+          known = s.get('projects', [])
+          if s['project'] not in known:
+            await asyncio.to_thread(upsert_project_meta, s['project'], status='active')
+          task = await asyncio.to_thread(
+            create_task,
+            task_name=s['task_name'],
+            project=s['project'],
+            progress=s['progress'],
+          )
+          self._worklog_session = None
+          status = '완료' if task['progress'] >= 100 else f'{task["progress"]}% 진행 중' if task['progress'] > 0 else '등록'
+          return self._reply(f'업무일지에 등록했습니다. ✓\n**{task["project"]}** / {task["task_name"]} — {status}')
+        except Exception:
+          logger.exception('업무일지 등록 실패')
+          self._worklog_session = None
+          return self._reply('등록 중 오류가 발생했습니다.')
+      else:
+        self._worklog_session = None
+        return self._reply('등록을 취소했습니다.')
+
+    self._worklog_session = None
+    return self._reply('알 수 없는 상태입니다. 다시 시작해 주세요.')
 
   async def _handle_job(
     self,
