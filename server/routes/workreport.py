@@ -162,3 +162,49 @@ def api_delete_milestone(milestone_id: int) -> dict[str, str]:
 @router.get('/api/workreport/dashboard')
 def api_dashboard() -> dict[str, Any]:
     return get_dashboard()
+
+
+# ── 주간 취합 + 복사 텍스트 ────────────────────────────────────────────────
+
+@router.get('/api/workreport/weekly-summary')
+def api_weekly_summary(start: str = '') -> dict[str, Any]:
+    """주간 작업을 프로젝트별로 취합하고 복사용 텍스트를 생성한다."""
+    from datetime import timedelta
+    if not start:
+        today = date.today()
+        start = (today - timedelta(days=today.weekday())).isoformat()
+
+    weekly = get_weekly_tasks(start)
+    tasks = weekly['tasks']
+    period = weekly['period']
+
+    # 프로젝트별 그룹화
+    from collections import defaultdict
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for t in tasks:
+        key = t['project'] or '기타'
+        groups[key].append(t)
+
+    # 복사용 텍스트 생성
+    start_dt = date.fromisoformat(period['start'])
+    end_dt = date.fromisoformat(period['end'])
+    header = f"[주간업무보고 {start_dt.month}/{start_dt.day}~{end_dt.month}/{end_dt.day}]"
+
+    lines = [header, '']
+    for project, ptasks in sorted(groups.items()):
+        lines.append(f'■ {project}')
+        for t in ptasks:
+            status = '완료' if t['progress'] >= 100 else f'{t["progress"]}% 진행' if t['progress'] > 0 else '진행 중'
+            detail = f' ({t["task_detail"]})' if t.get('task_detail') and t['task_detail'] != t['task_name'] else ''
+            lines.append(f'  - {t["task_name"]}{detail} [{status}]')
+        lines.append('')
+
+    copy_text = '\n'.join(lines).strip()
+
+    return {
+        'period': period,
+        'groups': {p: tasks for p, tasks in groups.items()},
+        'overdue': weekly['overdue'],
+        'total': len(tasks),
+        'copy_text': copy_text,
+    }

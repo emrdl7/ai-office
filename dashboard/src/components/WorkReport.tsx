@@ -1,7 +1,15 @@
-// 업무일지 — 일별 작업 기록 / 등록 / 진행도 관리
+// 업무일지 — 일별 작업 기록 / 등록 / 진행도 관리 + 주간 취합
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MatIcon } from './icons'
+
+interface WeeklySummary {
+  period: { start: string; end: string }
+  groups: Record<string, WRTask[]>
+  overdue: WRTask[]
+  total: number
+  copy_text: string
+}
 
 interface WRTask {
   id: number
@@ -217,9 +225,129 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
   )
 }
 
+function getWeekStart(d: string) {
+  const dt = new Date(d + 'T00:00:00')
+  dt.setDate(dt.getDate() - dt.getDay() + (dt.getDay() === 0 ? -6 : 1))
+  return dt.toISOString().slice(0, 10)
+}
+
+function WeeklySummaryView({ weekStart }: { weekStart: string }) {
+  const [copied, setCopied] = useState(false)
+  const { data, isLoading } = useQuery<WeeklySummary>({
+    queryKey: ['wr-weekly-summary', weekStart],
+    queryFn: async () => {
+      const res = await fetch(`/api/workreport/weekly-summary?start=${weekStart}`)
+      if (!res.ok) throw new Error()
+      return res.json()
+    },
+  })
+
+  function copy() {
+    if (!data?.copy_text) return
+    navigator.clipboard.writeText(data.copy_text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400">
+      <MatIcon name="hourglass_empty" className="text-[36px]" />
+    </div>
+  )
+
+  if (!data || data.total === 0) return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <p className="text-sm text-gray-500">이번 주 기록된 작업이 없습니다</p>
+    </div>
+  )
+
+  return (
+    <div className="space-y-4">
+      {/* 복사 텍스트 박스 */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800
+          bg-gray-50 dark:bg-gray-800/50">
+          <div className="flex items-center gap-2">
+            <MatIcon name="content_copy" className="text-[14px] text-gray-500" />
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">주간업무 복사용 텍스트</span>
+          </div>
+          <button
+            onClick={copy}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium
+              transition-colors cursor-pointer
+              ${copied
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 hover:bg-teal-200 dark:hover:bg-teal-900/50'
+              }`}
+          >
+            <MatIcon name={copied ? 'check' : 'content_copy'} className="text-[13px]" />
+            {copied ? '복사됨' : '복사'}
+          </button>
+        </div>
+        <pre className="px-4 py-3 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed font-mono">
+          {data.copy_text}
+        </pre>
+      </div>
+
+      {/* 프로젝트별 상세 */}
+      <div className="space-y-3">
+        {Object.entries(data.groups).map(([project, tasks]) => {
+          const done = tasks.filter(t => t.progress >= 100).length
+          const avg = Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
+          return (
+            <div key={project} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{project}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
+                  {tasks.length}건 · 완료 {done}
+                </span>
+                <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden ml-2">
+                  <div className={`h-full rounded-full ${progressColor(avg)}`} style={{ width: `${avg}%` }} />
+                </div>
+                <span className="text-[10px] text-gray-400 tabular-nums">{avg}%</span>
+              </div>
+              <ul className="divide-y divide-gray-50 dark:divide-gray-800">
+                {tasks.map(t => (
+                  <li key={t.id} className="px-4 py-2 flex items-center gap-3">
+                    <span className="text-[10px] text-gray-400 tabular-nums w-16 shrink-0">{t.date.slice(5)}</span>
+                    <span className="flex-1 text-xs text-gray-700 dark:text-gray-300">{t.task_name}</span>
+                    <span className={`text-[10px] font-medium shrink-0 ${
+                      t.progress >= 100 ? 'text-green-600 dark:text-green-400' :
+                      t.progress > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'
+                    }`}>
+                      {t.progress >= 100 ? '완료' : t.progress > 0 ? `${t.progress}%` : '-'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })}
+      </div>
+
+      {data.overdue.length > 0 && (
+        <div className="bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-200 dark:border-orange-800/30 p-4">
+          <p className="text-xs font-semibold text-orange-700 dark:text-orange-400 mb-2">
+            마감 초과 작업 ({data.overdue.length}건)
+          </p>
+          <ul className="space-y-1">
+            {data.overdue.map(t => (
+              <li key={t.id} className="text-xs text-orange-600 dark:text-orange-400">
+                {t.project} · {t.task_name} ({t.due_date} 마감)
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
   const today = new Date().toISOString().slice(0, 10)
   const [viewDate, setViewDate] = useState(today)
+  const [tab, setTab] = useState<'daily' | 'weekly'>('daily')
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(today))
   const qc = useQueryClient()
 
   const { data: tasks = [], isLoading } = useQuery<WRTask[]>({
@@ -278,11 +406,26 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     const next = d.toISOString().slice(0, 10)
     if (next <= today) setViewDate(next)
   }
+  function prevWeek() {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() - 7)
+    setWeekStart(d.toISOString().slice(0, 10))
+  }
+  function nextWeek() {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + 7)
+    const next = d.toISOString().slice(0, 10)
+    if (next <= today) setWeekStart(next)
+  }
 
   const isToday = viewDate === today
+  const isCurrentWeek = weekStart === getWeekStart(today)
   const avgProgress = tasks.length
     ? Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
     : 0
+
+  const weekEnd = new Date(weekStart + 'T00:00:00')
+  weekEnd.setDate(weekEnd.getDate() + 6)
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
@@ -303,16 +446,60 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           <div className="w-8 h-8 rounded-xl bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center">
             <MatIcon name="edit_note" className="text-[18px] text-teal-600 dark:text-teal-400" />
           </div>
-          <div className="leading-tight">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">업무일지</h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {isLoading ? '로딩 중...' : `${tasks.length}개 작업`}
-            </p>
-          </div>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">업무일지</h2>
+        </div>
+        {/* 탭 */}
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+          {(['daily', 'weekly'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer
+                ${tab === t
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+            >
+              {t === 'daily' ? '일별' : '주간'}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4 max-w-2xl w-full mx-auto">
+
+        {/* 주간 탭 */}
+        {tab === 'weekly' && (
+          <>
+            <div className="flex items-center justify-between bg-white dark:bg-gray-900 rounded-xl
+              border border-gray-200 dark:border-gray-800 px-4 py-2.5">
+              <button onClick={prevWeek}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors">
+                <MatIcon name="chevron_left" className="text-[20px] text-gray-500" />
+              </button>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {new Date(weekStart + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })}
+                  {' ~ '}
+                  {weekEnd.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })}
+                </p>
+                {isCurrentWeek && (
+                  <span className="text-[10px] text-teal-600 dark:text-teal-400 font-medium">이번 주</span>
+                )}
+              </div>
+              <button onClick={nextWeek}
+                disabled={isCurrentWeek}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800
+                  cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <MatIcon name="chevron_right" className="text-[20px] text-gray-500" />
+              </button>
+            </div>
+            <WeeklySummaryView weekStart={weekStart} />
+          </>
+        )}
+
+        {/* 일별 탭 */}
+        {tab === 'daily' && <>
 
         {/* 오늘 요약 카드 */}
         {dash && isToday && (
@@ -410,6 +597,8 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         {isToday && (
           <AddTaskForm onAdded={() => qc.invalidateQueries({ queryKey: ['wr-daily', viewDate] })} />
         )}
+
+        </>}
       </div>
     </div>
   )
