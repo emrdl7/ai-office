@@ -225,10 +225,18 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
   )
 }
 
-function getWeekStart(d: string) {
+function toLocalISODate(dt: Date): string {
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const d = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function getWeekStart(d: string): string {
   const dt = new Date(d + 'T00:00:00')
-  dt.setDate(dt.getDate() - dt.getDay() + (dt.getDay() === 0 ? -6 : 1))
-  return dt.toISOString().slice(0, 10)
+  const day = dt.getDay() // 0=일, 1=월 ...
+  dt.setDate(dt.getDate() - (day === 0 ? 6 : day - 1)) // 월요일 기준
+  return toLocalISODate(dt)
 }
 
 function WeeklySummaryView({ weekStart }: { weekStart: string }) {
@@ -344,7 +352,7 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
 }
 
 export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = toLocalISODate(new Date())
   const [viewDate, setViewDate] = useState(today)
   const [tab, setTab] = useState<'daily' | 'weekly'>('daily')
   const [weekStart, setWeekStart] = useState(() => getWeekStart(today))
@@ -396,25 +404,25 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
   })
 
   function prevDay() {
-    const d = new Date(viewDate)
+    const d = new Date(viewDate + 'T00:00:00')
     d.setDate(d.getDate() - 1)
-    setViewDate(d.toISOString().slice(0, 10))
+    setViewDate(toLocalISODate(d))
   }
   function nextDay() {
-    const d = new Date(viewDate)
+    const d = new Date(viewDate + 'T00:00:00')
     d.setDate(d.getDate() + 1)
-    const next = d.toISOString().slice(0, 10)
+    const next = toLocalISODate(d)
     if (next <= today) setViewDate(next)
   }
   function prevWeek() {
-    const d = new Date(weekStart)
+    const d = new Date(weekStart + 'T00:00:00')
     d.setDate(d.getDate() - 7)
-    setWeekStart(d.toISOString().slice(0, 10))
+    setWeekStart(toLocalISODate(d))
   }
   function nextWeek() {
-    const d = new Date(weekStart)
+    const d = new Date(weekStart + 'T00:00:00')
     d.setDate(d.getDate() + 7)
-    const next = d.toISOString().slice(0, 10)
+    const next = toLocalISODate(d)
     if (next <= today) setWeekStart(next)
   }
 
@@ -424,8 +432,9 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     ? Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
     : 0
 
-  const weekEnd = new Date(weekStart + 'T00:00:00')
-  weekEnd.setDate(weekEnd.getDate() + 6)
+  const weekEndDt = new Date(weekStart + 'T00:00:00')
+  weekEndDt.setDate(weekEndDt.getDate() + 6)
+  const weekEnd = weekEndDt
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
