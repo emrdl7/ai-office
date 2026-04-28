@@ -51,6 +51,10 @@ ALLOWED_EXTENSIONS = {
 # 데이터 디렉토리 생성 (MessageBus SQLite 파일용)
 Path('data').mkdir(exist_ok=True)
 
+# 업무일지 DB 초기화
+from db.workreport_store import init_db as _wr_init
+_wr_init()
+
 # 싱글턴 인스턴스
 message_bus = MessageBus(db_path='data/bus.db')
 # WorkspaceManager: 프로젝트 루트의 workspace/ 디렉토리 사용
@@ -244,6 +248,7 @@ from routes.topics import router as topics_router
 from routes.jobs import router as jobs_router
 from routes.playbooks import router as playbooks_router
 from routes.components import router as components_router
+from routes.workreport import router as workreport_router
 app.include_router(admin_router)
 app.include_router(team_router)
 app.include_router(search_router)
@@ -256,6 +261,7 @@ app.include_router(topics_router)
 app.include_router(jobs_router)
 app.include_router(playbooks_router)
 app.include_router(components_router)
+app.include_router(workreport_router)
 
 
 def _validate_upload(f: UploadFile, content: bytes) -> str | None:

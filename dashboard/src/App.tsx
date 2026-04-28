@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { JobBoard } from './components/JobBoard'
 import { GateInbox } from './components/GateInbox'
 import { ComponentLibrary } from './components/ComponentLibrary'
+import { WorkReport } from './components/WorkReport'
 import { ToastHost } from './components/ToastHost'
 import type { ChannelId } from './types'
 
@@ -20,7 +21,7 @@ const queryClient = new QueryClient({
   },
 })
 
-const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates', 'components']
+const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates', 'components', 'workreport']
 
 function isChannelId(v: unknown): v is ChannelId {
   return typeof v === 'string' && (VALID_CHANNELS as string[]).includes(v)
@@ -150,6 +151,8 @@ function MessengerApp() {
           <GateInbox onBack={() => navigate('all')} />
         ) : activeChannel === 'components' ? (
           <ComponentLibrary onBack={() => navigate('all')} />
+        ) : activeChannel === 'workreport' ? (
+          <WorkReport onBack={() => navigate('all')} />
         ) : (
           <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
         )}

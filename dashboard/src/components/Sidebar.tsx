@@ -15,10 +15,11 @@ type ChannelDef = {
 }
 
 const CHANNELS: ChannelDef[] = [
-  { id: 'all',        label: 'TALK',              icon: 'forum',            accent: 'indigo'  },
-  { id: 'jobs',       label: '작업 보드',          icon: 'view_kanban',      accent: 'emerald' },
-  { id: 'gates',      label: '검토 수신함',        icon: 'rule',             accent: 'amber'   },
-  { id: 'components', label: '컴포넌트 라이브러리', icon: 'widgets',          accent: 'violet'  },
+  { id: 'all',         label: 'TALK',              icon: 'forum',            accent: 'indigo'  },
+  { id: 'jobs',        label: '작업 보드',          icon: 'view_kanban',      accent: 'emerald' },
+  { id: 'gates',       label: '검토 수신함',        icon: 'rule',             accent: 'amber'   },
+  { id: 'workreport',  label: '업무일지',           icon: 'edit_note',        accent: 'teal'    },
+  { id: 'components',  label: '컴포넌트 라이브러리', icon: 'widgets',          accent: 'violet'  },
 ]
 
 const ACCENT_ACTIVE: Record<string, string> = {
@@ -26,12 +27,14 @@ const ACCENT_ACTIVE: Record<string, string> = {
   emerald: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30',
   amber:   'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/30',
   violet:  'bg-violet-500/15 text-violet-700 dark:text-violet-300 ring-1 ring-inset ring-violet-500/30',
+  teal:    'bg-teal-500/15 text-teal-700 dark:text-teal-300 ring-1 ring-inset ring-teal-500/30',
 }
 const ACCENT_BAR: Record<string, string> = {
   indigo:  'bg-indigo-500',
   emerald: 'bg-emerald-500',
   amber:   'bg-amber-500',
   violet:  'bg-violet-500',
+  teal:    'bg-teal-500',
 }
 
 // ── Gate 대기 수 뱃지 ────────────────────────────────────────────

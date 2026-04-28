@@ -58,6 +58,7 @@ class IntentType(str, Enum):
   PROJECT = 'project'                    # 여러 팀원이 협업해야 하는 프로젝트
   CONTINUE_PROJECT = 'continue_project'  # 기존 프로젝트 이어가기
   JOB = 'job'                           # Job 파이프라인 실행 요청
+  WORKLOG = 'worklog'                   # 업무일지 자동 등록
 
 
 class IntentResult:
@@ -72,6 +73,7 @@ class IntentResult:
     job_input: dict | None = None,
     confidence: float = 1.0,
     project_type: str = '',
+    worklog: dict | None = None,
   ):
     self.intent = intent
     self.target_agent = target_agent      # QUICK_TASK일 때 담당 에이전트
@@ -81,6 +83,78 @@ class IntentResult:
     self.job_input = job_input or {}      # JOB일 때 추출된 입력 필드
     self.confidence = confidence          # 분류 신뢰도 0.0~1.0 (2-4)
     self.project_type = project_type      # PROJECT일 때 유형 (classify_intent에서 1회 분류)
+    self.worklog = worklog or {}          # WORKLOG일 때 추출된 task 정보
+
+
+# 업무일지 키워드 패턴
+_WORKLOG_START_KEYWORDS = [
+  '작업 시작', '작업시작', '시작했다', '시작함', '시작해', '착수',
+  '작업 들어간다', '작업 들어가', '하기 시작', '시작할게', '시작하겠',
+  '작업 중', '작업중', '작업 나감', '작업 시작함', '진행 시작',
+]
+_WORKLOG_END_KEYWORDS = [
+  '작업 완료', '작업완료', '완료했다', '완료함', '끝냈다', '마쳤다',
+  '끝났다', '작업 끝', '작업끝', '마무리', '완성', '다 됐다', '다 됨',
+]
+_WORKLOG_PROGRESS_KEYWORDS = [
+  '% 완료', '% 진행', '진행도', '진행률', '진척',
+]
+
+
+def detect_worklog_intent(text: str) -> IntentResult | None:
+  '''키워드 기반으로 업무일지 인텐트를 빠르게 감지한다. (LLM 호출 전 사전 필터)'''
+  import re
+  lower = text.lower()
+
+  # 진행도 추출 시도 (예: "70% 완료", "70% 진행")
+  progress = 0
+  progress_match = re.search(r'(\d+)\s*%', text)
+  if progress_match:
+    progress = min(100, int(progress_match.group(1)))
+
+  # 완료 키워드
+  is_done = any(kw in text for kw in _WORKLOG_END_KEYWORDS)
+  # 시작 키워드
+  is_start = any(kw in text for kw in _WORKLOG_START_KEYWORDS)
+
+  if not (is_start or is_done or (progress_match and any(kw in lower for kw in _WORKLOG_PROGRESS_KEYWORDS))):
+    return None
+
+  if is_done:
+    progress = progress or 100
+
+  # 프로젝트/작업명 간단 추출
+  # "X 작업 시작", "X 완료", "X 프로젝트 작업 시작" 형태에서 X 추출
+  task_name = _extract_task_name(text)
+
+  return IntentResult(
+    intent=IntentType.WORKLOG,
+    worklog={
+      'task_name': task_name or text[:50],
+      'progress': progress,
+      'raw': text,
+    },
+    confidence=0.85,
+  )
+
+
+def _extract_task_name(text: str) -> str:
+  '''업무 설명에서 작업명을 추출한다.'''
+  import re
+  # 패턴: "X 작업 시작/완료/중" 에서 X 추출
+  patterns = [
+    r'^(.+?)\s+작업\s*(?:시작|완료|중|끝|들어)',
+    r'^(.+?)\s+(?:시작|완료|착수|끝)',
+    r'^(.+?)\s+하기\s*시작',
+  ]
+  for p in patterns:
+    m = re.match(p, text.strip())
+    if m:
+      name = m.group(1).strip()
+      if 2 <= len(name) <= 50:
+        return name
+  # 추출 실패 시 원문 앞부분 사용
+  return text.split('작업')[0].strip() or text[:30]
 
 
 def _build_specs_context() -> str:

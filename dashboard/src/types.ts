@@ -28,7 +28,7 @@ export interface LogEntry {
 }
 
 // 채널 타입
-export type ChannelId = 'all' | 'jobs' | 'gates' | 'components'
+export type ChannelId = 'all' | 'jobs' | 'gates' | 'components' | 'workreport'
 
 // 컴포넌트 라이브러리 타입
 export interface PersonaItem {

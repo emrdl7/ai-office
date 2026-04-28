@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from core import paths
-from orchestration.intent import IntentType, classify_intent, classify_project_type
+from orchestration.intent import IntentType, classify_intent, classify_project_type, detect_worklog_intent
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
@@ -392,6 +392,11 @@ class Office:
     if self._context_summary and self._context_summary not in recent_context:
       combined_context = f'{self._context_summary}\n---\n{recent_context}' if recent_context else self._context_summary
 
+    # 1-a. 업무일지 키워드 빠른 감지 (LLM 호출 전)
+    _wl = detect_worklog_intent(user_input)
+    if _wl is not None:
+      return await self._handle_worklog(_wl.worklog, user_input)
+
     intent_result = await classify_intent(
       user_input,
       recent_context=combined_context,
@@ -506,6 +511,25 @@ class Office:
     # 기본값
     self._state = OfficeState.COMPLETED
     return {'state': self._state.value, 'response': '처리할 수 없는 입력입니다.', 'artifacts': []}
+
+  async def _handle_worklog(self, worklog: dict, raw_input: str) -> dict:
+    '''업무일지에 작업을 자동 등록하고 확인 응답을 반환한다.'''
+    from db.workreport_store import create_task
+    try:
+      task = await asyncio.to_thread(
+        create_task,
+        task_name=worklog.get('task_name', raw_input[:50]),
+        progress=worklog.get('progress', 0),
+        task_detail=raw_input,
+      )
+      progress = task['progress']
+      status = '완료' if progress >= 100 else f'{progress}% 진행 중' if progress > 0 else '시작'
+      response = f'업무일지에 등록했습니다. **{task["task_name"]}** — {status} (#{task["id"]})'
+    except Exception:
+      logger.exception('업무일지 등록 실패')
+      response = '업무일지 등록에 실패했습니다.'
+    self._state = OfficeState.COMPLETED
+    return {'state': self._state.value, 'response': response, 'artifacts': []}
 
   async def _handle_job(
     self,
