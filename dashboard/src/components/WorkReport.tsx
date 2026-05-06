@@ -289,6 +289,43 @@ function buildMonthRange(anchorMonth: string, before: number, after: number): st
   return Array.from({ length: before + after + 1 }, (_, i) => shiftMonth(anchorMonth, i - before))
 }
 
+async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
+  const res = await fetch(`/api/workreport/tasks/monthly?month=${month}`)
+  const contentType = res.headers.get('content-type') ?? ''
+  if (res.ok && contentType.includes('application/json')) {
+    return res.json()
+  }
+
+  const recentRes = await fetch('/api/workreport/tasks/recent?limit=500')
+  if (!recentRes.ok) throw new Error('업무일지 월간 데이터를 불러오지 못했습니다')
+  const tasks = (await recentRes.json() as WRTask[]).filter((task) => task.date.startsWith(month))
+  const byDate = new Map<string, WRTask[]>()
+  for (const task of tasks) {
+    byDate.set(task.date, [...(byDate.get(task.date) ?? []), task])
+  }
+  const days = Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, dayTasks]) => {
+    const projects = Array.from(new Set(dayTasks.map((task) => task.project).filter(Boolean)))
+    const avg = dayTasks.reduce((sum, task) => sum + task.progress, 0) / dayTasks.length
+    return {
+      date,
+      task_count: dayTasks.length,
+      avg_progress: Math.round(avg * 10) / 10,
+      done_count: dayTasks.filter((task) => task.progress >= 100).length,
+      overdue_count: dayTasks.filter((task) => task.due_date && task.due_date < date && task.progress < 100).length,
+      projects,
+      tasks: dayTasks
+        .sort((a, b) => `${a.time}-${a.id}`.localeCompare(`${b.time}-${b.id}`))
+        .slice(0, 5),
+    }
+  })
+  return {
+    month,
+    period: { start: `${month}-01`, end: `${month}-31` },
+    total: tasks.length,
+    days,
+  }
+}
+
 function WorkCalendar({
   month,
   today,
@@ -305,11 +342,7 @@ function WorkCalendar({
   const monthQueries = useQueries({
     queries: months.map((m) => ({
       queryKey: ['wr-monthly', m],
-      queryFn: async () => {
-        const res = await fetch(`/api/workreport/tasks/monthly?month=${m}`)
-        if (!res.ok) throw new Error()
-        return res.json() as Promise<MonthlyCalendar>
-      },
+      queryFn: () => fetchMonthlyCalendar(m),
       refetchInterval: 30000,
     })),
   })
@@ -723,7 +756,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4 max-w-7xl w-full mx-auto">
+      <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4 w-full">
 
         {/* 주간 탭 */}
         {tab === 'weekly' && (
