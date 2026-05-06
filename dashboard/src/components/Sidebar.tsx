@@ -1,4 +1,4 @@
-// 사이드바 — v2 리디자인: 브랜드 마크 + 채널 pill + 팀 상태 위젯
+// 사이드바 — v2 리디자인: 브랜드 마크 + 채널 pill + 유틸리티
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
@@ -77,43 +77,6 @@ function ChannelItem({
         </span>
       )}
     </button>
-  )
-}
-
-// ── 오늘의 비용/호출 요약 위젯 (하단) ─────────────────────────
-function TodayCostWidget() {
-  const { data } = useQuery<{
-    total_cost_usd: number; budget_usd: number; budget_remaining: number
-    by_model: { runner: string; model: string; calls: number; cost_usd: number }[]
-  }>({
-    queryKey: ['cost-today-sidebar'],
-    queryFn: async () => (await fetch('/api/cost/today')).json(),
-    refetchInterval: 30_000,
-  })
-  if (!data) return null
-  const totalCalls = (data.by_model || []).reduce((a, b) => a + b.calls, 0)
-  const pct = data.budget_usd > 0 ? Math.min(100, Math.round((data.total_cost_usd / data.budget_usd) * 100)) : 0
-  return (
-    <div className="px-3 pt-3 pb-2">
-      <p className="px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 mb-1.5">
-        오늘 사용량
-      </p>
-      <div className="px-2 space-y-1.5">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[15px] font-bold text-slate-100 tabular-nums">
-            ${data.total_cost_usd.toFixed(3)}
-          </span>
-          <span className="text-[10px] text-slate-500">/ ${data.budget_usd}</span>
-          <span className="ml-auto text-[10px] text-slate-500 font-mono">{totalCalls}회</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all ${pct >= 80 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-500' : 'bg-indigo-500'}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -204,10 +167,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         </div>
       </nav>
 
-      {/* 오늘 사용량 */}
-      <div className="relative flex-1 overflow-y-auto">
-        <TodayCostWidget />
-      </div>
+      <div className="relative flex-1" />
 
       {/* 하단 유틸 */}
       <div className="relative mt-auto p-3 border-t border-white/10 space-y-0.5">
