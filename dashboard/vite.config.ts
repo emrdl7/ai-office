@@ -13,6 +13,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    // Mermaid's lazy-loaded renderer emits a large vendor chunk; it is not part of initial load.
+    chunkSizeWarningLimit: 800,
+  },
   server: {
     host: '0.0.0.0',
     port: 3100,

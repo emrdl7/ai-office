@@ -1,16 +1,17 @@
 // AI Office 메신저 — 업무용 채팅 앱
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useStore } from './store'
 import { Sidebar } from './components/Sidebar'
 import { ChatRoom } from './components/ChatRoom'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { JobBoard } from './components/JobBoard'
-import { GateInbox } from './components/GateInbox'
-import { ComponentLibrary } from './components/ComponentLibrary'
-import { WorkReport } from './components/WorkReport'
 import { ToastHost } from './components/ToastHost'
 import type { ChannelId } from './types'
+
+const JobBoard = lazy(() => import('./components/JobBoard').then((m) => ({ default: m.JobBoard })))
+const GateInbox = lazy(() => import('./components/GateInbox').then((m) => ({ default: m.GateInbox })))
+const ComponentLibrary = lazy(() => import('./components/ComponentLibrary').then((m) => ({ default: m.ComponentLibrary })))
+const WorkReport = lazy(() => import('./components/WorkReport').then((m) => ({ default: m.WorkReport })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +23,14 @@ const queryClient = new QueryClient({
 })
 
 const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates', 'components', 'workreport']
+
+function ChannelFallback() {
+  return (
+    <div className="flex-1 grid place-items-center text-sm text-gray-500 dark:text-gray-400">
+      화면을 불러오는 중입니다...
+    </div>
+  )
+}
 
 function isChannelId(v: unknown): v is ChannelId {
   return typeof v === 'string' && (VALID_CHANNELS as string[]).includes(v)
@@ -145,17 +154,19 @@ function MessengerApp() {
 
       {/* 중앙: 메인 뷰 */}
       <div className="flex-1 flex flex-col min-w-0">
-        {activeChannel === 'jobs' ? (
-          <JobBoard onBack={() => navigate('all')} />
-        ) : activeChannel === 'gates' ? (
-          <GateInbox onBack={() => navigate('all')} />
-        ) : activeChannel === 'components' ? (
-          <ComponentLibrary onBack={() => navigate('all')} />
-        ) : activeChannel === 'workreport' ? (
-          <WorkReport onBack={() => navigate('all')} />
-        ) : (
-          <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
-        )}
+        <Suspense fallback={<ChannelFallback />}>
+          {activeChannel === 'jobs' ? (
+            <JobBoard onBack={() => navigate('all')} />
+          ) : activeChannel === 'gates' ? (
+            <GateInbox onBack={() => navigate('all')} />
+          ) : activeChannel === 'components' ? (
+            <ComponentLibrary onBack={() => navigate('all')} />
+          ) : activeChannel === 'workreport' ? (
+            <WorkReport onBack={() => navigate('all')} />
+          ) : (
+            <ChatRoom onMenuClick={() => setSidebarOpen(true)} />
+          )}
+        </Suspense>
       </div>
 
     </div>

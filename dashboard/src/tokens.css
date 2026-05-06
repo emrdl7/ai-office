@@ -6,7 +6,7 @@
    - 8-point 그리드, 반경 6단계, elevation 4단계
 
    주석 어노테이션 (check-contrast.mjs):
-     --color-<fg>: #hex;  /* ... | @against <bg1>[,<bg2>] */
+     --color-<fg>: #hex;  (... | @against <bg1>[,<bg2>])
    ============================================================= */
 
 :root {

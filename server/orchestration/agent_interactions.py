@@ -763,8 +763,8 @@ async def _qa_pushback_round(
   )
   try:
     await office._emit('teamlead', '', 'typing')
-    arb_response, _ = await router_run(
-      tier='standard', prompt=arbitrate_prompt, timeout=60.0, agent_id='teamlead',
+    arb_response = await run_claude_isolated(
+      arbitrate_prompt, model='claude-sonnet-4-6', timeout=60.0,
     )
     match = re.search(r'\{.*\}', arb_response, re.DOTALL)
     if not match:

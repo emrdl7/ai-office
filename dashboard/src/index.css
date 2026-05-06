@@ -1,3 +1,7 @@
+/* Pretendard Variable (한국어 최적화 가변 웨이트) */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+/* 코드용 고정폭 */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-jp.min.css');
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @import "./tokens.css";
@@ -26,11 +30,6 @@ html, body, #root {
 /* 가로 스크롤바 감추기 유틸 */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* Pretendard Variable (한국어 최적화 가변 웨이트) */
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
-/* 코드용 고정폭 */
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-jp.min.css');
 
 /* 전역 기본 설정 */
 * {
