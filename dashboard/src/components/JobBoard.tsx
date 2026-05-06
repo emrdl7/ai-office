@@ -189,14 +189,14 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
     counts[j.status] = (counts[j.status] || 0) + 1
   }
   return (
-    <div className="flex-1 flex min-h-0 overflow-x-hidden bg-gray-50 dark:bg-gray-950">
+    <div className="flex-1 flex min-h-0 overflow-x-hidden bg-transparent">
       {/* 좌측: Job 목록 */}
-      <div className={`flex flex-col border-r border-gray-200 dark:border-gray-800
-        bg-white dark:bg-gray-950
+      <div className={`flex flex-col border-r border-slate-200/70 dark:border-slate-800/70
+        glass-panel rounded-none border-y-0 border-l-0
         ${selectedJobId ? 'hidden md:flex md:w-80 lg:w-96' : 'flex w-full md:w-80 lg:w-96'}`}>
 
         {/* 헤더 */}
-        <div className="border-b border-slate-200 dark:border-slate-800">
+        <div className="border-b border-slate-200/70 dark:border-slate-800/70">
           <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-1">
               {onBack && (
@@ -236,14 +236,14 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
           </div>
 
           {/* 상태 필터 탭 */}
-          <div className="flex gap-1 overflow-x-auto no-scrollbar px-4 md:px-5 pb-2 border-t border-slate-100 dark:border-slate-800/60 pt-2">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar px-4 md:px-5 pb-2 border-t border-slate-100/80 dark:border-slate-800/60 pt-2">
             {STATUS_TABS.map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setFilter(tab.key)}
                 className={`shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer
                   ${filter === tab.key
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-slate-950 dark:bg-cyan-300 text-white dark:text-slate-950'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
               >
@@ -338,9 +338,10 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
         </div>
       ) : (
         <div className="hidden md:flex flex-1 items-center justify-center text-center p-8">
-          <div>
-            <MatIcon name="work_outline" className="text-[48px] text-gray-300 dark:text-gray-700 mb-3" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">Job을 선택하면 상세 내용이 표시됩니다</p>
+          <div className="command-surface max-w-md rounded-3xl p-8">
+            <MatIcon name="work_outline" className="text-[48px] text-cyan-500/70 mb-3" />
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Job을 선택하면 실행 흐름이 열립니다</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">판단, 실행 모드, 툴 사용, 검토 결과를 한 화면에서 확인합니다.</p>
           </div>
         </div>
       )}

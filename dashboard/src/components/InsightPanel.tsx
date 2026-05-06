@@ -133,14 +133,19 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md
-        border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]">
+      <div className="glass-panel rounded-3xl shadow-2xl w-full max-w-lg
+        flex flex-col max-h-[88vh] overflow-hidden">
 
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200/70 dark:border-gray-700/70 shrink-0">
           <div className="flex items-center gap-1.5">
-            <MatIcon name="insights" className="text-[18px] text-blue-400" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">인사이트</h2>
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-cyan-300 dark:text-slate-950">
+              <MatIcon name="insights" className="text-[18px]" />
+            </span>
+            <div>
+              <h2 className="text-sm font-black text-gray-900 dark:text-white">운영 인사이트</h2>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">비용, gate, 라우팅 품질</p>
+            </div>
           </div>
           <button onClick={onClose}
             className="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200
@@ -151,7 +156,7 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 콘텐츠 */}
-        <div className="overflow-y-auto p-4">
+        <div className="overflow-y-auto p-5">
           {/* Opus 잔여 횟수 */}
           {costData && (
             <div className="mb-4">

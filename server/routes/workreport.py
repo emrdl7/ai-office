@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from db.workreport_store import (
     create_task, update_task, delete_task,
-    get_daily_tasks, get_weekly_tasks, get_recent_tasks,
+    get_daily_tasks, get_weekly_tasks, get_monthly_tasks, get_recent_tasks,
     list_projects, upsert_project_meta,
     list_milestones, create_milestone, update_milestone, delete_milestone,
     get_dashboard,
@@ -104,6 +104,11 @@ def api_weekly(start: str = '') -> dict[str, Any]:
         today = date.today()
         start = (today - timedelta(days=today.weekday())).isoformat()
     return get_weekly_tasks(start)
+
+
+@router.get('/api/workreport/tasks/monthly')
+def api_monthly(month: str = '') -> dict[str, Any]:
+    return get_monthly_tasks(month)
 
 
 @router.get('/api/workreport/tasks/recent')

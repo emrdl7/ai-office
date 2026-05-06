@@ -1,6 +1,6 @@
 // 업무일지 — 일별 작업 기록 / 등록 / 진행도 관리 + 주간 취합
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useRef, useState } from 'react'
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MatIcon } from './icons'
 
 interface WeeklySummary {
@@ -20,6 +20,7 @@ interface WRTask {
   task_detail: string
   progress: number
   due_date: string | null
+  status: string
   created_at: string
 }
 
@@ -31,6 +32,23 @@ interface Dashboard {
   overdue_count: number
   active_projects: number
   recent_tasks: WRTask[]
+}
+
+interface MonthlyDay {
+  date: string
+  task_count: number
+  avg_progress: number
+  done_count: number
+  overdue_count: number
+  projects: string[]
+  tasks: Array<Pick<WRTask, 'id' | 'date' | 'time' | 'project' | 'task_name' | 'progress' | 'due_date' | 'status'>>
+}
+
+interface MonthlyCalendar {
+  month: string
+  period: { start: string; end: string }
+  total: number
+  days: MonthlyDay[]
 }
 
 function progressColor(p: number) {
@@ -239,6 +257,220 @@ function getWeekStart(d: string): string {
   return toLocalISODate(dt)
 }
 
+function shiftMonth(month: string, delta: number): string {
+  const d = new Date(month + '-01T00:00:00')
+  d.setMonth(d.getMonth() + delta)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(month: string): string {
+  return new Date(month + '-01T00:00:00').toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+  })
+}
+
+function buildCalendarCells(month: string) {
+  const first = new Date(month + '-01T00:00:00')
+  const start = new Date(first)
+  start.setDate(first.getDate() - first.getDay())
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return {
+      date: toLocalISODate(d),
+      day: d.getDate(),
+      inMonth: d.getMonth() === first.getMonth(),
+    }
+  })
+}
+
+function buildMonthRange(anchorMonth: string, before: number, after: number): string[] {
+  return Array.from({ length: before + after + 1 }, (_, i) => shiftMonth(anchorMonth, i - before))
+}
+
+function WorkCalendar({
+  month,
+  today,
+  onMonthChange,
+  onSelectDate,
+}: {
+  month: string
+  today: string
+  onMonthChange: (month: string) => void
+  onSelectDate: (date: string) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [months, setMonths] = useState(() => buildMonthRange(month, 4, 2))
+  const monthQueries = useQueries({
+    queries: months.map((m) => ({
+      queryKey: ['wr-monthly', m],
+      queryFn: async () => {
+        const res = await fetch(`/api/workreport/tasks/monthly?month=${m}`)
+        if (!res.ok) throw new Error()
+        return res.json() as Promise<MonthlyCalendar>
+      },
+      refetchInterval: 30000,
+    })),
+  })
+  const dataByMonth = useMemo(() => {
+    const map = new Map<string, MonthlyCalendar>()
+    monthQueries.forEach((query, i) => {
+      if (query.data) map.set(months[i], query.data)
+    })
+    return map
+  }, [monthQueries, months])
+
+  function handleScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    if (el.scrollTop < 280) {
+      const previousHeight = el.scrollHeight
+      setMonths((prev) => {
+        const first = prev[0]
+        const additions = Array.from({ length: 3 }, (_, i) => shiftMonth(first, i - 3))
+        return Array.from(new Set([...additions, ...prev])).sort()
+      })
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop += scrollRef.current.scrollHeight - previousHeight
+      })
+    }
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 420) {
+      setMonths((prev) => {
+        const last = prev[prev.length - 1]
+        const additions = Array.from({ length: 3 }, (_, i) => shiftMonth(last, i + 1))
+        return Array.from(new Set([...prev, ...additions])).sort()
+      })
+    }
+  }
+
+  function renderMonth(m: string) {
+    const data = dataByMonth.get(m)
+    const cells = buildCalendarCells(m)
+    const byDate = new Map<string, MonthlyDay>()
+    for (const day of data?.days ?? []) byDate.set(day.date, day)
+    const isLoading = monthQueries[months.indexOf(m)]?.isLoading
+
+    return (
+      <section key={m} className="rounded-3xl border border-slate-200/70 bg-white/65 p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/30">
+        <div className="mb-3 flex items-end justify-between">
+          <div>
+            <p className="text-xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(m)}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {isLoading ? '불러오는 중' : `${data?.total ?? 0}개 작업 기록`}
+            </p>
+          </div>
+          {m === today.slice(0, 7) && (
+            <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-800 dark:bg-cyan-300 dark:text-slate-950">
+              이번 달
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-7 gap-2 text-center">
+          {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
+            <div key={d} className="py-1 text-[10px] font-bold text-slate-400">{d}</div>
+          ))}
+          {cells.map((cell) => {
+            const day = byDate.get(cell.date)
+            const isToday = cell.date === today
+            const intensity = day ? Math.max(14, Math.round(day.avg_progress)) : 0
+            return (
+              <button
+                key={cell.date}
+                onClick={() => {
+                  onMonthChange(cell.date.slice(0, 7))
+                  onSelectDate(cell.date)
+                }}
+                className={`min-h-[116px] rounded-2xl border p-2.5 text-left transition-all cursor-pointer
+                  ${cell.inMonth
+                    ? 'border-slate-200/80 bg-white/70 hover:border-cyan-400 dark:border-slate-800/80 dark:bg-slate-950/35'
+                    : 'border-transparent bg-white/25 opacity-45 dark:bg-slate-900/15'
+                  }
+                  ${isToday ? 'ring-2 ring-cyan-400/70' : ''}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-bold ${isToday ? 'text-cyan-600 dark:text-cyan-300' : 'text-slate-600 dark:text-slate-300'}`}>
+                    {cell.day}
+                  </span>
+                  {day && (
+                    <span className="rounded-full bg-slate-950 px-1.5 py-0.5 text-[9px] font-bold text-white dark:bg-cyan-300 dark:text-slate-950">
+                      {day.task_count}
+                    </span>
+                  )}
+                </div>
+                {day && (
+                  <div className="mt-2 space-y-1">
+                    {(day.tasks ?? []).slice(0, 3).map((task) => {
+                      const tone = task.progress >= 100
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-200'
+                        : day.overdue_count > 0
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100'
+                          : 'bg-cyan-100 text-cyan-900 dark:bg-cyan-400/20 dark:text-cyan-100'
+                      return (
+                        <div
+                          key={task.id}
+                          className={`rounded-md px-1.5 py-1 text-[10px] font-semibold leading-tight shadow-sm ${tone}`}
+                          title={`${task.time || '--:--'} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
+                        >
+                          <span className="mr-1 tabular-nums opacity-70">{task.time || '--:--'}</span>
+                          <span className="block truncate">{task.task_name}</span>
+                        </div>
+                      )
+                    })}
+                    {day.task_count > 3 && (
+                      <div className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                        +{day.task_count - 3}개 더
+                      </div>
+                    )}
+                    <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className={day.overdue_count > 0 ? 'h-full rounded-full bg-amber-500' : 'h-full rounded-full bg-cyan-500'}
+                        style={{ width: `${intensity}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <div className="command-surface rounded-3xl p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-lg font-black tracking-tight text-slate-950 dark:text-white">업무 캘린더</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">스크롤로 이전/다음 달을 계속 탐색합니다</p>
+        </div>
+        <button
+          onClick={() => {
+            onMonthChange(today.slice(0, 7))
+            onSelectDate(today)
+          }}
+          className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-cyan-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200"
+        >
+          오늘
+        </button>
+      </div>
+
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="max-h-[calc(100vh-220px)] min-h-[620px] space-y-5 overflow-y-auto pr-2"
+      >
+        {months.map(renderMonth)}
+      </div>
+      <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-xs text-slate-500 dark:border-slate-800/80 dark:bg-slate-950/35 dark:text-slate-400">
+        날짜를 클릭하면 해당 일자의 일별 업무일지로 이동합니다. 리본은 시간순 업무, 하단 막대는 평균 진행도와 마감 위험을 나타냅니다.
+      </div>
+    </div>
+  )
+}
+
 function WeeklySummaryView({ weekStart }: { weekStart: string }) {
   const [copied, setCopied] = useState(false)
   const { data, isLoading } = useQuery<WeeklySummary>({
@@ -356,6 +588,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
   const [viewDate, setViewDate] = useState(today)
   const [tab, setTab] = useState<'daily' | 'weekly'>('daily')
   const [weekStart, setWeekStart] = useState(() => getWeekStart(today))
+  const [calendarMonth, setCalendarMonth] = useState(today.slice(0, 7))
   const qc = useQueryClient()
 
   const { data: tasks = [], isLoading } = useQuery<WRTask[]>({
@@ -437,11 +670,18 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
   weekEndDt.setDate(weekEndDt.getDate() + 6)
   const weekEnd = weekEndDt
 
+  const statCards = [
+    { label: '오늘 작업', value: dash?.today_count ?? 0, icon: 'task_alt', cls: 'bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400' },
+    { label: '평균 진행도', value: `${dash?.avg_progress_today ?? 0}%`, icon: 'trending_up', cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' },
+    { label: '마감 초과', value: dash?.overdue_count ?? 0, icon: 'warning', cls: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' },
+    { label: '활성 프로젝트', value: dash?.active_projects ?? 0, icon: 'folder_open', cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400' },
+  ]
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
+    <div className="flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
-      <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center gap-2
-        border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="px-4 md:px-5 h-[64px] shrink-0 flex items-center gap-2
+        border-b border-slate-200/70 dark:border-slate-800/70 glass-panel rounded-none border-x-0 border-t-0">
         {onBack && (
           <button
             onClick={onBack}
@@ -453,13 +693,16 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-8 h-8 rounded-xl bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center">
-            <MatIcon name="edit_note" className="text-[18px] text-teal-600 dark:text-teal-400" />
+          <div className="w-8 h-8 rounded-xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center">
+            <MatIcon name="edit_note" className="text-[18px] text-white dark:text-slate-950" />
           </div>
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">업무일지</h2>
+          <div>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white">업무일지</h2>
+            <p className="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400">작업 기록, 캘린더, 주간 취합</p>
+          </div>
         </div>
         {/* 탭 */}
-        <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+        <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/80 rounded-lg p-0.5">
           {(['daily', 'weekly'] as const).map(t => (
             <button
               key={t}
@@ -476,7 +719,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4 max-w-2xl w-full mx-auto">
+      <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4 max-w-7xl w-full mx-auto">
 
         {/* 주간 탭 */}
         {tab === 'weekly' && (
@@ -509,21 +752,31 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         )}
 
         {/* 일별 탭 */}
-        {tab === 'daily' && <>
+        {tab === 'daily' && (
+          <div className="grid gap-5 lg:grid-cols-[minmax(560px,1fr)_390px]">
+            <aside className="hidden lg:block">
+              <div className="sticky top-0">
+                <WorkCalendar
+                  month={calendarMonth}
+                  today={today}
+                  onMonthChange={setCalendarMonth}
+                  onSelectDate={(date) => {
+                    setViewDate(date)
+                    setCalendarMonth(date.slice(0, 7))
+                  }}
+                />
+              </div>
+            </aside>
+
+            <section className="space-y-4 min-w-0">
 
         {/* 오늘 요약 카드 */}
         {dash && isToday && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              { label: '오늘 작업', value: dash.today_count, icon: 'task_alt', color: 'teal' },
-              { label: '평균 진행도', value: `${dash.avg_progress_today}%`, icon: 'trending_up', color: 'blue' },
-              { label: '마감 초과', value: dash.overdue_count, icon: 'warning', color: 'orange' },
-              { label: '활성 프로젝트', value: dash.active_projects, icon: 'folder_open', color: 'violet' },
-            ].map(({ label, value, icon, color }) => (
-              <div key={label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-3">
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2
-                  bg-${color}-100 dark:bg-${color}-900/30`}>
-                  <MatIcon name={icon} className={`text-[15px] text-${color}-600 dark:text-${color}-400`} />
+            {statCards.map(({ label, value, icon, cls }) => (
+              <div key={label} className="bg-white/75 dark:bg-slate-950/40 rounded-xl border border-gray-200/80 dark:border-gray-800/80 p-3 backdrop-blur">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${cls}`}>
+                  <MatIcon name={icon} className="text-[15px]" />
                 </div>
                 <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</p>
                 <p className="text-[11px] text-gray-500">{label}</p>
@@ -608,7 +861,9 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           <AddTaskForm onAdded={() => qc.invalidateQueries({ queryKey: ['wr-daily', viewDate] })} />
         )}
 
-        </>}
+            </section>
+          </div>
+        )}
       </div>
     </div>
   )

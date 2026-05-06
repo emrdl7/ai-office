@@ -81,6 +81,43 @@ async def test_worklog_help_request_links_job(office_setup, isolated_workreport_
     assert tasks[0]['status'] == 'delegated'
 
 
+def test_workreport_monthly_calendar_stats(isolated_workreport_db):
+    isolated_workreport_db.create_task(
+        task_name='기획 정리',
+        project='alpha',
+        progress=100,
+        work_date='2026-05-06',
+        work_time='09:00',
+    )
+    isolated_workreport_db.create_task(
+        task_name='리뷰',
+        project='alpha',
+        progress=50,
+        due_date='2026-05-05',
+        work_date='2026-05-06',
+        work_time='10:00',
+    )
+    isolated_workreport_db.create_task(
+        task_name='다른 달 작업',
+        project='beta',
+        progress=0,
+        work_date='2026-06-01',
+    )
+
+    monthly = isolated_workreport_db.get_monthly_tasks('2026-05')
+
+    assert monthly['month'] == '2026-05'
+    assert monthly['total'] == 2
+    assert len(monthly['days']) == 1
+    day = monthly['days'][0]
+    assert day['date'] == '2026-05-06'
+    assert day['task_count'] == 2
+    assert day['done_count'] == 1
+    assert day['overdue_count'] == 1
+    assert day['avg_progress'] == 75.0
+    assert [task['task_name'] for task in day['tasks']] == ['기획 정리', '리뷰']
+
+
 @pytest.mark.skip(reason='QUICK_TASK 직접 라우팅 제거됨 — 현재는 Job 파이프라인으로 처리 (2026-04)')
 @pytest.mark.asyncio
 async def test_quick_task_routes_to_single_agent(office_setup):

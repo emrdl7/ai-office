@@ -127,7 +127,7 @@ function MessengerApp() {
   }, [sidebarOpen])
 
   return (
-    <div className="h-[100dvh] flex bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100
+    <div className="app-chrome h-[100dvh] flex text-gray-900 dark:text-gray-100
       pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
 
       {/* 모바일 백드롭 */}

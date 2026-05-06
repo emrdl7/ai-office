@@ -113,6 +113,53 @@ const ISSUE_LABEL: Record<string, string> = {
   missing_output_template: '출력 템플릿 누락',
 }
 
+function CapabilityMap({ personas, skills, tools }: { personas: Persona[]; skills: Skill[]; tools: Tool[] }) {
+  const groups = [
+    { label: 'Persona', items: personas, color: 'bg-cyan-500' },
+    { label: 'Skill', items: skills, color: 'bg-emerald-500' },
+    { label: 'Tool', items: tools, color: 'bg-amber-500' },
+  ]
+  return (
+    <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 command-surface p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Capability Map</p>
+          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white">업무 실행 능력 지도</h2>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">페르소나, 스킬, 툴의 준비도와 사용 신호를 한 눈에 봅니다.</p>
+        </div>
+        <div className="hidden sm:grid grid-cols-3 gap-2 text-right">
+          {groups.map((group) => (
+            <div key={group.label}>
+              <p className="text-[10px] text-slate-400">{group.label}</p>
+              <p className="text-xl font-black text-slate-900 dark:text-white">{group.items.length}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        {groups.map((group) => {
+          const ready = group.items.filter((item) => item.quality_band === 'ready').length
+          const avg = group.items.length
+            ? Math.round(group.items.reduce((sum, item) => sum + (item.quality_score ?? 0), 0) / group.items.length)
+            : 0
+          return (
+            <div key={group.label} className="rounded-2xl bg-white/70 dark:bg-slate-950/40 p-3 ring-1 ring-slate-200/80 dark:ring-slate-800/80">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{group.label}</span>
+                <span className="text-[10px] text-slate-400">{ready}/{group.items.length} ready</span>
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div className={`h-full rounded-full ${group.color}`} style={{ width: `${avg}%` }} />
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">평균 품질 {avg}점</p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function Pill({ cat }: { cat: string }) {
   const cls = CATEGORY_BADGE[cat] ?? 'bg-gray-500/20 text-gray-400'
   return (
@@ -267,9 +314,9 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
   const summary = data?.summary
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
+    <div className="flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
-      <header className="flex items-center gap-2 px-4 md:px-5 h-[60px] shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <header className="flex items-center gap-2 px-4 md:px-5 h-[64px] shrink-0 border-b border-slate-200/70 dark:border-slate-800/70 glass-panel rounded-none border-x-0 border-t-0">
         <button
           onClick={onBack}
           aria-label="뒤로"
@@ -277,8 +324,8 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
         >
           <MatIcon name="arrow_back" className="text-[20px]" />
         </button>
-        <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-          <MatIcon name="widgets" className="text-[18px] text-violet-600 dark:text-violet-400" />
+        <div className="w-8 h-8 rounded-xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center shrink-0">
+          <MatIcon name="widgets" className="text-[18px] text-white dark:text-slate-950" />
         </div>
         <div className="flex-1 min-w-0 leading-tight">
           <h1 className="text-sm font-semibold text-slate-900 dark:text-white">컴포넌트 라이브러리</h1>
@@ -287,7 +334,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
       </header>
 
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-3 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/55 dark:bg-slate-950/30 backdrop-blur">
           {[
             ['전체', summary.total],
             ['정상', summary.ok],
@@ -295,7 +342,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
             ['오류', summary.error + summary.broken_ref_count],
             ['평균품질', summary.avg_quality_score],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-xl border border-gray-200 dark:border-gray-800 px-3 py-2">
+            <div key={label} className="rounded-xl border border-gray-200/80 dark:border-gray-800/80 bg-white/60 dark:bg-slate-900/50 px-3 py-2">
               <div className="text-[11px] text-gray-500">{label}</div>
               <div className="text-lg font-semibold text-gray-900 dark:text-white">{value}</div>
             </div>
@@ -304,14 +351,14 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
       )}
 
       {/* 탭 + 검색 */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/55 dark:bg-slate-950/30 backdrop-blur">
         {(['personas', 'skills', 'tools'] as const).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); setCategoryFilter('all') }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               tab === t
-                ? 'bg-blue-600/15 text-blue-500'
+                ? 'bg-slate-950 dark:bg-cyan-300 text-white dark:text-slate-950'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
             }`}
           >
@@ -356,6 +403,11 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
         {summary && summary.broken_ref_count > 0 && (
           <div className="mb-3 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
             깨진 참조 {summary.broken_ref_count}개가 있습니다. spec이 존재하지 않는 실행 자산을 참조합니다.
+          </div>
+        )}
+        {summary && (
+          <div className="mb-4">
+            <CapabilityMap personas={personas} skills={skills} tools={tools} />
           </div>
         )}
         {summary && (

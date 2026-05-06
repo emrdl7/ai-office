@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import { AGENT_PROFILE } from '../config/team'
 import { MatIcon } from './icons'
-import type { Agent } from '../types'
+import type { Agent, Job } from '../types'
 import { useChatWebSocket } from '../hooks/useChatWebSocket'
 import { useFileAttachment } from '../hooks/useFileAttachment'
 import { MessageList } from './chat/MessageList'
@@ -17,6 +17,19 @@ async function fetchAgents(): Promise<Agent[]> {
   return res.json()
 }
 
+async function fetchJobs(): Promise<Job[]> {
+  const res = await fetch('/api/jobs?limit=20')
+  if (!res.ok) return []
+  return res.json()
+}
+
+const QUICK_STARTERS = [
+  { label: '업무 등록', prompt: '다음 업무를 등록하고 실행 계획을 잡아줘: ' },
+  { label: '리서치', prompt: '다음 주제에 대해 근거 중심으로 리서치해줘: ' },
+  { label: '검토', prompt: '다음 내용을 기준에 맞게 검토하고 개선안을 정리해줘: ' },
+  { label: '문서화', prompt: '다음 내용을 업무 문서로 정리해줘: ' },
+]
+
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
 
@@ -25,7 +38,13 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     queryFn: fetchAgents,
     staleTime: 10000,
   })
+  const { data: jobs = [] } = useQuery({
+    queryKey: ['jobs', 'command-strip'],
+    queryFn: fetchJobs,
+    refetchInterval: 5000,
+  })
   const workingAgents = agents.filter((a) => a.status === 'working' || a.status === 'meeting')
+  const activeJobs = jobs.filter((job) => ['queued', 'running', 'waiting_gate'].includes(job.status)).slice(0, 3)
 
   const { connected, typingAgents } = useChatWebSocket({ addLog, setLogs })
   const { files, previews, fileInputRef, addFiles, handleFileChange, handlePaste, removeFile, clearFiles } = useFileAttachment()
@@ -112,8 +131,8 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       )}
 
       {/* 헤더 */}
-      <header className="flex items-center justify-between px-4 md:px-5 h-[60px] shrink-0
-        bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+      <header className="flex items-center justify-between px-4 md:px-5 h-[64px] shrink-0
+        glass-panel border-x-0 border-t-0 rounded-none">
         <div className="flex items-center gap-3">
           <button onClick={onMenuClick}
             className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
@@ -129,9 +148,19 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           )}
           <div>
-            <h2 className="text-sm font-semibold">{channelTitle}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">{channelTitle}</h2>
+              <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold
+                ${connected ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-slate-500/15 text-slate-500'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                {connected ? 'LIVE' : 'OFFLINE'}
+              </span>
+            </div>
             {activeChannel !== 'all' && profile && (
               <p className="text-[11px] text-gray-500">{profile.role}</p>
+            )}
+            {activeChannel === 'all' && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">대화로 업무를 만들고 실행 흐름을 관제합니다</p>
             )}
           </div>
         </div>
@@ -161,9 +190,61 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             aria-label="새로고침" title="새로고침">
             <MatIcon name="refresh" className="text-[16px]" />
           </button>
-          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
         </div>
       </header>
+
+      {activeChannel === 'all' && (
+        <section className="shrink-0 px-4 md:px-6 py-3 border-b border-slate-200/70 dark:border-slate-800/70">
+          <div className="max-w-5xl mx-auto grid gap-3 md:grid-cols-[1fr_auto] items-center">
+            <div className="command-surface rounded-2xl px-4 py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-cyan-300 dark:text-slate-950">
+                  <MatIcon name="bolt" className="text-[15px]" />
+                </span>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">Command Center</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">요청을 업무로 바꾸고, 필요한 전문 모드와 툴을 선택합니다.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_STARTERS.map((starter) => (
+                  <button
+                    key={starter.label}
+                    onClick={() => {
+                      setMessage(starter.prompt)
+                      requestAnimationFrame(() => inputRef.current?.focus())
+                    }}
+                    className="rounded-full border border-slate-200/80 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/60 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:border-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    {starter.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="hidden lg:block text-right">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Active Jobs</p>
+              <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{activeJobs.length}</p>
+            </div>
+          </div>
+          {activeJobs.length > 0 && (
+            <div className="max-w-5xl mx-auto mt-2 flex gap-2 overflow-x-auto no-scrollbar">
+              {activeJobs.map((job) => (
+                <button
+                  key={job.id}
+                  onClick={() => useStore.getState().setActiveChannel('jobs')}
+                  className="shrink-0 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/60 px-3 py-2 text-left hover:border-cyan-400 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${job.status === 'waiting_gate' ? 'bg-amber-400' : job.status === 'running' ? 'bg-cyan-400 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className="max-w-[220px] truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{job.title}</span>
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-slate-400">{job.current_step || job.status}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* 검색 바 */}
       {showSearch && (
@@ -181,7 +262,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       {/* 대화 영역 — 입력창 아래까지 확장되어 유리효과가 보임 */}
       <div
         className={`flex-1 overflow-y-auto min-h-0 relative
-          bg-gray-50 dark:bg-gray-900/50
+          bg-transparent
           ${isDragging ? 'ring-2 ring-inset ring-blue-400' : ''}`}
         role="log" aria-live="polite" aria-label="대화"
         onDragOver={handleDragOver}
@@ -197,14 +278,34 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           </div>
         )}
-        <div className="max-w-3xl mx-auto px-3 md:px-5 space-y-1 pt-3 pb-32">
+        <div className="max-w-4xl mx-auto px-3 md:px-6 space-y-1 pt-4 pb-36">
           {channelLogs.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 py-40">
-              <p className="text-sm">
-                {activeChannel === 'all'
-                  ? 'Job을 지시하거나 질문하세요.'
-                  : `${profile?.name}에게 메시지를 보내세요.`}
-              </p>
+            <div className="py-24 md:py-32">
+              <div className="command-surface mx-auto max-w-xl rounded-3xl p-6 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white dark:bg-cyan-300 dark:text-slate-950">
+                  <MatIcon name="auto_awesome" className="text-[26px]" />
+                </div>
+                <h3 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">무엇을 맡길까요?</h3>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  {activeChannel === 'all'
+                    ? '대화로 요청하면 업무 등록, 실행, 검토까지 이어집니다.'
+                    : `${profile?.name}에게 메시지를 보내세요.`}
+                </p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {QUICK_STARTERS.map((starter) => (
+                    <button
+                      key={starter.label}
+                      onClick={() => {
+                        setMessage(starter.prompt)
+                        requestAnimationFrame(() => inputRef.current?.focus())
+                      }}
+                      className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-600 dark:bg-white dark:text-slate-950 dark:hover:bg-cyan-200 transition-colors"
+                    >
+                      {starter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -221,11 +322,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             <input ref={fileInputRef} type="file" multiple accept="*/*"
               onChange={handleFileChange} className="hidden" />
 
-            <div className={`rounded-2xl px-4 pt-3 pb-2
+            <div className={`rounded-[28px] px-4 pt-3 pb-2
               backdrop-blur-xl shadow-lg transition-all duration-200 border
               ${message.trim() || files.length > 0
-                ? 'bg-white/85 dark:bg-gray-900/85 border-blue-400/60 dark:border-blue-500/50'
-                : 'bg-white/75 dark:bg-gray-900/75 border-gray-200/60 dark:border-gray-700/50'
+                ? 'bg-white/90 dark:bg-slate-950/90 border-cyan-400/70 dark:border-cyan-400/50 shadow-cyan-500/15'
+                : 'bg-white/78 dark:bg-slate-950/78 border-slate-200/70 dark:border-slate-700/60'
               }`}>
 
               {/* 첨부파일 미리보기 */}
@@ -270,7 +371,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder={activeChannel === 'all'
-                  ? '메시지를 입력하세요...'
+                  ? '업무를 맡기거나 질문하세요...'
                   : `${profile?.character || profile?.name}에게 메시지 보내기...`}
                 rows={1}
                 className="w-full text-sm resize-none bg-transparent
@@ -299,7 +400,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                     className={`flex items-center justify-center w-8 h-8 rounded-xl
                       transition-all duration-200 cursor-pointer
                       ${message.trim() || files.length > 0
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 hover:scale-105 active:scale-95'
+                        ? 'bg-slate-950 hover:bg-cyan-600 dark:bg-cyan-300 dark:hover:bg-cyan-200 text-white dark:text-slate-950 shadow-sm shadow-cyan-500/30 hover:scale-105 active:scale-95'
                         : 'text-gray-400/40 dark:text-gray-600 cursor-not-allowed'
                       } disabled:opacity-60`}>
                     {sending

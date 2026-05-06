@@ -23,11 +23,11 @@ const CHANNELS: ChannelDef[] = [
 ]
 
 const ACCENT_ACTIVE: Record<string, string> = {
-  indigo:  'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-500/30',
-  emerald: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30',
-  amber:   'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/30',
-  violet:  'bg-violet-500/15 text-violet-700 dark:text-violet-300 ring-1 ring-inset ring-violet-500/30',
-  teal:    'bg-teal-500/15 text-teal-700 dark:text-teal-300 ring-1 ring-inset ring-teal-500/30',
+  indigo:  'bg-indigo-400/15 text-indigo-200 ring-1 ring-inset ring-indigo-400/30',
+  emerald: 'bg-emerald-400/15 text-emerald-200 ring-1 ring-inset ring-emerald-400/30',
+  amber:   'bg-amber-400/15 text-amber-200 ring-1 ring-inset ring-amber-400/30',
+  violet:  'bg-violet-400/15 text-violet-200 ring-1 ring-inset ring-violet-400/30',
+  teal:    'bg-teal-400/15 text-teal-200 ring-1 ring-inset ring-teal-400/30',
 }
 const ACCENT_BAR: Record<string, string> = {
   indigo:  'bg-indigo-500',
@@ -62,7 +62,7 @@ function ChannelItem({
         text-sm cursor-pointer transition-all duration-150
         ${active
           ? ACCENT_ACTIVE[def.accent] + ' font-semibold'
-          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}
+          : 'text-slate-400 hover:bg-white/8 hover:text-slate-100'}`}
     >
       {/* 좌측 accent bar (active 때만) */}
       <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-full transition-opacity
@@ -100,13 +100,13 @@ function TodayCostWidget() {
       </p>
       <div className="px-2 space-y-1.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+          <span className="text-[15px] font-bold text-slate-100 tabular-nums">
             ${data.total_cost_usd.toFixed(3)}
           </span>
-          <span className="text-[10px] text-slate-400">/ ${data.budget_usd}</span>
+          <span className="text-[10px] text-slate-500">/ ${data.budget_usd}</span>
           <span className="ml-auto text-[10px] text-slate-500 font-mono">{totalCalls}회</span>
         </div>
-        <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${pct >= 80 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-500' : 'bg-indigo-500'}`}
             style={{ width: `${pct}%` }}
@@ -126,9 +126,8 @@ function UtilBtn({ icon, label, onClick, title }: {
       onClick={onClick}
       title={title}
       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg
-        text-[13px] text-slate-600 dark:text-slate-400
-        hover:bg-slate-100 dark:hover:bg-slate-800/60
-        hover:text-slate-900 dark:hover:text-slate-100
+        text-[13px] text-slate-400
+        hover:bg-white/8 hover:text-slate-100
         cursor-pointer transition-colors"
     >
       <MatIcon name={icon} className="text-[16px] shrink-0 opacity-80" />
@@ -150,18 +149,17 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   return (
     <aside
-      className="w-72 h-full flex-shrink-0 flex flex-col relative
-        bg-white dark:bg-slate-950
-        border-r border-slate-200 dark:border-slate-800"
+      className="w-72 h-full flex-shrink-0 flex flex-col relative overflow-hidden
+        bg-slate-950 text-slate-100
+        border-r border-white/10"
       aria-label="채널 목록"
     >
-      {/* 다크모드 상단 은은한 accent glow */}
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[160px] pointer-events-none opacity-0 dark:opacity-100
-        bg-[radial-gradient(ellipse_at_top_left,rgba(99,102,241,0.18),transparent_60%)]" />
+      <div aria-hidden className="absolute inset-x-0 top-0 h-[260px] pointer-events-none
+        bg-[radial-gradient(ellipse_at_top_left,rgba(20,184,166,0.22),transparent_58%),radial-gradient(ellipse_at_top_right,rgba(99,102,241,0.2),transparent_56%)]" />
 
       {/* 브랜드 헤더 */}
-      <div className="relative px-4 h-[60px] flex items-center justify-between shrink-0
-        border-b border-slate-200 dark:border-slate-800/70">
+      <div className="relative px-4 h-[64px] flex items-center justify-between shrink-0
+        border-b border-white/10">
         <div className="flex items-center gap-2.5">
           <div className="relative w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600
             flex items-center justify-center shadow-lg shadow-indigo-500/30">
@@ -169,15 +167,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-white dark:ring-slate-950" />
           </div>
           <div className="leading-tight">
-            <h1 className="text-[13px] font-bold text-slate-900 dark:text-white tracking-tight">AI Office</h1>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Job pipeline studio</p>
+            <h1 className="text-[13px] font-bold text-white tracking-tight">AI Office</h1>
+            <p className="text-[10px] text-cyan-200/70 font-medium">Command operating system</p>
           </div>
         </div>
         <button
           onClick={toggleTheme}
-          className="p-2 rounded-lg text-slate-500 dark:text-slate-400
-            hover:text-slate-900 dark:hover:text-white
-            hover:bg-slate-100 dark:hover:bg-slate-800/60
+          className="p-2 rounded-lg text-slate-400
+            hover:text-white hover:bg-white/10
             cursor-pointer transition-colors"
           aria-label="테마 전환"
           title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
@@ -191,7 +188,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       {/* 채널 */}
       <nav className="relative px-3 pt-4 pb-2">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 px-2 mb-2">
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 px-2 mb-2">
           워크스페이스
         </h3>
         <div className="space-y-1">
@@ -213,7 +210,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
 
       {/* 하단 유틸 */}
-      <div className="relative mt-auto p-3 border-t border-slate-200 dark:border-slate-800/70 space-y-0.5">
+      <div className="relative mt-auto p-3 border-t border-white/10 space-y-0.5">
         <UtilBtn icon="search"      label="통합 검색"   onClick={() => setShowSearch(true)} />
         <UtilBtn icon="insights"    label="인사이트"    onClick={() => setShowInsight(true)} />
         <UtilBtn

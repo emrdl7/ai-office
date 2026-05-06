@@ -153,6 +153,74 @@ def get_weekly_tasks(start_date: str) -> dict[str, Any]:
     }
 
 
+def get_monthly_tasks(month: str) -> dict[str, Any]:
+    """월간 캘린더용 일자별 작업 집계.
+
+    Args:
+        month: YYYY-MM. 비어 있으면 오늘이 속한 월.
+    """
+    from datetime import timedelta
+    if not month:
+        month = date.today().strftime('%Y-%m')
+    start = date.fromisoformat(f'{month}-01')
+    if start.month == 12:
+        end = date(start.year + 1, 1, 1)
+    else:
+        end = date(start.year, start.month + 1, 1)
+
+    with _conn() as c:
+        rows = c.execute(
+            """
+            SELECT date,
+                   COUNT(*) as task_count,
+                   AVG(progress) as avg_progress,
+                   SUM(CASE WHEN progress >= 100 THEN 1 ELSE 0 END) as done_count,
+                   SUM(CASE WHEN due_date IS NOT NULL AND due_date < date AND progress < 100 THEN 1 ELSE 0 END) as overdue_count,
+                   GROUP_CONCAT(DISTINCT project) as projects
+            FROM wr_tasks
+            WHERE date >= ? AND date < ?
+            GROUP BY date
+            ORDER BY date
+            """,
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        task_rows = c.execute(
+            """
+            SELECT id, date, time, project, task_name, progress, due_date, status
+            FROM wr_tasks
+            WHERE date >= ? AND date < ?
+            ORDER BY date, time, id
+            """,
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+
+    tasks_by_date: dict[str, list[dict[str, Any]]] = {}
+    for row in task_rows:
+        task = dict(row)
+        tasks_by_date.setdefault(str(task['date']), []).append(task)
+
+    days = []
+    for row in rows:
+        d = dict(row)
+        projects = [p for p in str(d.get('projects') or '').split(',') if p]
+        d['projects'] = projects
+        d['avg_progress'] = round(float(d.get('avg_progress') or 0), 1)
+        d['done_count'] = int(d.get('done_count') or 0)
+        d['overdue_count'] = int(d.get('overdue_count') or 0)
+        d['tasks'] = tasks_by_date.get(str(d['date']), [])[:5]
+        days.append(d)
+
+    return {
+        'month': month,
+        'period': {
+            'start': start.isoformat(),
+            'end': (end - timedelta(days=1)).isoformat(),
+        },
+        'total': sum(int(d['task_count']) for d in days),
+        'days': days,
+    }
+
+
 def get_recent_tasks(limit: int = 20) -> list[dict[str, Any]]:
     with _conn() as c:
         rows = c.execute(
