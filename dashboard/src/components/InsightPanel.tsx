@@ -5,36 +5,16 @@ import { MatIcon } from './icons'
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
-interface TierStat {
-  tier: string
-  label: string
-  calls: number
-  cost_usd: number
-  color: string
-}
-
-interface TodayCost {
-  opus_calls_today: number
-  opus_daily_limit: number
-  opus_remaining: number
-  total_cost_usd: number
-  budget_usd: number
-  by_tier: TierStat[]
-}
-
 interface JobInsights {
   total: number
   by_status: Record<string, number>
   completion_rate: number
   avg_duration_sec: number
   by_spec: Record<string, Record<string, number>>
-  model_usage: { model: string; count: number }[]
   total_revised: number
   total_steps_done: number
   revision_rate: number
   daily_done: { day: string; count: number }[]
-  total_cost_usd: number
-  step_cost_usd: number
   routing_quality?: RoutingQuality
 }
 
@@ -102,21 +82,6 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 15_000,
   })
 
-  const { data: costData } = useQuery<TodayCost>({
-    queryKey: ['cost-today'],
-    queryFn: async () => (await fetch('/api/cost/today')).json(),
-    refetchInterval: 30_000,
-  })
-
-  const { data: daily } = useQuery<{
-    days: number; total_cost_usd: number; total_calls: number
-    points: { date: string; total_cost_usd: number; calls: number }[]
-  }>({
-    queryKey: ['cost-daily', 7],
-    queryFn: async () => (await fetch('/api/cost/daily?days=7')).json(),
-    refetchInterval: 5 * 60_000,
-  })
-
   const { data: agreement } = useQuery<{
     days: number; total: number; matched: number; mismatched: number; match_rate: number
     by_gate: { gate_id: string; count: number; matched: number; match_rate: number }[]
@@ -144,7 +109,7 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
             </span>
             <div>
               <h2 className="text-sm font-black text-gray-900 dark:text-white">운영 인사이트</h2>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">비용, gate, 라우팅 품질</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">gate, 라우팅 품질, 완료 추세</p>
             </div>
           </div>
           <button onClick={onClose}
@@ -157,113 +122,6 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
 
         {/* 콘텐츠 */}
         <div className="overflow-y-auto p-5">
-          {/* Opus 잔여 횟수 */}
-          {costData && (
-            <div className="mb-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">오늘 Opus 사용량</p>
-              <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl px-3 py-2.5">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] text-purple-500 dark:text-purple-400 font-medium">
-                    claude-opus (deep tier)
-                  </span>
-                  <span className={`text-sm font-bold font-mono
-                    ${costData.opus_remaining === 0
-                      ? 'text-red-500'
-                      : costData.opus_remaining <= 3
-                        ? 'text-orange-500'
-                        : 'text-purple-600 dark:text-purple-300'
-                    }`}>
-                    {costData.opus_calls_today}/{costData.opus_daily_limit}회
-                  </span>
-                </div>
-                <div className="h-1.5 bg-purple-100 dark:bg-purple-900/40 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all
-                      ${costData.opus_remaining === 0
-                        ? 'bg-red-500'
-                        : costData.opus_remaining <= 3
-                          ? 'bg-orange-400'
-                          : 'bg-purple-500'
-                      }`}
-                    style={{ width: `${Math.min(100, Math.round((costData.opus_calls_today / costData.opus_daily_limit) * 100))}%` }}
-                  />
-                </div>
-                <p className="text-[10px] text-purple-400 mt-1">
-                  {costData.opus_remaining === 0
-                    ? '오늘 한도 소진 — Gemini로 자동 폴백 중'
-                    : `잔여 ${costData.opus_remaining}회`}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Tier별 호출 수 */}
-          {costData && costData.by_tier && costData.by_tier.some((t) => t.calls > 0) && (
-            <div className="mb-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">오늘 Tier별 호출</p>
-              <div className="space-y-1.5">
-                {costData.by_tier.map((t) => {
-                  const maxCalls = Math.max(...costData.by_tier.map((x) => x.calls), 1)
-                  const COLOR_BAR: Record<string, string> = {
-                    blue: 'bg-blue-400', green: 'bg-green-400',
-                    purple: 'bg-purple-500', cyan: 'bg-cyan-400',
-                  }
-                  const COLOR_TEXT: Record<string, string> = {
-                    blue: 'text-blue-500', green: 'text-green-500',
-                    purple: 'text-purple-500', cyan: 'text-cyan-500',
-                  }
-                  return (
-                    <div key={t.tier} className="flex items-center gap-2">
-                      <span className={`w-24 text-[10px] text-right shrink-0 truncate ${COLOR_TEXT[t.color] ?? 'text-gray-400'}`}>
-                        {t.label.split(' ')[0]}
-                      </span>
-                      <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${COLOR_BAR[t.color] ?? 'bg-gray-400'}`}
-                          style={{ width: `${Math.round((t.calls / maxCalls) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="w-8 text-[10px] text-gray-500 shrink-0 text-right">{t.calls}회</span>
-                      <span className="w-14 text-[10px] text-gray-400 shrink-0 text-right font-mono">${t.cost_usd.toFixed(4)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 일별 비용 스파크라인 */}
-          {daily && daily.points.length > 1 && (() => {
-            const pts = daily.points
-            const max = Math.max(...pts.map(p => p.total_cost_usd), 0.0001)
-            const w = 180, h = 36
-            const sx = (i: number) => (i / (pts.length - 1)) * w
-            const sy = (v: number) => h - (v / max) * (h - 4) - 2
-            const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${sx(i).toFixed(1)},${sy(p.total_cost_usd).toFixed(1)}`).join(' ')
-            return (
-              <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/60 rounded-lg border border-gray-200 dark:border-gray-800">
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    최근 {daily.days}일 비용
-                  </span>
-                  <span className="text-xs font-mono text-gray-700 dark:text-gray-300">
-                    ${daily.total_cost_usd.toFixed(4)} · {daily.total_calls}회
-                  </span>
-                </div>
-                <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10" preserveAspectRatio="none">
-                  <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-indigo-500" />
-                  {pts.map((p, i) => (
-                    <circle key={i} cx={sx(i)} cy={sy(p.total_cost_usd)} r="1.5" className="fill-indigo-500" />
-                  ))}
-                </svg>
-                <div className="flex justify-between text-[9px] text-gray-400 mt-0.5 font-mono">
-                  <span>{pts[0].date.slice(5)}</span>
-                  <span>{pts[pts.length - 1].date.slice(5)}</span>
-                </div>
-              </div>
-            )
-          })()}
-
           {/* Gate AI ↔ 사람 일치율 */}
           {agreement && agreement.total > 0 && (
             <div className="mt-4 p-3 bg-indigo-50 dark:bg-indigo-900/15 rounded-lg border border-indigo-200 dark:border-indigo-700/30">
@@ -428,56 +286,6 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
                     </div>
                   )
                 })()
-              )}
-
-              {/* 비용 추적 */}
-              {(data.total_cost_usd > 0 || data.step_cost_usd > 0) && (
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">추정 비용</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-3 py-2.5">
-                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-0.5">완료 Job 합산</p>
-                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                        ${data.total_cost_usd.toFixed(4)}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl px-3 py-2.5">
-                      <p className="text-[10px] text-gray-400 mb-0.5">Step 합산</p>
-                      <p className="text-lg font-bold text-gray-600 dark:text-gray-300 font-mono">
-                        ${data.step_cost_usd.toFixed(4)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 모델 사용 */}
-              {data.model_usage.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">모델 사용</p>
-                  <div className="space-y-1">
-                    {data.model_usage.map(({ model, count }) => {
-                      const total = data.model_usage.reduce((s, m) => s + m.count, 0)
-                      const short = model.replace('claude-', '').replace('-4-5-20251001', '').replace('-4-6', '').replace('gemini-', 'gemini-')
-                      const isGemini = model.includes('gemini')
-                      return (
-                        <div key={model} className="flex items-center gap-2">
-                          <span className={`w-20 text-[10px] text-right shrink-0 truncate
-                            ${isGemini ? 'text-blue-500' : 'text-purple-500'}`}>
-                            {short}
-                          </span>
-                          <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${isGemini ? 'bg-blue-400' : 'bg-purple-400'}`}
-                              style={{ width: `${Math.round((count / total) * 100)}%` }}
-                            />
-                          </div>
-                          <span className="w-6 text-[10px] text-gray-500 shrink-0 text-right">{count}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
               )}
 
               {/* 일별 완료 차트 (7일) */}
