@@ -280,21 +280,32 @@ function monthLabel(month: string): string {
 
 function buildCalendarCells(month: string) {
   const first = new Date(month + '-01T00:00:00')
-  const start = new Date(first)
-  start.setDate(first.getDate() - first.getDay())
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(start)
-    d.setDate(start.getDate() + i)
+  const next = new Date(first)
+  next.setMonth(next.getMonth() + 1)
+  const totalDays = Math.round((next.getTime() - first.getTime()) / 86400000)
+  return Array.from({ length: totalDays }, (_, i) => {
+    const d = new Date(first)
+    d.setDate(first.getDate() + i)
     return {
       date: toLocalISODate(d),
       day: d.getDate(),
-      inMonth: d.getMonth() === first.getMonth(),
+      dayOfWeek: d.getDay(),
     }
   })
 }
 
-function chunkWeeks<T>(items: T[]): T[][] {
-  return Array.from({ length: Math.ceil(items.length / 7) }, (_, i) => items.slice(i * 7, i * 7 + 7))
+function chunkWeeks<T extends { dayOfWeek: number }>(items: T[]): T[][] {
+  const weeks: T[][] = []
+  let current: T[] = []
+  for (const item of items) {
+    if (current.length > 0 && item.dayOfWeek === 0) {
+      weeks.push(current)
+      current = []
+    }
+    current.push(item)
+  }
+  if (current.length > 0) weeks.push(current)
+  return weeks
 }
 
 function buildMonthRange(anchorMonth: string, before: number, after: number): string[] {
@@ -408,96 +419,93 @@ function WorkCalendar({
     }
   }
 
-  function renderMonth(m: string) {
-    const data = dataByMonth.get(m)
-    const cells = buildCalendarCells(m)
+  function renderCalendarRows() {
+    const cells = months.flatMap((m) => buildCalendarCells(m))
     const weeks = chunkWeeks(cells)
     const byDate = new Map<string, MonthlyDay>()
-    for (const day of data?.days ?? []) byDate.set(day.date, day)
-    const isLoading = monthQueries[months.indexOf(m)]?.isLoading
-    const allTasks = data?.tasks ?? Array.from(new Map(
-      (data?.days ?? []).flatMap((day) => (day.tasks ?? []).map((task) => [task.id, task] as const)),
+    for (const data of dataByMonth.values()) {
+      for (const day of data.days ?? []) byDate.set(day.date, day)
+    }
+    const allTasks = Array.from(new Map(
+      Array.from(dataByMonth.values()).flatMap((data) => {
+        const tasks = data.tasks ?? data.days.flatMap((day) => day.tasks ?? [])
+        return tasks.map((task) => [task.id, task] as const)
+      }),
     ).values())
 
     return (
-      <section key={m} className="border-t border-slate-200/80 first:border-t-0 dark:border-slate-800/80">
-        <div className="flex items-end justify-between px-2 py-4">
-          <div>
-            <p className="text-xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(m)}</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {isLoading ? '불러오는 중' : `${data?.total ?? 0}개 작업 기록`}
-            </p>
-          </div>
-          {m === today.slice(0, 7) && (
-            <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-800 dark:bg-cyan-300 dark:text-slate-950">
-              이번 달
-            </span>
-          )}
-        </div>
-
-        <div className="overflow-hidden border-y border-slate-200/80 dark:border-slate-800/80">
-          {weeks.map((week, weekIndex) => {
-            const weekStart = week[0].date
-            const weekEnd = week[6].date
-            const weekTasks = allTasks
-              .filter((task) => taskStartDate(task) <= weekEnd && taskEndDate(task) >= weekStart)
-              .slice(0, 4)
-            return (
-              <div
-                key={`${m}-${weekIndex}`}
-                className="relative grid min-h-[118px] grid-cols-7 border-t border-slate-200/70 first:border-t-0 dark:border-slate-800/70"
-              >
-                {week.map((cell) => {
-                  const day = byDate.get(cell.date)
-                  const isToday = cell.date === today
-                  return (
-                    <button
-                      key={cell.date}
-                      onClick={() => {
-                        onMonthChange(cell.date.slice(0, 7))
-                        onSelectDate(cell.date)
-                      }}
-                      className={`relative min-h-[118px] border-l border-slate-200/60 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-800/70 dark:hover:bg-cyan-950/20
-                        ${cell.inMonth ? 'bg-white/50 dark:bg-slate-950/20' : 'bg-slate-50/60 text-slate-300 dark:bg-slate-900/20 dark:text-slate-600'}
-                        ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
-                    >
-                      <span className={`absolute right-2 top-1.5 text-xs font-black tabular-nums ${isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {cell.day}
+      <>
+        {weeks.map((week, weekIndex) => {
+          const weekStart = week[0].date
+          const weekEnd = week[week.length - 1].date
+          const weekTasks = allTasks
+            .filter((task) => taskStartDate(task) <= weekEnd && taskEndDate(task) >= weekStart)
+            .slice(0, 4)
+          return (
+            <div
+              key={`${weekStart}-${weekEnd}`}
+              className="relative grid min-h-[118px] grid-cols-7 border-t border-slate-200/70 first:border-t-0 dark:border-slate-800/70"
+            >
+              {week.map((cell) => {
+                const day = byDate.get(cell.date)
+                const isToday = cell.date === today
+                const isFirstDay = cell.day === 1
+                const cellMonth = cell.date.slice(0, 7)
+                const monthData = dataByMonth.get(cellMonth)
+                const isMonthLoading = monthQueries[months.indexOf(cellMonth)]?.isLoading
+                return (
+                  <button
+                    key={cell.date}
+                    onClick={() => {
+                      onMonthChange(cellMonth)
+                      onSelectDate(cell.date)
+                    }}
+                    className={`relative min-h-[118px] border-l border-slate-200/60 bg-white/50 p-2 text-left transition-colors hover:bg-cyan-50/70 dark:border-slate-800/70 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
+                      ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
+                    style={{ gridColumn: cell.dayOfWeek + 1 }}
+                  >
+                    {isFirstDay && (
+                      <span className="absolute left-2 top-1.5 rounded-full bg-slate-950 px-2 py-0.5 text-[10px] font-black text-white shadow-sm dark:bg-cyan-300 dark:text-slate-950">
+                        {monthLabel(cellMonth)}
+                        {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
-                      {day && (
-                        <span className="absolute left-2 top-2 text-[9px] font-bold text-slate-400 dark:text-slate-500">
-                          {day.task_count}
-                        </span>
-                      )}
-                    </button>
+                    )}
+                    <span className={`absolute right-2 top-1.5 text-xs font-black tabular-nums ${isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {cell.day}
+                    </span>
+                    {day && (
+                      <span className={`absolute left-2 text-[9px] font-bold text-slate-400 dark:text-slate-500 ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                        {day.task_count}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+
+              <div className="pointer-events-none absolute inset-x-0 top-8 grid grid-cols-7 gap-y-1 px-1">
+                {weekTasks.map((task, row) => {
+                  const segmentStart = taskStartDate(task) > weekStart ? taskStartDate(task) : weekStart
+                  const segmentEnd = taskEndDate(task) < weekEnd ? taskEndDate(task) : weekEnd
+                  const startCol = new Date(segmentStart + 'T00:00:00').getDay() + 1
+                  const endCol = new Date(segmentEnd + 'T00:00:00').getDay() + 1
+                  const startsBefore = taskStartDate(task) < segmentStart
+                  const endsAfter = taskEndDate(task) > segmentEnd
+                  return (
+                    <div
+                      key={`${task.id}-${weekIndex}`}
+                      className={`min-w-0 px-2 py-1 text-[10px] font-bold leading-none shadow-sm ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
+                      style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row + 1 }}
+                      title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
+                    >
+                      <span className="block truncate">{task.task_name}</span>
+                    </div>
                   )
                 })}
-
-                <div className="pointer-events-none absolute inset-x-0 top-8 grid grid-cols-7 gap-y-1 px-1">
-                  {weekTasks.map((task, row) => {
-                    const segmentStart = taskStartDate(task) > weekStart ? taskStartDate(task) : weekStart
-                    const segmentEnd = taskEndDate(task) < weekEnd ? taskEndDate(task) : weekEnd
-                    const startCol = week.findIndex((cell) => cell.date === segmentStart) + 1
-                    const endCol = week.findIndex((cell) => cell.date === segmentEnd) + 1
-                    const startsBefore = taskStartDate(task) < weekStart
-                    const endsAfter = taskEndDate(task) > weekEnd
-                    return (
-                      <div
-                        key={`${task.id}-${weekIndex}`}
-                        className={`min-w-0 px-2 py-1 text-[10px] font-bold leading-none shadow-sm ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
-                        style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row + 1 }}
-                        title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
-                      >
-                        <span className="block truncate">{task.task_name}</span>
-                      </div>
-                    )
-                  })}
-                </div>
               </div>
-            )
-          })}
-        </div>
-      </section>
+            </div>
+          )
+        })}
+      </>
     )
   }
 
@@ -531,7 +539,7 @@ function WorkCalendar({
         className="max-h-[calc(100vh-220px)] min-h-[620px] overflow-y-auto pr-2"
       >
         <div className="overflow-hidden rounded-b-3xl bg-white/45 dark:bg-slate-950/20">
-          {months.map(renderMonth)}
+          {renderCalendarRows()}
         </div>
       </div>
       <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-xs text-slate-500 dark:border-slate-800/80 dark:bg-slate-950/35 dark:text-slate-400">
