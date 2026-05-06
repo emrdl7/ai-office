@@ -487,7 +487,7 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative h-full min-h-[118px] border-l border-slate-300 bg-white/50 p-2 text-left transition-colors hover:bg-cyan-50/70 dark:border-slate-700 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
+                    className={`relative h-full min-h-[118px] border-l border-slate-300 bg-white/50 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-700 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
@@ -567,7 +567,7 @@ function WorkCalendar({
         onScroll={handleScroll}
         className="max-h-[calc(100vh-220px)] min-h-[620px] overflow-y-auto pr-2"
       >
-        <div className="overflow-hidden rounded-b-3xl bg-white/45 dark:bg-slate-950/20">
+        <div className="overflow-hidden bg-white/45 dark:bg-slate-950/20">
           {renderCalendarRows()}
         </div>
       </div>
