@@ -559,6 +559,8 @@ function WorkCalendar({
                 const holidays = holidaysByDate.get(cell.date) ?? []
                 const daysOff = daysOffByDate.get(cell.date) ?? []
                 const isHoliday = holidays.length > 0
+                const isSunday = cell.dayOfWeek === 0
+                const isSaturday = cell.dayOfWeek === 6
                 const isDayOff = daysOff.length > 0
                 const dayLabels = [
                   ...daysOff.map(dayOffLabel),
@@ -573,7 +575,7 @@ function WorkCalendar({
                       onSelectDate(cell.date)
                     }}
                     className={`relative h-full min-h-[118px] border-l border-slate-300 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-700 dark:hover:bg-cyan-950/20
-                      ${isDayOff ? 'bg-amber-50/80 dark:bg-amber-950/15' : isHoliday ? 'bg-rose-50/70 dark:bg-rose-950/10' : 'bg-white/50 dark:bg-slate-950/20'}
+                      ${isDayOff ? 'bg-amber-50/80 dark:bg-amber-950/15' : isHoliday || isSunday ? 'bg-rose-50/70 dark:bg-rose-950/10' : isSaturday ? 'bg-blue-50/70 dark:bg-blue-950/10' : 'bg-white/50 dark:bg-slate-950/20'}
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
@@ -583,7 +585,7 @@ function WorkCalendar({
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
                     )}
-                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday ? 'text-rose-600 dark:text-rose-300' : isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
+                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday || isSunday ? 'text-rose-600 dark:text-rose-300' : isSaturday ? 'text-blue-600 dark:text-blue-300' : isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
                       {cell.day}
                     </span>
                     {dayLabels.length > 0 && (
