@@ -9,7 +9,6 @@ import { ToastHost } from './components/ToastHost'
 import type { ChannelId } from './types'
 
 const JobBoard = lazy(() => import('./components/JobBoard').then((m) => ({ default: m.JobBoard })))
-const GateInbox = lazy(() => import('./components/GateInbox').then((m) => ({ default: m.GateInbox })))
 const ComponentLibrary = lazy(() => import('./components/ComponentLibrary').then((m) => ({ default: m.ComponentLibrary })))
 const WorkReport = lazy(() => import('./components/WorkReport').then((m) => ({ default: m.WorkReport })))
 
@@ -22,7 +21,7 @@ const queryClient = new QueryClient({
   },
 })
 
-const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'gates', 'components', 'workreport']
+const VALID_CHANNELS: ChannelId[] = ['all', 'jobs', 'components', 'workreport']
 
 function ChannelFallback() {
   return (
@@ -157,8 +156,6 @@ function MessengerApp() {
         <Suspense fallback={<ChannelFallback />}>
           {activeChannel === 'jobs' ? (
             <JobBoard onBack={() => navigate('all')} />
-          ) : activeChannel === 'gates' ? (
-            <GateInbox onBack={() => navigate('all')} />
           ) : activeChannel === 'components' ? (
             <ComponentLibrary onBack={() => navigate('all')} />
           ) : activeChannel === 'workreport' ? (

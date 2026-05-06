@@ -23,6 +23,20 @@ async function fetchJobs(): Promise<Job[]> {
   return res.json()
 }
 
+interface PendingGateNotice {
+  job_id: string
+  job_title: string
+  gate_id: string
+  gate_prompt: string
+  opened_at: string
+}
+
+async function fetchPendingGates(): Promise<PendingGateNotice[]> {
+  const res = await fetch('/api/jobs/gates/pending')
+  if (!res.ok) return []
+  return res.json()
+}
+
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
 
@@ -36,8 +50,14 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     queryFn: fetchJobs,
     refetchInterval: 5000,
   })
+  const { data: pendingGates = [] } = useQuery({
+    queryKey: ['pending-gates'],
+    queryFn: fetchPendingGates,
+    refetchInterval: 5000,
+  })
   const workingAgents = agents.filter((a) => a.status === 'working' || a.status === 'meeting')
   const activeJobs = jobs.filter((job) => ['queued', 'running', 'waiting_gate'].includes(job.status)).slice(0, 3)
+  const firstPendingGate = pendingGates[0]
 
   const { connected, typingAgents } = useChatWebSocket({ addLog, setLogs })
   const { files, previews, fileInputRef, addFiles, handleFileChange, handlePaste, removeFile, clearFiles } = useFileAttachment()
@@ -189,8 +209,24 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">Active Jobs</p>
             <p className="text-xl font-semibold leading-none text-slate-900 tabular-nums dark:text-white">{activeJobs.length}</p>
           </div>
-          {activeJobs.length > 0 && (
+          {(pendingGates.length > 0 || activeJobs.length > 0) && (
             <div className="pointer-events-auto mt-2 flex max-w-[260px] flex-col gap-1.5">
+              {firstPendingGate && (
+                <button
+                  onClick={() => useStore.getState().setActiveChannel('jobs')}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-left shadow-sm transition-colors hover:border-amber-500 dark:border-amber-700/70 dark:bg-amber-950/30"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    <span className="max-w-[210px] truncate text-xs font-semibold text-amber-900 dark:text-amber-100">
+                      승인 대기 {pendingGates.length}건
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[10px] text-amber-700/80 dark:text-amber-200/80">
+                    {firstPendingGate.job_title} · {firstPendingGate.gate_id}
+                  </p>
+                </button>
+              )}
               {activeJobs.map((job) => (
                 <button
                   key={job.id}

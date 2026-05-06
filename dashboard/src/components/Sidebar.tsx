@@ -1,6 +1,5 @@
 // 사이드바 — v2 리디자인: 브랜드 마크 + 채널 pill + 유틸리티
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useStore } from '../store'
 import type { ChannelId } from '../types'
 import { MatIcon } from './icons'
@@ -16,33 +15,16 @@ type ChannelDef = {
 const CHANNELS: ChannelDef[] = [
   { id: 'all',         label: 'TALK',              icon: 'forum'        },
   { id: 'jobs',        label: '작업 보드',          icon: 'view_kanban'  },
-  { id: 'gates',       label: '검토 수신함',        icon: 'rule'         },
   { id: 'workreport',  label: '업무일지',           icon: 'edit_note'    },
   { id: 'components',  label: '컴포넌트 라이브러리', icon: 'widgets'      },
 ]
 
 const ACCENT_ACTIVE = 'bg-white/10 text-white'
 const ACCENT_BAR = 'bg-indigo-400'
-const BADGE_BG = 'bg-indigo-500'
-
-// ── Gate 대기 수 뱃지 ────────────────────────────────────────────
-function useGatesCount() {
-  const { data: gates = [] } = useQuery({
-    queryKey: ['pending-gates'],
-    queryFn: async () => {
-      const res = await fetch('/api/jobs/gates/pending')
-      if (!res.ok) return []
-      return res.json() as Promise<{ gate_id: string }[]>
-    },
-    refetchInterval: 10000,
-  })
-  return gates.length
-}
-
 // ── 채널 버튼 (통합) ────────────────────────────────────────────
 function ChannelItem({
-  def, active, onClick, badge,
-}: { def: ChannelDef; active: boolean; onClick: () => void; badge?: number }) {
+  def, active, onClick,
+}: { def: ChannelDef; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -57,12 +39,6 @@ function ChannelItem({
       <MatIcon name={def.icon} className={`text-[18px] shrink-0
         ${active ? '' : 'opacity-80'}`} />
       <span className="flex-1 text-left">{def.label}</span>
-      {badge !== undefined && badge > 0 && (
-        <span className={`inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5
-          rounded-full text-[10px] font-bold ${BADGE_BG} text-white`}>
-          {badge}
-        </span>
-      )}
     </button>
   )
 }
@@ -90,7 +66,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { activeChannel, setActiveChannel, toggleTheme, theme } = useStore()
   const [showSearch, setShowSearch] = useState(false)
   const [showInsight, setShowInsight] = useState(false)
-  const gatesCount = useGatesCount()
 
   const selectChannel = (channel: ChannelId) => {
     setActiveChannel(channel)
@@ -144,7 +119,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               def={c}
               active={activeChannel === c.id}
               onClick={() => selectChannel(c.id)}
-              badge={c.id === 'gates' ? gatesCount : undefined}
             />
           ))}
         </div>
