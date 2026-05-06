@@ -46,12 +46,20 @@ interface MonthlyDay {
   tasks: CalendarTask[]
 }
 
+interface PublicHoliday {
+  date: string
+  name: string
+  kind?: string
+  sequence?: string
+}
+
 interface MonthlyCalendar {
   month: string
   period: { start: string; end: string }
   total: number
   days: MonthlyDay[]
   tasks?: CalendarTask[]
+  holidays?: PublicHoliday[]
 }
 
 type CalendarTask = Pick<
@@ -386,6 +394,7 @@ async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
     total: tasks.length,
     days,
     tasks,
+    holidays: [],
   }
 }
 
@@ -453,8 +462,12 @@ function WorkCalendar({
     const cells = months.flatMap((m) => buildCalendarCells(m))
     const weeks = chunkWeeks(cells)
     const byDate = new Map<string, MonthlyDay>()
+    const holidaysByDate = new Map<string, PublicHoliday[]>()
     for (const data of dataByMonth.values()) {
       for (const day of data.days ?? []) byDate.set(day.date, day)
+      for (const holiday of data.holidays ?? []) {
+        holidaysByDate.set(holiday.date, [...(holidaysByDate.get(holiday.date) ?? []), holiday])
+      }
     }
     const allTasks = Array.from(new Map(
       Array.from(dataByMonth.values()).flatMap((data) => {
@@ -517,6 +530,8 @@ function WorkCalendar({
                 const cellMonth = cell.date.slice(0, 7)
                 const monthData = dataByMonth.get(cellMonth)
                 const isMonthLoading = monthQueries[months.indexOf(cellMonth)]?.isLoading
+                const holidays = holidaysByDate.get(cell.date) ?? []
+                const isHoliday = holidays.length > 0
                 return (
                   <button
                     key={cell.date}
@@ -525,7 +540,8 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative h-full min-h-[118px] border-l border-slate-300 bg-white/50 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-700 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
+                    className={`relative h-full min-h-[118px] border-l border-slate-300 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-700 dark:hover:bg-cyan-950/20
+                      ${isHoliday ? 'bg-rose-50/70 dark:bg-rose-950/10' : 'bg-white/50 dark:bg-slate-950/20'}
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
@@ -535,11 +551,16 @@ function WorkCalendar({
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
                     )}
-                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
+                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isHoliday ? 'text-rose-600 dark:text-rose-300' : isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
                       {cell.day}
                     </span>
+                    {isHoliday && (
+                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[10px] font-black text-rose-600 dark:text-rose-300 ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                        {holidays.map((holiday) => holiday.name).join(', ')}
+                      </span>
+                    )}
                     {day && (
-                      <span className={`absolute left-2 text-[10px] font-black text-slate-500 dark:text-slate-300 ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                      <span className={`absolute left-2 text-[10px] font-black text-slate-500 dark:text-slate-300 ${isHoliday && isFirstDay ? 'top-12' : isHoliday || isFirstDay ? 'top-7' : 'top-2'}`}>
                         {day.task_count}
                       </span>
                     )}

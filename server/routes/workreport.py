@@ -14,6 +14,7 @@ from db.workreport_store import (
     list_milestones, create_milestone, update_milestone, delete_milestone,
     get_dashboard,
 )
+from integrations.korea_holidays import get_public_holidays
 
 router = APIRouter()
 
@@ -108,7 +109,9 @@ def api_weekly(start: str = '') -> dict[str, Any]:
 
 @router.get('/api/workreport/tasks/monthly')
 def api_monthly(month: str = '') -> dict[str, Any]:
-    return get_monthly_tasks(month)
+    monthly = get_monthly_tasks(month)
+    monthly['holidays'] = get_public_holidays(monthly['month'])
+    return monthly
 
 
 @router.get('/api/workreport/tasks/recent')
