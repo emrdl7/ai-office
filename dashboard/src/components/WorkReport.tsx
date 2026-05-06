@@ -475,7 +475,35 @@ function WorkCalendar({
               if (startCompare !== 0) return startCompare
               return `${a.time}-${a.id}`.localeCompare(`${b.time}-${b.id}`)
             })
-          const weekHeight = Math.max(118, 56 + weekTasks.length * 22)
+          const lanes: boolean[][] = []
+          const weekRibbons = weekTasks.map((task) => {
+            const segmentStart = taskStartDate(task) > weekStart ? taskStartDate(task) : weekStart
+            const segmentEnd = taskEndDate(task) < weekEnd ? taskEndDate(task) : weekEnd
+            const startCol = new Date(segmentStart + 'T00:00:00').getDay() + 1
+            const endCol = new Date(segmentEnd + 'T00:00:00').getDay() + 1
+            let laneIndex = lanes.findIndex((lane) => {
+              for (let col = startCol; col <= endCol; col += 1) {
+                if (lane[col]) return false
+              }
+              return true
+            })
+            if (laneIndex === -1) {
+              laneIndex = lanes.length
+              lanes.push([])
+            }
+            for (let col = startCol; col <= endCol; col += 1) {
+              lanes[laneIndex][col] = true
+            }
+            return {
+              task,
+              startCol,
+              endCol,
+              row: laneIndex + 1,
+              startsBefore: taskStartDate(task) < segmentStart,
+              endsAfter: taskEndDate(task) > segmentEnd,
+            }
+          })
+          const weekHeight = Math.max(118, 56 + lanes.length * 22)
           return (
             <div
               key={`${weekStart}-${weekEnd}`}
@@ -520,18 +548,12 @@ function WorkCalendar({
               })}
 
               <div className="pointer-events-none absolute inset-x-0 top-8 grid grid-cols-7 gap-y-1 px-1">
-                {weekTasks.map((task, row) => {
-                  const segmentStart = taskStartDate(task) > weekStart ? taskStartDate(task) : weekStart
-                  const segmentEnd = taskEndDate(task) < weekEnd ? taskEndDate(task) : weekEnd
-                  const startCol = new Date(segmentStart + 'T00:00:00').getDay() + 1
-                  const endCol = new Date(segmentEnd + 'T00:00:00').getDay() + 1
-                  const startsBefore = taskStartDate(task) < segmentStart
-                  const endsAfter = taskEndDate(task) > segmentEnd
+                {weekRibbons.map(({ task, startCol, endCol, row, startsBefore, endsAfter }) => {
                   return (
                     <div
                       key={`${task.id}-${weekIndex}`}
                       className={`min-w-0 px-2 py-1 text-[10px] font-bold leading-none shadow-sm ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
-                      style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row + 1 }}
+                      style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row }}
                       title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
                     >
                       <span className="block truncate">{task.task_name}</span>
