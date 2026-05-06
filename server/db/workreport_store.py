@@ -61,6 +61,10 @@ def init_db() -> None:
         for column, definition in (
             ('linked_job_id', "TEXT DEFAULT ''"),
             ('status', "TEXT DEFAULT 'active'"),
+            ('started_at', 'TEXT'),
+            ('completed_at', 'TEXT'),
+            ('paused_at', 'TEXT'),
+            ('cancelled_at', 'TEXT'),
         ):
             try:
                 c.execute(f'ALTER TABLE wr_tasks ADD COLUMN {column} {definition}')
@@ -186,12 +190,14 @@ def get_monthly_tasks(month: str) -> dict[str, Any]:
         ).fetchall()
         task_rows = c.execute(
             """
-            SELECT id, date, time, project, task_name, progress, due_date, status
+            SELECT id, date, time, project, task_name, progress, due_date, status,
+                   started_at, completed_at
             FROM wr_tasks
             WHERE date >= ? AND date < ?
+               OR (started_at IS NOT NULL AND started_at < ? AND COALESCE(completed_at, due_date, date) >= ?)
             ORDER BY date, time, id
             """,
-            (start.isoformat(), end.isoformat()),
+            (start.isoformat(), end.isoformat(), end.isoformat(), start.isoformat()),
         ).fetchall()
 
     tasks_by_date: dict[str, list[dict[str, Any]]] = {}
@@ -218,6 +224,7 @@ def get_monthly_tasks(month: str) -> dict[str, Any]:
         },
         'total': sum(int(d['task_count']) for d in days),
         'days': days,
+        'tasks': [dict(r) for r in task_rows],
     }
 
 

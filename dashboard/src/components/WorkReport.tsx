@@ -21,6 +21,8 @@ interface WRTask {
   progress: number
   due_date: string | null
   status: string
+  started_at?: string | null
+  completed_at?: string | null
   created_at: string
 }
 
@@ -41,7 +43,7 @@ interface MonthlyDay {
   done_count: number
   overdue_count: number
   projects: string[]
-  tasks: Array<Pick<WRTask, 'id' | 'date' | 'time' | 'project' | 'task_name' | 'progress' | 'due_date' | 'status'>>
+  tasks: CalendarTask[]
 }
 
 interface MonthlyCalendar {
@@ -49,7 +51,13 @@ interface MonthlyCalendar {
   period: { start: string; end: string }
   total: number
   days: MonthlyDay[]
+  tasks?: CalendarTask[]
 }
+
+type CalendarTask = Pick<
+  WRTask,
+  'id' | 'date' | 'time' | 'project' | 'task_name' | 'progress' | 'due_date' | 'status' | 'started_at' | 'completed_at'
+>
 
 function progressColor(p: number) {
   if (p >= 100) return 'bg-green-500'
@@ -285,8 +293,26 @@ function buildCalendarCells(month: string) {
   })
 }
 
+function chunkWeeks<T>(items: T[]): T[][] {
+  return Array.from({ length: Math.ceil(items.length / 7) }, (_, i) => items.slice(i * 7, i * 7 + 7))
+}
+
 function buildMonthRange(anchorMonth: string, before: number, after: number): string[] {
   return Array.from({ length: before + after + 1 }, (_, i) => shiftMonth(anchorMonth, i - before))
+}
+
+function taskStartDate(task: CalendarTask): string {
+  return task.started_at || task.date
+}
+
+function taskEndDate(task: CalendarTask): string {
+  return task.completed_at || task.due_date || task.date
+}
+
+function ribbonTone(task: CalendarTask): string {
+  if (task.progress >= 100) return 'bg-emerald-500 text-white dark:bg-emerald-400 dark:text-slate-950'
+  if (task.due_date && task.due_date < toLocalISODate(new Date())) return 'bg-amber-500 text-white dark:bg-amber-300 dark:text-slate-950'
+  return 'bg-cyan-500 text-white dark:bg-cyan-300 dark:text-slate-950'
 }
 
 async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
@@ -298,7 +324,11 @@ async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
 
   const recentRes = await fetch('/api/workreport/tasks/recent?limit=500')
   if (!recentRes.ok) throw new Error('업무일지 월간 데이터를 불러오지 못했습니다')
-  const tasks = (await recentRes.json() as WRTask[]).filter((task) => task.date.startsWith(month))
+  const tasks = (await recentRes.json() as WRTask[]).filter((task) => {
+    const start = taskStartDate(task)
+    const end = taskEndDate(task)
+    return start.slice(0, 7) <= month && end.slice(0, 7) >= month
+  })
   const byDate = new Map<string, WRTask[]>()
   for (const task of tasks) {
     byDate.set(task.date, [...(byDate.get(task.date) ?? []), task])
@@ -323,6 +353,7 @@ async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
     period: { start: `${month}-01`, end: `${month}-31` },
     total: tasks.length,
     days,
+    tasks,
   }
 }
 
@@ -380,13 +411,17 @@ function WorkCalendar({
   function renderMonth(m: string) {
     const data = dataByMonth.get(m)
     const cells = buildCalendarCells(m)
+    const weeks = chunkWeeks(cells)
     const byDate = new Map<string, MonthlyDay>()
     for (const day of data?.days ?? []) byDate.set(day.date, day)
     const isLoading = monthQueries[months.indexOf(m)]?.isLoading
+    const allTasks = data?.tasks ?? Array.from(new Map(
+      (data?.days ?? []).flatMap((day) => (day.tasks ?? []).map((task) => [task.id, task] as const)),
+    ).values())
 
     return (
-      <section key={m} className="rounded-3xl border border-slate-200/70 bg-white/65 p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/30">
-        <div className="mb-3 flex items-end justify-between">
+      <section key={m} className="border-t border-slate-200/80 first:border-t-0 dark:border-slate-800/80">
+        <div className="flex items-end justify-between px-2 py-4">
           <div>
             <p className="text-xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(m)}</p>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -400,71 +435,65 @@ function WorkCalendar({
           )}
         </div>
 
-        <div className="grid grid-cols-7 gap-2 text-center">
-          {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
-            <div key={d} className="py-1 text-[10px] font-bold text-slate-400">{d}</div>
-          ))}
-          {cells.map((cell) => {
-            const day = byDate.get(cell.date)
-            const isToday = cell.date === today
-            const intensity = day ? Math.max(14, Math.round(day.avg_progress)) : 0
+        <div className="overflow-hidden border-y border-slate-200/80 dark:border-slate-800/80">
+          {weeks.map((week, weekIndex) => {
+            const weekStart = week[0].date
+            const weekEnd = week[6].date
+            const weekTasks = allTasks
+              .filter((task) => taskStartDate(task) <= weekEnd && taskEndDate(task) >= weekStart)
+              .slice(0, 4)
             return (
-              <button
-                key={cell.date}
-                onClick={() => {
-                  onMonthChange(cell.date.slice(0, 7))
-                  onSelectDate(cell.date)
-                }}
-                className={`min-h-[116px] rounded-2xl border p-2.5 text-left transition-all cursor-pointer
-                  ${cell.inMonth
-                    ? 'border-slate-200/80 bg-white/70 hover:border-cyan-400 dark:border-slate-800/80 dark:bg-slate-950/35'
-                    : 'border-transparent bg-white/25 opacity-45 dark:bg-slate-900/15'
-                  }
-                  ${isToday ? 'ring-2 ring-cyan-400/70' : ''}`}
+              <div
+                key={`${m}-${weekIndex}`}
+                className="relative grid min-h-[118px] grid-cols-7 border-t border-slate-200/70 first:border-t-0 dark:border-slate-800/70"
               >
-                <div className="flex items-center justify-between">
-                  <span className={`text-xs font-bold ${isToday ? 'text-cyan-600 dark:text-cyan-300' : 'text-slate-600 dark:text-slate-300'}`}>
-                    {cell.day}
-                  </span>
-                  {day && (
-                    <span className="rounded-full bg-slate-950 px-1.5 py-0.5 text-[9px] font-bold text-white dark:bg-cyan-300 dark:text-slate-950">
-                      {day.task_count}
-                    </span>
-                  )}
-                </div>
-                {day && (
-                  <div className="mt-2 space-y-1">
-                    {(day.tasks ?? []).slice(0, 3).map((task) => {
-                      const tone = task.progress >= 100
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-200'
-                        : day.overdue_count > 0
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100'
-                          : 'bg-cyan-100 text-cyan-900 dark:bg-cyan-400/20 dark:text-cyan-100'
-                      return (
-                        <div
-                          key={task.id}
-                          className={`rounded-md px-1.5 py-1 text-[10px] font-semibold leading-tight shadow-sm ${tone}`}
-                          title={`${task.time || '--:--'} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
-                        >
-                          <span className="mr-1 tabular-nums opacity-70">{task.time || '--:--'}</span>
-                          <span className="block truncate">{task.task_name}</span>
-                        </div>
-                      )
-                    })}
-                    {day.task_count > 3 && (
-                      <div className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-                        +{day.task_count - 3}개 더
-                      </div>
-                    )}
-                    <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                {week.map((cell) => {
+                  const day = byDate.get(cell.date)
+                  const isToday = cell.date === today
+                  return (
+                    <button
+                      key={cell.date}
+                      onClick={() => {
+                        onMonthChange(cell.date.slice(0, 7))
+                        onSelectDate(cell.date)
+                      }}
+                      className={`relative min-h-[118px] border-l border-slate-200/60 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-800/70 dark:hover:bg-cyan-950/20
+                        ${cell.inMonth ? 'bg-white/50 dark:bg-slate-950/20' : 'bg-slate-50/60 text-slate-300 dark:bg-slate-900/20 dark:text-slate-600'}
+                        ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
+                    >
+                      <span className={`absolute right-2 top-1.5 text-xs font-black tabular-nums ${isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {cell.day}
+                      </span>
+                      {day && (
+                        <span className="absolute left-2 top-2 text-[9px] font-bold text-slate-400 dark:text-slate-500">
+                          {day.task_count}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+
+                <div className="pointer-events-none absolute inset-x-0 top-8 grid grid-cols-7 gap-y-1 px-1">
+                  {weekTasks.map((task, row) => {
+                    const segmentStart = taskStartDate(task) > weekStart ? taskStartDate(task) : weekStart
+                    const segmentEnd = taskEndDate(task) < weekEnd ? taskEndDate(task) : weekEnd
+                    const startCol = week.findIndex((cell) => cell.date === segmentStart) + 1
+                    const endCol = week.findIndex((cell) => cell.date === segmentEnd) + 1
+                    const startsBefore = taskStartDate(task) < weekStart
+                    const endsAfter = taskEndDate(task) > weekEnd
+                    return (
                       <div
-                        className={day.overdue_count > 0 ? 'h-full rounded-full bg-amber-500' : 'h-full rounded-full bg-cyan-500'}
-                        style={{ width: `${intensity}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </button>
+                        key={`${task.id}-${weekIndex}`}
+                        className={`min-w-0 px-2 py-1 text-[10px] font-bold leading-none shadow-sm ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
+                        style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row + 1 }}
+                        title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
+                      >
+                        <span className="block truncate">{task.task_name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             )
           })}
         </div>
@@ -490,12 +519,20 @@ function WorkCalendar({
         </button>
       </div>
 
+      <div className="sticky top-0 z-10 grid grid-cols-7 border-y border-slate-200/80 bg-white/90 text-center backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/90">
+        {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
+          <div key={d} className="py-2 text-[10px] font-bold text-slate-400">{d}</div>
+        ))}
+      </div>
+
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="max-h-[calc(100vh-220px)] min-h-[620px] space-y-5 overflow-y-auto pr-2"
+        className="max-h-[calc(100vh-220px)] min-h-[620px] overflow-y-auto pr-2"
       >
-        {months.map(renderMonth)}
+        <div className="overflow-hidden rounded-b-3xl bg-white/45 dark:bg-slate-950/20">
+          {months.map(renderMonth)}
+        </div>
       </div>
       <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-xs text-slate-500 dark:border-slate-800/80 dark:bg-slate-950/35 dark:text-slate-400">
         날짜를 클릭하면 해당 일자의 일별 업무일지로 이동합니다. 리본은 시간순 업무, 하단 막대는 평균 진행도와 마감 위험을 나타냅니다.
