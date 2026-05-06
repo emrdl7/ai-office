@@ -19,3 +19,16 @@ output_checklist:
   - '"더 좋아서" 같은 주관적 표현 금지 — 수치나 기준으로 대체'
   - 폐기한 대안의 이유 명시
   - 재검토 트리거 조건 포함 (예 — 사용자 10만 초과 시 재검토)
+input_conditions:
+  - 실제 결정 대상과 선택지가 2개 이상 있어야 함
+  - 선택지가 부족하면 가능한 대안을 먼저 도출
+output_template:
+  - Context
+  - Options Considered
+  - Decision
+  - Consequences
+  - Revisit Trigger
+quality_rubric:
+  - 결정 근거가 기준 없이 취향으로 쓰이면 실패
+  - 폐기 대안의 이유가 없으면 실패
+  - 재검토 조건이 없으면 운영 문서로 불완전

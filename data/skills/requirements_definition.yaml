@@ -16,3 +16,17 @@ output_checklist:
   - 각 스토리에 우선순위(Must/Should/Could) 표기
   - AC는 테스트 가능한 형태로 작성
   - 비기능 요구사항(성능, 보안) 별도 섹션 포함
+input_conditions:
+  - 사용자 유형, 목표, 현재 문제 중 최소 2개가 있어야 함
+  - 정보가 부족하면 요구사항을 확정하지 말고 질문 목록을 먼저 제시
+output_template:
+  - Problem Statement
+  - User Stories
+  - Acceptance Criteria
+  - Non-functional Requirements
+  - Out of Scope
+  - Dependencies
+quality_rubric:
+  - AC가 Given/When/Then 또는 테스트 가능한 문장이 아니면 실패
+  - Out of Scope가 없으면 실패
+  - 성공 지표가 없으면 실행 요구사항으로 불완전

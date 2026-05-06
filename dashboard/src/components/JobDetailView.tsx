@@ -1,10 +1,11 @@
 // Job 상세 뷰 — 스텝 타임라인 + 출력물 뷰어 + Gate 컨트롤 + 아티팩트
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Job, JobStep } from '../types'
 import { MatIcon } from './icons'
+import { useStore } from '../store'
 
 // SVG 인라인 렌더러
 function SvgArtifact({ content }: { content: string }) {
@@ -214,6 +215,12 @@ function StepCard({
   const hasVega = step.output?.includes('```vega')
   const isHtmlPreview = step.step_id === 'preview_html' && step.output?.includes('```html')
   const isCode = !hasMermaid && !hasVega && !isHtmlPreview && (step.output?.includes('```html') || step.output?.includes('```css'))
+  const setActiveChannel = useStore((state) => state.setActiveChannel)
+
+  function openComponentLibrary(e: ReactMouseEvent) {
+    e.stopPropagation()
+    setActiveChannel('components')
+  }
 
   // 다운로드 — step 출력물을 .md 파일로
   const download = useCallback(() => {
@@ -299,20 +306,37 @@ function StepCard({
           {(step.persona || (step.skills && step.skills.length > 0) || (step.tools && step.tools.length > 0)) && (
             <div className="flex flex-wrap items-center gap-1 mt-1">
               {step.persona && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full
-                  bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 font-medium">
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={openComponentLibrary}
+                  className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full
+                  bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 font-medium hover:ring-1 hover:ring-violet-300"
+                >
                   <span className="opacity-60">👤</span>{step.persona}
                 </span>
               )}
               {step.skills?.map(s => (
-                <span key={s} className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full
-                  bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium">
+                <span
+                  key={s}
+                  role="button"
+                  tabIndex={0}
+                  onClick={openComponentLibrary}
+                  className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full
+                  bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium hover:ring-1 hover:ring-emerald-300"
+                >
                   <span className="opacity-60">⚡</span>{s}
                 </span>
               ))}
               {step.tools?.map(t => (
-                <span key={t} className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full
-                  bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">
+                <span
+                  key={t}
+                  role="button"
+                  tabIndex={0}
+                  onClick={openComponentLibrary}
+                  className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full
+                  bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium hover:ring-1 hover:ring-amber-300"
+                >
                   <span className="opacity-60">🔧</span>{t}
                 </span>
               ))}

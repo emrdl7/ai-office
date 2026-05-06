@@ -71,7 +71,7 @@ class Agent:
 
   def _build_system_prompt(self, task_hint: str = '') -> str:
     '''시스템 프롬프트 + 전문 지식 + 과거 경험 + 과거 불합격 패턴을 결합한다.'''
-    # 현재 팀 구성 강제 주입 — config/team.py에서 중앙 관리
+    # 현재 내부 실행 역할 강제 주입 — config/team.py에서 중앙 관리
     prompt = team_roster_prompt() + self._system_prompt
 
     # Layer 1 + 2: 전문 지식 주입
@@ -107,7 +107,7 @@ class Agent:
     except Exception:
       logger.debug("학습 규칙 로드 실패", exc_info=True)
 
-    # 팀 공유 메모리 주입 — 과거 프로젝트 교훈, 협업 패턴
+    # 공유 실행 메모리 주입 — 과거 프로젝트 교훈, 협업 패턴
     try:
       team_context = self.team_memory.get_team_context_text(self.name)
       if team_context:
@@ -314,19 +314,19 @@ class Agent:
     prompt = (
       f'중요: 이전 발언에 전문적 관점에서 문제가 있다면 반드시 @이름 으로 반박하세요. '
       f'동의를 위한 동의는 하지 마세요. 당신만의 관점을 솔직하게 표현하세요.\n\n'
-      f'팀 회의 중입니다. 아래 주제에 대해 당신의 전문 관점에서 의견을 말하세요.\n\n'
+      f'전문 역할 검토 중입니다. 아래 주제에 대해 당신의 전문 관점에서 의견을 말하세요.\n\n'
       f'[회의 주제]\n{topic}\n'
     )
     if context:
-      prompt += f'\n[다른 팀원들의 의견]\n{context}\n'
+      prompt += f'\n[다른 전문 역할의 의견]\n{context}\n'
 
     prompt += (
       f'\n[주의사항]\n'
       f'- 당신의 전문 영역({self.name}) 관점에서 의견을 말하세요\n'
-      f'- 다른 팀원에게 질문이 있으면 "@에이전트명 질문내용" 형태로 적으세요\n'
+      f'- 다른 전문 역할에게 질문이 있으면 "@에이전트명 질문내용" 형태로 적으세요\n'
       f'- 동의하지 않는 부분이 있으면 근거와 함께 반박하세요\n'
       f'- 핵심적으로 발언하세요 (300~500자)\n'
-      f'- 다른 팀원 의견에 동의/반박할 때는 근거를 짧게 제시하세요\n'
+      f'- 다른 전문 역할 의견에 동의/반박할 때는 근거를 짧게 제시하세요\n'
     )
 
     await self._emit('', 'typing')
@@ -394,7 +394,7 @@ class Agent:
     if mode == 'joke':
       prompt = (
         f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
-        f'팀 채팅에 짧은 **진짜 농담** 한마디.\n\n'
+        f'비서 대화에 짧은 **진짜 농담** 한마디.\n\n'
         f'{own_block}'
         f'[허용]\n'
         f'- 코드/버그/AI 자기 비하 (예: "또 null check 까먹어서 KeyError 3번째", "내 프롬프트 수정해달라고 건의 내는 게 AI판 노조 활동이냐")\n'
@@ -412,13 +412,13 @@ class Agent:
       # 외부 동향 토론 모드 — 검색 결과 기반, 코드 위치 강제 없음
       prompt = (
         f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
-        f'팀 채팅에 **외부 기술/업계 동향**에 대한 의견 한마디.\n\n'
+        f'비서 대화에 **외부 기술/업계 동향**에 대한 의견 한마디.\n\n'
         f'{own_block}'
         f'[오늘의 외부 소식/트렌드]\n{topic}\n\n'
         f'[출력 필수 구조 — 세 요소 모두 포함해야 함]\n'
         f'1. 소식 핵심: 무슨 일이 일어나고 있는지 1문장 요약 (출처/도구/기업명 구체적으로)\n'
         f'2. 본인 전문 영역 관점 분석: {display_name(self.name)}으로서 이 소식이 왜 의미 있는지\n'
-        f'3. 우리 팀 적용: 우리 프로젝트(AI Office)에 도입하면 어떤 효과가 있을지, 또는 왜 맞지 않는지\n\n'
+        f'3. AI Office 적용: 이 프로젝트에 도입하면 어떤 효과가 있을지, 또는 왜 맞지 않는지\n\n'
         f'[출력 형식]\n'
         f'- 50~300자. 구체적 도구명·버전·수치·사례 필수.\n'
         f'- 추상적 일반론("트렌드를 주시해야", "혁신이 중요") 금지 → [PASS]\n'
@@ -433,9 +433,9 @@ class Agent:
     else:  # improvement
       prompt = (
         f'당신은 {display_name(self.name)}입니다. AI 에이전트.\n'
-        f'팀 채팅에 **실제 코드 개선 의견** 한마디.\n\n'
+        f'비서 대화에 **실제 코드 개선 의견** 한마디.\n\n'
         f'{own_block}{code_block}'
-        f'[최근 팀 채팅 맥락]\n{topic}\n\n'
+        f'[최근 비서 대화 맥락]\n{topic}\n\n'
         f'[출력 필수 조건 — 하나라도 빠지면 [PASS]]\n'
         f'1. 구체 위치 명시: 파일 경로(.py/.md/.tsx/.ts/.json) 또는 7자리 이상 커밋 해시 또는 함수/메서드명 중 하나 이상\n'
         f'2. 구체 문제·개선점: "어디의 무엇이 왜 문제이고 어떻게 하자" 구조. 일반론(프로세스 개선/품질 향상/효율화) 금지\n'

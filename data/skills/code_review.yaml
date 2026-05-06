@@ -18,3 +18,14 @@ output_checklist:
   - 심각도 Critical/High/Medium/Low 분류
   - 개선 코드 스니펫 포함 (변경 전/후)
   - 칭찬 없이 개선 사항만
+input_conditions:
+  - diff, 파일 경로, 코드 블록, PR 설명 중 하나 이상 필요
+  - 실행 환경이나 테스트 명령이 있으면 함께 반영
+output_template:
+  - Findings
+  - Missing Tests
+  - Residual Risks
+quality_rubric:
+  - 위치 없는 finding은 무효
+  - 재현 가능성이나 영향 설명이 없는 지적은 무효
+  - 보안/데이터 손실 가능성은 항상 상위 심각도로 배치

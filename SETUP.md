@@ -106,8 +106,8 @@ bash stop.sh
 
 ```
 ai-office/
-├── agents/          # 에이전트 프롬프트 (성격, 역할)
-│   ├── teamlead.md  # 팀장 (Claude CLI)
+├── agents/          # 실행 역할 프롬프트 (성격, 역할)
+│   ├── teamlead.md  # 비서 (Claude CLI)
 │   ├── planner.md   # 기획자 (OpenCode)
 │   ├── designer.md  # 디자이너 (Groq)
 │   ├── developer.md # 개발자 (OpenCode)
@@ -116,7 +116,7 @@ ai-office/
 ├── server/          # 백엔드 (FastAPI + Python)
 │   ├── main.py      # 진입점
 │   ├── orchestration/
-│   │   ├── office.py    # 핵심 — 팀장 주도 오케스트레이션
+│   │   ├── office.py    # 핵심 — 비서 주도 오케스트레이션
 │   │   ├── intent.py    # 의도 분류 (대화/요청/프로젝트)
 │   │   ├── agent.py     # 에이전트 기반 클래스
 │   │   └── meeting.py   # 회의 시스템
@@ -131,7 +131,7 @@ ai-office/
 │       ├── App.tsx
 │       └── components/
 │           ├── ChatRoom.tsx    # 채팅방
-│           ├── Sidebar.tsx     # 팀원 목록
+│           ├── Sidebar.tsx     # 실행 상태 목록
 │           └── ArtifactModal.tsx # 산출물 모달
 │
 ├── start.sh         # 전체 시작
@@ -145,7 +145,7 @@ ai-office/
 
 | 에이전트 | 러너 | 비용 | 비고 |
 |---------|------|------|------|
-| 팀장 | Claude CLI | Claude Code 구독 | 의도 분류, 최종 검수, 회의 답변 |
+| 비서 | Claude CLI | Claude Code 구독 | 의도 분류, 최종 검수, 검토 답변 |
 | 기획자 | OpenCode | OpenCode 구독 | 태스크 분배, 취합, 압축 |
 | 디자이너 | Groq API | 무료 | Llama 3.3 70B |
 | 개발자 | OpenCode | OpenCode 구독 | 코드 생성, 기술 분석 |

@@ -200,6 +200,58 @@ def get_steps(job_id: str) -> list[dict[str, Any]]:
     return result
 
 
+def get_component_usage_stats(limit: int = 1000) -> dict[str, dict[str, Any]]:
+    """최근 step 실행 이력에서 persona/skill/tool 사용 통계를 집계한다."""
+    c = _conn()
+    rows = c.execute(
+        'SELECT persona, skills_json, tools_json, status, error, started_at, finished_at '
+        'FROM job_steps ORDER BY rowid DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    c.close()
+
+    stats: dict[str, dict[str, Any]] = {
+        'personas': {},
+        'skills': {},
+        'tools': {},
+    }
+
+    def bump(kind: str, component_id: str, row: sqlite3.Row) -> None:
+        if not component_id:
+            return
+        item = stats[kind].setdefault(component_id, {
+            'usage_count': 0,
+            'failure_count': 0,
+            'last_used_at': '',
+            'last_error': '',
+        })
+        item['usage_count'] += 1
+        if row['status'] == 'failed':
+            item['failure_count'] += 1
+            if row['error'] and not item['last_error']:
+                item['last_error'] = str(row['error'])[:300]
+        used_at = row['finished_at'] or row['started_at'] or ''
+        if used_at and used_at > item['last_used_at']:
+            item['last_used_at'] = used_at
+
+    for row in rows:
+        bump('personas', row['persona'] or '', row)
+        try:
+            skills = json.loads(row['skills_json'] or '[]')
+        except Exception:
+            skills = []
+        try:
+            tools = json.loads(row['tools_json'] or '[]')
+        except Exception:
+            tools = []
+        for skill_id in skills:
+            bump('skills', str(skill_id), row)
+        for tool_id in tools:
+            bump('tools', str(tool_id), row)
+
+    return stats
+
+
 # ── Gate CRUD ─────────────────────────────────────────────────────────────────
 
 def open_gate(gate: GateRun) -> None:

@@ -37,11 +37,11 @@ def isolated_workreport_db(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_conversation_intent_direct_response(office_setup):
-    '''대화 의도일 때 팀장이 직접 응답한다 (팀원 소집 없음)'''
+    '''대화 의도일 때 비서가 직접 응답한다 (전문 역할 소집 없음)'''
     office, bus = office_setup
 
     with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
-        mock_claude.return_value = '[CONVERSATION]\n저는 AI Office의 팀장입니다.'
+        mock_claude.return_value = '[CONVERSATION]\n저는 AI Office의 비서입니다.'
         result = await office.receive('너 누구야?')
 
     assert result['state'] == 'completed'
@@ -84,12 +84,12 @@ async def test_worklog_help_request_links_job(office_setup, isolated_workreport_
 @pytest.mark.skip(reason='QUICK_TASK 직접 라우팅 제거됨 — 현재는 Job 파이프라인으로 처리 (2026-04)')
 @pytest.mark.asyncio
 async def test_quick_task_routes_to_single_agent(office_setup):
-    '''단순 요청은 담당 팀원 한 명에게만 전달된다'''
+    '''단순 요청은 담당 전문 역할 하나에만 전달된다'''
     office, bus = office_setup
 
-    # project_runner 내부 LLM 호출(peer 기여·팀장 검수) mock — 재작업 루프 방지
+    # project_runner 내부 LLM 호출(peer 기여·비서 검수) mock — 재작업 루프 방지
     async def _fake_claude(prompt, *args, **kwargs):
-        # peer 기여(second_opinion)는 "없음"으로 스킵, 팀장 검수는 PASS
+        # peer 기여(second_opinion)는 "없음"으로 스킵, 비서 검수는 PASS
         if '합격이면' in prompt:
             return '[PASS] 검수 완료'
         return '없음'

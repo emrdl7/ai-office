@@ -7,7 +7,7 @@
 
 출력:
   - 콘솔 리포트 (스크립트 직접 실행 시)
-  - 팀장 건의게시판 등록 (--register 플래그)
+  - 비서 건의게시판 등록 (--register 플래그)
 
 실행 예시:
   python3 scripts/capability_audit.py
@@ -168,7 +168,7 @@ def main(register: bool = False) -> int:
         print('능력 감사 OK: 모든 에이전트 능력이 최근 로그에서 사용됨')
         return 0
 
-    # --register: 팀장 건의게시판에 등록
+    # --register: 비서 건의게시판에 등록
     if register and total_unused > 0:
         _register_suggestion(results)
 
@@ -204,13 +204,13 @@ def _register_suggestion(results: list[dict]) -> None:
             category='프로세스 개선',
             target_agent='teamlead',
         )
-        print('✅ 팀장 건의게시판 등록 완료')
+        print('✅ 비서 건의게시판 등록 완료')
     except Exception as e:
         print(f'⚠ 건의 등록 실패: {e}')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='에이전트 능력 키워드 감사')
-    parser.add_argument('--register', action='store_true', help='결과를 팀장 건의게시판에 등록')
+    parser.add_argument('--register', action='store_true', help='결과를 비서 건의게시판에 등록')
     args = parser.parse_args()
     sys.exit(main(register=args.register))

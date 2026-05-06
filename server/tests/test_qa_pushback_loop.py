@@ -1,5 +1,5 @@
 # _qa_pushback_round & _file_qa_rule_suggestion 단위 테스트.
-# QA 불합격 → 팀원 의견 → 팀장 중재 ADOPT/MODIFY/REJECT 3시나리오.
+# QA 불합격 → 전문 역할 의견 → 비서 중재 ADOPT/MODIFY/REJECT 3시나리오.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,14 +22,14 @@ def office_stub(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pushback_adopt_files_rule(office_stub):
-  '''팀원 [지지] 의견 다수 + 팀장 ADOPT → draft 건의 등록.'''
+  '''전문 역할 [지지] 의견 다수 + 비서 ADOPT → draft 건의 등록.'''
   from orchestration import agent_interactions, suggestion_filer
   from db.suggestion_store import list_suggestions
 
   responses = iter([
     '[지지] 사용자 입장에서 QA 지적이 타당합니다.',
     '[지지] 이 정도 누락은 재작업이 맞습니다.',
-    '{"decision":"ADOPT","rule":"섹션별 필수 항목 누락 금지","reason":"팀원 모두 지지"}',
+    '{"decision":"ADOPT","rule":"섹션별 필수 항목 누락 금지","reason":"전문 역할 모두 지지"}',
   ])
 
   async def _fake_claude(*args, **kwargs):
@@ -75,14 +75,14 @@ async def test_pushback_adopt_files_rule(office_stub):
 
 @pytest.mark.asyncio
 async def test_pushback_reject_skips_suggestion(office_stub):
-  '''팀원 [반박] 의견 + 팀장 REJECT → 건의 등록 안 됨.'''
+  '''전문 역할 [반박] 의견 + 비서 REJECT → 건의 등록 안 됨.'''
   from orchestration import agent_interactions, suggestion_filer
   from db.suggestion_store import list_suggestions
 
   responses = iter([
     '[반박] QA 기준이 과도합니다. 실무상 허용 범위입니다.',
     '[반박] 이 수준이면 통과해도 무리 없습니다.',
-    '{"decision":"REJECT","rule":"","reason":"팀원 반박 타당"}',
+    '{"decision":"REJECT","rule":"","reason":"전문 역할 반박 타당"}',
   ])
 
   async def _fake_claude(*args, **kwargs):
@@ -119,7 +119,7 @@ async def test_pushback_reject_skips_suggestion(office_stub):
 
 @pytest.mark.asyncio
 async def test_pushback_modify_with_mixed_opinions(office_stub):
-  '''지지/보강 혼합 + 팀장 MODIFY → 수정된 규칙으로 draft 등록.'''
+  '''지지/보강 혼합 + 비서 MODIFY → 수정된 규칙으로 draft 등록.'''
   from orchestration import agent_interactions, suggestion_filer
   from db.suggestion_store import list_suggestions
 

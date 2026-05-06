@@ -18,3 +18,17 @@ output_checklist:
   - 에러 케이스와 에러 코드 정의
   - 변경 시 영향받는 시스템 명시
   - 추정 수치는 (추정) 표기
+input_conditions:
+  - 구현 대상 기능, API, 데이터 모델, 시스템 경계 중 하나 이상 필요
+  - 요구사항이 불명확하면 미결정 사항을 먼저 분리
+output_template:
+  - Goal
+  - Interfaces
+  - Data Model
+  - Flow
+  - Error Cases
+  - Open Questions
+quality_rubric:
+  - 타입/nullable/기본값이 빠지면 실패
+  - 에러 케이스가 없으면 실패
+  - 기존 시스템 영향 범위가 없으면 실패

@@ -358,7 +358,7 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClickProp }: {
         {isColleagueQ && (
           <div className="flex items-center gap-1 mb-1.5 text-teal-500 dark:text-teal-400">
             <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-800/40">
-              <MatIcon name="record_voice_over" className="text-[12px]" /> 동료 질문
+              <MatIcon name="record_voice_over" className="text-[12px]" /> 추가 확인
             </span>
           </div>
         )}

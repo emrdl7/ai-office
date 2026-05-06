@@ -19,3 +19,16 @@ output_checklist:
   - 재현 단계 번호순 명시
   - 심각도 Critical/High/Medium/Low 분류
   - 자동화 가능 여부 표기
+input_conditions:
+  - 요구사항, 사용자 흐름, 구현 명세, 버그 리포트 중 하나 이상 필요
+  - 기대 동작이 불명확하면 먼저 테스트 기준을 정리
+output_template:
+  - Scope
+  - Test Matrix
+  - Test Cases
+  - Automation Candidates
+  - Release Risks
+quality_rubric:
+  - 정상/부정/경계 케이스 중 하나라도 빠지면 실패
+  - 기대 결과가 관찰 가능하지 않으면 실패
+  - 자동화 가능 여부가 없으면 QA 계획으로 불완전

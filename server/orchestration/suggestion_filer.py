@@ -296,9 +296,9 @@ async def _file_qa_rule_suggestion(
     f'**규칙**: {rule_text}\n\n'
     f'**QA 불합격 사유**: {failure_reason[:300]}\n\n'
     f'**단계**: {phase_name}\n\n'
-    f'**팀장 중재 근거**: {arb_reason}\n\n'
-    f'**팀원 의견**\n{opinions_block or "(없음)"}\n\n'
-    f'_QA 판정 → 팀 합의 → 규칙 학습 루프로 자동 등록된 draft입니다. '
+    f'**비서 중재 근거**: {arb_reason}\n\n'
+    f'**전문 역할 의견**\n{opinions_block or "(없음)"}\n\n'
+    f'_QA 판정 → 전문 역할 합의 → 규칙 학습 루프로 자동 등록된 draft입니다. '
     f'승격 시 {display_name(offending_agent)}의 prompt rule로 반영._'
   )
   dup, reason = is_duplicate(title, content)
@@ -552,7 +552,7 @@ async def _file_capability_gap_suggestion(
     f'**발화**: "{message.strip()[:500]}"\n\n'
     f'카테고리: {category}\n\n'
     f'_능력 부족 시그널을 자동 감지해 등록했습니다. '
-    f'AI 팀원이 실행할 수 없는 일은 명확히 정의해 건의하는 것이 자가발전의 출발점입니다._'
+    f'AI 비서가 실행할 수 없는 일은 명확히 정의해 건의하는 것이 자가발전의 출발점입니다._'
   )
 
   # gate 2: 제목 기반 48h 중복

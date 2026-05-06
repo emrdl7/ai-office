@@ -123,7 +123,7 @@ async def test_relationship_suggestion_at_threshold(office_stub, team_memory):
 
 @pytest.mark.asyncio
 async def test_relationship_mediation_emitted_on_threshold(office_stub, team_memory):
-  '''임계치 도달 시 팀장이 선제 중재 메시지를 채팅에 발화한다.'''
+  '''임계치 도달 시 비서가 선제 중재 메시지를 채팅에 발화한다.'''
   from orchestration import agent_interactions
 
   _seed_peer_concerns(team_memory, 'designer', 'developer', 3)

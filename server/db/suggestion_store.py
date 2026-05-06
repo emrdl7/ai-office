@@ -144,10 +144,10 @@ _TARGET_PATTERNS: list[tuple[str, list[str]]] = [
   ('designer', ['designer.md', '@디자인', '@designer', '디자이너', '디자인 에이전트',
                 '아이브', 'UX', 'UI 가이드']),
   ('developer', ['developer.md', '@개발', '@developer', '개발자', '개발 에이전트',
-                 '튜링', '개발팀']),
-  ('qa', ['qa.md', 'QA.md', '@qa', '@QA', 'QA가', 'QA는', 'QA팀', 'QA 기준', 'QA 단계',
+                 '튜링', '개발 영역']),
+  ('qa', ['qa.md', 'QA.md', '@qa', '@QA', 'QA가', 'QA는', 'QA 영역', 'QA 기준', 'QA 단계',
           '데밍', '검수자']),
-  ('teamlead', ['@팀장', '팀장이', '팀장은', '잡스가', '잡스는']),
+  ('teamlead', ['@비서', '비서가', '비서는', '잡스가', '잡스는']),
 ]
 
 

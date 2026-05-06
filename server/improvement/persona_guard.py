@@ -17,7 +17,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
-# 페르소나 감사 대상 에이전트 (teamlead 제외 — 팀장은 역할 특성상 규칙이 적음)
+# 페르소나 감사 대상 에이전트 (teamlead 제외 — 비서는 역할 특성상 규칙이 적음)
 GUARD_AGENTS = ['designer', 'developer', 'planner', 'qa']
 # 감사할 페르소나 섹션
 PERSONA_SECTIONS = ['성격', '판단력', '대화 스타일']

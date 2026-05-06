@@ -2,7 +2,7 @@
 # NOTE: _work_commentary 등 구 Office 메서드 참조 — 4월 리팩터링 후 skip.
 #
 # 흐름: 사용자 프로젝트 입력 → (회의/질문 skip) → 2-phase 실행 →
-#       phase1 peer_review(CONCERN) → phase2 정상 → 팀장 최종 리뷰 → 완료.
+#       phase1 peer_review(CONCERN) → phase2 정상 → 비서 최종 리뷰 → 완료.
 # 목적: P2의 `_execute_project` 분할 리팩터 때 행동 회귀 검증용 시나리오.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch

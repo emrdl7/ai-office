@@ -18,3 +18,15 @@ output_checklist:
   - 인용은 원문 표현 유지, 번역 시 번역 표기
   - 접속일 또는 발행일 명시 (시점 의존 정보일 때)
   - Tier 3 출처 사용 시 다른 출처로 교차 검증
+input_conditions:
+  - 외부 사실, 최신 정보, 통계, 법/정책/가격/제품 정보가 포함될 때 사용
+  - 출처가 없는 입력은 "미검증"으로 표시
+output_template:
+  - Claims
+  - Sources
+  - Source Reliability
+  - Unverified / Needs Follow-up
+quality_rubric:
+  - 주요 주장에 출처가 없으면 실패
+  - 2차 출처만 보고 원문 확인 없이 단정하면 실패
+  - 날짜 의존 정보에 발행일/접속일이 없으면 실패

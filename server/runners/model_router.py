@@ -7,6 +7,10 @@
 from __future__ import annotations
 
 import logging
+import json
+import os
+import shutil
+from pathlib import Path
 from typing import Any
 
 from runners.claude_runner import (
@@ -15,9 +19,18 @@ from runners.claude_runner import (
   ClaudeTimeoutError,
   PermanentClaudeRunnerError,
 )
+from runners.codex_runner import (
+  run_codex_isolated,
+  CodexRunnerError,
+  CodexTimeoutError,
+  PermanentCodexRunnerError,
+)
 from runners.gemini_runner import run_gemini, GeminiRunnerError
 
 logger = logging.getLogger(__name__)
+
+_PROVIDER_PATH = Path(__file__).parent.parent / 'data' / 'llm_provider.json'
+_VALID_PROVIDERS = {'claude', 'codex'}
 
 # deep tier (Opus) 일일 호출 한도
 _DEEP_TIER_DAILY_LIMIT = 10
@@ -79,6 +92,114 @@ _TIER: dict[str, dict[str, Any]] = {
   },
 }
 
+_CODEX_TIER: dict[str, dict[str, str]] = {
+  'nano': {'model': 'gpt-5.3-codex-spark', 'reasoning_effort': 'low'},
+  'fast': {'model': 'gpt-5.4-mini', 'reasoning_effort': 'low'},
+  'standard': {'model': 'gpt-5.4', 'reasoning_effort': 'medium'},
+  'deep': {'model': 'gpt-5.5', 'reasoning_effort': 'high'},
+  'research': {'model': 'gpt-5.5', 'reasoning_effort': 'medium'},
+}
+
+
+def get_llm_provider() -> str:
+  """Return active primary provider for Claude-class tiers."""
+  env_provider = os.environ.get('LLM_PROVIDER', '').strip().lower()
+  if env_provider in _VALID_PROVIDERS:
+    return env_provider
+  try:
+    raw = json.loads(_PROVIDER_PATH.read_text('utf-8')) if _PROVIDER_PATH.exists() else {}
+    provider = str(raw.get('provider', 'claude')).strip().lower()
+    if provider in _VALID_PROVIDERS:
+      return provider
+  except Exception:
+    logger.debug('[model_router] provider 설정 로드 실패', exc_info=True)
+  return 'claude'
+
+
+def set_llm_provider(provider: str) -> dict[str, Any]:
+  provider = provider.strip().lower()
+  if provider not in _VALID_PROVIDERS:
+    raise ValueError(f'지원하지 않는 provider: {provider}')
+  _PROVIDER_PATH.parent.mkdir(parents=True, exist_ok=True)
+  payload = {'provider': provider}
+  _PROVIDER_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), 'utf-8')
+  return payload
+
+
+def provider_status() -> dict[str, Any]:
+  return {
+    'provider': get_llm_provider(),
+    'codex_tiers': _CODEX_TIER,
+    'available': {
+      'claude': bool(shutil.which(os.environ.get('CLAUDE_CLI', 'claude'))),
+      'codex': bool(shutil.which(os.environ.get('CODEX_CLI', 'codex'))),
+      'gemini': bool(os.environ.get('GOOGLE_API_KEY')) or (Path.home() / '.gemini' / 'oauth_creds.json').exists(),
+    },
+    'config_path': str(_PROVIDER_PATH),
+    'env_override': os.environ.get('LLM_PROVIDER', ''),
+  }
+
+
+def _codex_model_for_tier(tier: str) -> str:
+  return (
+    os.environ.get(f'CODEX_MODEL_{tier.upper()}')
+    or os.environ.get('CODEX_MODEL')
+    or _CODEX_TIER.get(tier, {}).get('model', '')
+  )
+
+
+def _codex_reasoning_for_tier(tier: str) -> str:
+  return (
+    os.environ.get(f'CODEX_REASONING_EFFORT_{tier.upper()}')
+    or os.environ.get('CODEX_REASONING_EFFORT')
+    or _CODEX_TIER.get(tier, {}).get('reasoning_effort', '')
+  )
+
+
+async def _run_provider(
+  runner: str,
+  model: str | None,
+  tier: str,
+  full_prompt: str,
+  prompt: str,
+  system: str,
+  timeout: float,
+  max_turns: int,
+) -> tuple[str, str]:
+  if runner == 'claude':
+    text = await run_claude_isolated(
+      full_prompt,
+      model=model or '',
+      timeout=timeout,
+      max_turns=max_turns,
+    )
+    return text, model or 'claude'
+  if runner == 'codex':
+    codex_model = _codex_model_for_tier(tier)
+    codex_effort = _codex_reasoning_for_tier(tier)
+    text = await run_codex_isolated(
+      full_prompt,
+      model=codex_model,
+      reasoning_effort=codex_effort,
+      timeout=timeout,
+    )
+    model_label = codex_model or 'codex'
+    if codex_effort:
+      model_label = f'{model_label}:{codex_effort}'
+    return text, model_label
+  if runner == 'gemini':
+    text = await run_gemini(prompt=prompt, system=system, timeout=timeout)
+    return text, 'gemini'
+  if runner == 'sonnet':
+    text = await run_claude_isolated(
+      full_prompt,
+      model='claude-sonnet-4-6',
+      timeout=timeout,
+      max_turns=max_turns,
+    )
+    return text, 'claude-sonnet-4-6'
+  raise ValueError(f'알 수 없는 runner: {runner}')
+
 
 async def run(
   tier: str,
@@ -125,33 +246,38 @@ async def run(
       pass
 
   full_prompt = f'{system}\n\n---\n\n{prompt}' if system else prompt
+  primary_runner = spec['runner']
+  active_provider = get_llm_provider()
+  if primary_runner == 'claude' and active_provider == 'codex':
+    primary_runner = 'codex'
 
   # ── Primary 호출 ──────────────────────────────────────────────
   try:
-    if spec['runner'] == 'claude':
-      text = await run_claude_isolated(
-        full_prompt,
-        model=spec['model'],
-        timeout=timeout,
-        max_turns=max_turns,
-      )
-      model_used = spec['model']
-    else:
-      text = await run_gemini(prompt=prompt, system=system, timeout=timeout)
-      model_used = 'gemini'
-    _record(tier, spec, agent_id, prompt, text)
+    text, model_used = await _run_provider(
+      primary_runner,
+      spec.get('model'),
+      tier,
+      full_prompt,
+      prompt,
+      system,
+      timeout,
+      max_turns,
+    )
+    _record(tier, {'runner': primary_runner, 'model': model_used}, agent_id, prompt, text)
     return text, model_used
 
-  except PermanentClaudeRunnerError:
+  except (PermanentClaudeRunnerError, PermanentCodexRunnerError):
     # CLI 인수 오류 — 폴백해도 동일 결과이므로 즉시 실패
     raise
 
-  except (ClaudeRunnerError, ClaudeTimeoutError, GeminiRunnerError) as primary_err:
+  except (ClaudeRunnerError, ClaudeTimeoutError, CodexRunnerError, CodexTimeoutError, GeminiRunnerError) as primary_err:
     _primary_err_str = str(primary_err)  # except 블록 종료 후 primary_err는 삭제되므로 미리 저장
     fallback = spec.get('fallback')
+    if fallback == 'sonnet' and active_provider == 'codex':
+      fallback = 'codex'
     logger.warning(
       '[model_router] %s(%s) 실패 → fallback=%s | %s',
-      spec['runner'], spec.get('model', ''), fallback, primary_err,
+      primary_runner, spec.get('model', ''), fallback, primary_err,
     )
 
     # 폴백 이벤트 발행 (event_bus는 선택적 — 없으면 생략)
@@ -166,7 +292,7 @@ async def run(
         ),
         data={
           'tier': tier,
-          'primary': spec['runner'],
+          'primary': primary_runner,
           'primary_model': spec.get('model'),
           'fallback': fallback,
           'reason': _primary_err_str[:300],
@@ -180,19 +306,17 @@ async def run(
     raise RuntimeError(f'[model_router] {tier} 실패, 폴백 없음')
 
   try:
-    if fallback == 'gemini':
-      text = await run_gemini(prompt=prompt, system=system, timeout=timeout)
-      fb_model = 'gemini'
-    else:
-      # 'sonnet' — Gemini primary가 실패할 때 Claude Sonnet으로
-      text = await run_claude_isolated(
-        full_prompt,
-        model='claude-sonnet-4-6',
-        timeout=timeout,
-        max_turns=max_turns,
-      )
-      fb_model = 'claude-sonnet-4-6'
-    _record(tier, {'runner': fallback, 'model': fallback}, agent_id, prompt, text)
+    text, fb_model = await _run_provider(
+      fallback,
+      'claude-sonnet-4-6' if fallback == 'sonnet' else None,
+      tier,
+      full_prompt,
+      prompt,
+      system,
+      timeout,
+      max_turns,
+    )
+    _record(tier, {'runner': fallback, 'model': fb_model}, agent_id, prompt, text)
     return text, fb_model
 
   except Exception as fallback_err:

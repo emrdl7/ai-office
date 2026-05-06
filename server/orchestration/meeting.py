@@ -24,12 +24,12 @@ MENTION_MAP: dict[str, str] = build_mention_map()
 
 
 class Meeting:
-  '''팀 회의 — 라운드별 의견 + 반박 + 합의 도출.
+  '''전문 역할 검토 — 라운드별 의견 + 반박 + 합의 도출.
 
   라운드 1: 각자 의견 제시 (이전 발언 참고)
   라운드 2: 반박 라운드 — 전문적으로 동의하지 않는 부분 지적
   라운드 3: @멘션 답변 + 추가 토론
-  라운드 4: 팀장이 합의 정리
+  라운드 4: 비서가 합의 정리
   '''
 
   MAX_ROUNDS = 4
@@ -54,7 +54,7 @@ class Meeting:
     import asyncio
 
     # 라운드 1: 각자 의견
-    context = f'[팀장 브리핑]\n{self.briefing}\n'
+    context = f'[비서 브리핑]\n{self.briefing}\n'
 
     for name in self.participants:
       agent = self.agents.get(name)
@@ -77,7 +77,7 @@ class Meeting:
         return name, ''
       system = agent._build_system_prompt(task_hint=self.topic)
       prompt = (
-        f'팀 회의 라운드 1이 끝났습니다. 아래는 모든 팀원의 의견입니다:\n\n'
+        f'전문 역할 검토 라운드 1이 끝났습니다. 아래는 모든 의견입니다:\n\n'
         f'{round1_summary}\n\n'
         f'---\n\n'
         f'당신은 {name}입니다. 위 의견 중 당신의 전문 관점에서 동의하지 않거나 우려되는 부분이 있습니까?\n\n'
@@ -133,7 +133,7 @@ class Meeting:
         ))
         await self._emit(target, answer, 'response')
 
-    # 라운드 4: 팀장 합의 정리 — 반박이 있었으면 결론을 정리
+    # 라운드 4: 비서 합의 정리 — 반박이 있었으면 결론을 정리
     if has_challenges:
       consensus = await self._build_consensus()
       if consensus:
@@ -143,17 +143,17 @@ class Meeting:
     return self.records
 
   async def _build_consensus(self) -> str:
-    '''팀장이 회의 내용을 정리하고 합의사항을 도출한다.'''
+    '''비서가 검토 내용을 정리하고 합의사항을 도출한다.'''
     all_opinions = '\n'.join(
       f'[{r.speaker}, 라운드{r.round}] {r.content}' for r in self.records
     )
     prompt = (
-      f'당신은 팀장입니다. 팀 회의가 끝났습니다.\n\n'
+      f'당신은 AI Office 비서입니다. 전문 역할 검토가 끝났습니다.\n\n'
       f'[회의 주제]\n{self.topic}\n\n'
       f'[전체 발언]\n{all_opinions}\n\n'
-      f'팀장으로서 회의를 정리하세요:\n'
+      f'비서로서 검토 내용을 정리하세요:\n'
       f'1. 합의된 사항 (모두 동의한 방향)\n'
-      f'2. 반박이 있었던 사항과 결론 (팀장 판단)\n'
+      f'2. 반박이 있었던 사항과 결론 (비서 판단)\n'
       f'3. 이 방향으로 진행하겠다는 결론\n\n'
       f'3~5문장, 메신저 대화 스타일. 마크다운 금지.'
     )
@@ -165,25 +165,25 @@ class Meeting:
       return '의견 감사합니다. 종합해서 방향 잡고 진행하겠습니다.'
 
   async def _teamlead_answer(self, sender: str, question: str) -> str:
-    '''팀장(Claude)이 회의 중 질문에 답변한다.'''
+    '''비서가 검토 중 질문에 답변한다.'''
     # 지금까지 회의 내용을 컨텍스트로 전달
     meeting_context = '\n'.join(
       f'[{r.speaker}] {r.content}' for r in self.records
     )
 
     prompt = (
-      f'팀 회의 중입니다. 당신은 팀장입니다.\n\n'
+      f'전문 역할 검토 중입니다. 당신은 AI Office 비서입니다.\n\n'
       f'[회의 주제]\n{self.topic}\n\n'
-      f'[지금까지 회의 내용]\n{meeting_context}\n\n'
+      f'[지금까지 검토 내용]\n{meeting_context}\n\n'
       f'{sender}이(가) 당신에게 질문/요청했습니다.\n\n'
-      f'팀장으로서 짧고 명확하게 답변하세요 (1~3문장, 메신저 대화 스타일).\n'
+      f'비서로서 짧고 명확하게 답변하세요 (1~3문장, 메신저 대화 스타일).\n'
       f'마크다운 형식 사용하지 마세요.'
     )
     try:
       response = await run_claude_isolated(prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
       return response.strip()
     except Exception:
-      logger.debug("팀장 회의 응답 LLM 호출 실패", exc_info=True)
+      logger.debug("비서 검토 응답 LLM 호출 실패", exc_info=True)
       return '확인했습니다. 진행해 주세요.'
 
   def get_summary(self) -> str:
@@ -207,7 +207,7 @@ class Meeting:
         continue
 
       # @로 시작하는 멘션 + 그 뒤의 문장을 추출
-      # "@팀장님, 사이트의 주 타겟을 확정해 주십시오" 패턴
+      # "@비서님, 사이트의 주 타겟을 확정해 주십시오" 패턴
       mentions = re.findall(
         r'@([가-힣A-Za-z]+(?:님)?)[,.]?\s*([^@\n]*?)(?=@|$)',
         rec.content,

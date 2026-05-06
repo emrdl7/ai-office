@@ -203,7 +203,7 @@ def _build_patch_prompt(suggestion: dict) -> str:
 당신은 AI Office 프로젝트의 자가개선 엔지니어입니다.
 프로젝트 루트: {PROJECT_ROOT}
 
-팀원 {suggestion['agent_id']}이(가) 다음 개선사항을 건의했고, 사용자가 승인했습니다.
+전문 역할 {suggestion['agent_id']}이(가) 다음 개선사항을 건의했고, 사용자가 승인했습니다.
 
 ## 건의 ID: {suggestion['id']}
 ## 제목: {suggestion['title']}

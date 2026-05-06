@@ -151,7 +151,7 @@ async def _weekly_audit_loop() -> None:
       drift = await run_persona_drift_audit(hours=48)
       if drift.get('drift_agents'):
         logger.info('주간 페르소나 드리프트 감지: %s', drift['drift_agents'])
-      # 능력 감사 — 스크립트 실행, --register로 팀장 건의 자동 등록
+      # 능력 감사 — 스크립트 실행, --register로 비서 건의 자동 등록
       import subprocess as _sp
       from pathlib import Path as _P
       repo_root = _P(__file__).parent.parent

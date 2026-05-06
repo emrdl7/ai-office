@@ -77,7 +77,7 @@ agent별 5~10개 대표 입력 + rubric으로 nightly CI. 기존 `persona_drift`
 ### 주간 감사
 `_weekly_audit_loop` — 부팅 10분 뒤 1회 + 7일 주기로 자동 실행.
 - 페르소나 드리프트: 최근 48h 발화 10건 LLM-as-judge 채점
-- 능력 감사: `scripts/capability_audit.py --register` (unused 있으면 팀장 건의 자동 등록)
+- 능력 감사: `scripts/capability_audit.py --register` (unused 있으면 비서 건의 자동 등록)
 
 수동 트리거: `POST /api/improvement/capability-audit?register=true` / `GET /api/team/persona-drift?hours=48`.
 

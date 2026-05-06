@@ -1,4 +1,4 @@
-# run_retrospective — 메트릭 주입 / 팀장 종합 / retrospective.md 저장 단위 테스트.
+# run_retrospective — 메트릭 주입 / 비서 종합 / retrospective.md 저장 단위 테스트.
 # NOTE: orchestration.teamlead_review 는 4월 리팩터링에서 제거됨 — 전체 skip.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -94,7 +94,7 @@ async def test_retrospective_saves_artifact_and_lessons(office_stub):
   call_count = {'n': 0}
   async def _fake_claude(prompt, **kwargs):
     call_count['n'] += 1
-    # 팀장 종합 프롬프트는 "팀원들의 회고 발언을 종합" 문구 포함
+    # 비서 종합 프롬프트는 전문 역할 회고 발언 종합 문구 포함
     if '종합' in prompt:
       return synth
     # 에이전트별 회고 프롬프트는 display_name을 포함
@@ -125,7 +125,7 @@ async def test_retrospective_saves_artifact_and_lessons(office_stub):
   doc = office_stub._workspace_saved['retrospective.md']
   assert '# 테스트 프로젝트 — 팀 회고' in doc
   assert '관통하는 실마리' in doc
-  assert '팀원별 배운 점' in doc
+  assert '전문 역할별 배운 점' in doc
 
   # SharedLesson 저장됨
   lessons = office_stub.team_memory.get_all_lessons()
@@ -135,7 +135,7 @@ async def test_retrospective_saves_artifact_and_lessons(office_stub):
 
 @pytest.mark.asyncio
 async def test_peer_lesson_commentary_round_robin(office_stub):
-  '''회고 후 라운드로빈으로 다른 팀원이 교훈 연결 코멘트를 남긴다.'''
+  '''회고 후 라운드로빈으로 다른 전문 역할이 교훈 연결 코멘트를 남긴다.'''
   from orchestration import teamlead_review
 
   lesson_pairs = [

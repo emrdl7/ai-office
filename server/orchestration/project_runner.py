@@ -53,7 +53,7 @@ async def _handle_quick_task(
   analysis: str,
   reference_context: str,
 ) -> dict[str, Any]:
-  '''단순 작업 — 팀원 한 명이 처리'''
+  '''단순 작업 — 전문 역할 하나가 처리'''
   agent = office.agents.get(agent_name)
   if not agent:
     return {'state': 'error', 'response': f'{agent_name} 에이전트를 찾을 수 없습니다.', 'artifacts': []}
@@ -82,8 +82,8 @@ async def _handle_quick_task(
   ctx_parts = [
     f'[작업 모드] 이 작업은 당신 혼자 수행하는 단독 작업입니다.\n'
     f'- 당신의 전문 영역은 "{my_scope}"입니다. 이 관점에서만 분석/작성하세요.\n'
-    f'- 다른 팀원(디자이너, 개발자, QA 등)의 전문 영역을 대신 분석하지 마세요.\n'
-    f'- 다른 팀원이 참여하지 않았으므로 "각 팀 결과를 취합" 등 허위 표현을 쓰지 마세요.\n'
+    f'- 다른 전문 역할(디자인, 개발, QA 등)의 영역을 대신 분석하지 마세요.\n'
+    f'- 다른 전문 역할이 참여하지 않았으므로 "각 역할 결과를 취합" 등 허위 표현을 쓰지 마세요.\n'
     f'- 다른 영역의 검토가 필요하면 "이 부분은 디자이너/개발자 검토가 필요합니다"로 남기세요.\n\n'
     f'[중요: 산출물 작성 규칙]\n'
     f'- 착수 인사는 이미 채팅으로 전달했다. 여기서는 산출물 본문만 작성하라.\n'
@@ -222,7 +222,7 @@ async def _handle_quick_task(
   except Exception:
     logger.warning("퀵태스크 산출물 저장 실패", exc_info=True)
 
-  # 팀장 최종 검수 (최대 1회 보완)
+  # 비서 최종 검수 (최대 1회 보완)
   office._state = OfficeState.TEAMLEAD_REVIEW
   office._active_agent = 'teamlead'
   await office._emit('teamlead', '최종 검수하겠습니다.', 'response')
@@ -236,7 +236,7 @@ async def _handle_quick_task(
   try:
     review_response = await run_claude_isolated(review_prompt, timeout=60.0, model='claude-haiku-4-5-20251001')
   except Exception:
-    logger.warning("팀장 최종 검수 실행 실패, PASS 처리", exc_info=True)
+    logger.warning("비서 최종 검수 실행 실패, PASS 처리", exc_info=True)
     review_response = '[PASS]'
   review_text = review_response.strip()
 
@@ -247,7 +247,7 @@ async def _handle_quick_task(
 
     office._state = OfficeState.WORKING
     office._active_agent = agent_name
-    revision_prompt = f'{prompt}\n\n[팀장 보완 지시 — 반드시 반영할 것]\n{feedback}\n\n[이전 결과물]\n{result}'
+    revision_prompt = f'{prompt}\n\n[비서 보완 지시 — 반드시 반영할 것]\n{feedback}\n\n[이전 결과물]\n{result}'
     result = await agent.handle(revision_prompt, context='\n\n'.join(ctx_parts))
 
     # 보완된 결과물 재저장
@@ -256,11 +256,11 @@ async def _handle_quick_task(
     except Exception:
       logger.warning("보완 결과물 재저장 실패", exc_info=True)
 
-  # 팀장 최종 보고 — 사용자에게 결과 요약 + 산출물 링크
+  # 비서 최종 보고 — 사용자에게 결과 요약 + 산출물 링크
   report_prompt = (
     f'[사용자 원본 요구사항]\n{prompt[:500]}\n\n'
     f'[완성된 산출물 요약]\n{result[:3000]}\n\n'
-    f'팀장으로서 사용자에게 최종 보고하세요.\n'
+    f'AI Office 비서로서 사용자에게 최종 보고하세요.\n'
     f'- 누가 어떤 작업을 했는지 (이 경우 {display_name(agent_name)}이 단독 수행)\n'
     f'- 핵심 결과 요약 (3~5줄)\n'
     f'- 추가 검토가 필요한 사항이 있으면 언급\n'
@@ -270,7 +270,7 @@ async def _handle_quick_task(
   try:
     report = await teamlead_agent.handle(report_prompt) if teamlead_agent else ''
   except Exception:
-    logger.warning("팀장 최종 보고 생성 실패", exc_info=True)
+    logger.warning("비서 최종 보고 생성 실패", exc_info=True)
     report = ''
 
   if report:
@@ -321,7 +321,7 @@ async def _handle_project(
 ) -> dict[str, Any]:
   '''프로젝트 — 단계별 진행 (기획 → 디자인 → 개발) + 중간 확인.
 
-  각 단계가 끝나면 팀장이 결과를 보고하고,
+  각 단계가 끝나면 비서가 결과를 보고하고,
   확인이 필요한 사항은 사용자에게 질문한다.
   '''
   # 이전 대화 요약이 있으면 브리핑에 포함
@@ -339,11 +339,11 @@ async def _handle_project(
   participants = get_meeting_participants(project_type)
 
   # 업무 수신 확인
-  await office._emit('teamlead', f'알겠습니다. 확인하고 팀원들과 논의해보겠습니다. (프로젝트 유형: {project_type.value})', 'response')
+  await office._emit('teamlead', f'알겠습니다. 필요한 전문 역할을 확인하겠습니다. (프로젝트 유형: {project_type.value})', 'response')
 
   # 1. 회의 소집 — 방향 잡기
   office._state = OfficeState.MEETING
-  await office._emit('teamlead', '팀원들 의견을 모아볼게요.', 'response')
+  await office._emit('teamlead', '전문 역할별 관점을 모아보겠습니다.', 'response')
 
   meeting = Meeting(
     topic=user_input,
@@ -355,14 +355,14 @@ async def _handle_project(
   await meeting.run()
   meeting_summary = meeting.get_summary()
 
-  # 2. 팀장이 회의 결과를 바탕으로 프로젝트 단계를 동적 설계
+  # 2. 비서가 검토 결과를 바탕으로 프로젝트 단계를 동적 설계
   dynamic_phases = await _plan_project_phases(office, user_input, analysis, meeting_summary)
   if dynamic_phases:
     phases = dynamic_phases
     await office._emit('teamlead', f'프로젝트를 {len(phases)}단계로 진행하겠습니다.', 'response')
   # dynamic_phases가 None이면 기존 get_phases() 결과를 그대로 사용
 
-  # 3. 팀장이 회의 결과에서 확인 필요한 사항을 사용자에게 질문
+  # 3. 비서가 검토 결과에서 확인 필요한 사항을 사용자에게 질문
   questions = await _extract_user_questions(office, user_input, meeting_summary)
   if questions:
     # @마스터가 안 붙어 있으면 앞에 추가
@@ -437,7 +437,7 @@ async def _plan_project_phases(
   analysis: str,
   meeting_summary: str,
 ) -> list[dict] | None:
-  '''팀장(Claude)이 회의 결과를 바탕으로 프로젝트에 맞는 단계를 동적 설계한다.
+  '''비서가 검토 결과를 바탕으로 프로젝트에 맞는 단계를 동적 설계한다.
 
   Returns:
     프로젝트 단계 리스트. 파싱 실패 시 기존 기본 단계를 반환한다.
@@ -445,9 +445,9 @@ async def _plan_project_phases(
   from runners.json_parser import parse_json
 
   prompt = (
-    '당신은 팀장입니다. 아래 프로젝트에 적합한 작업 단계를 설계하세요.\n\n'
+    '당신은 AI Office 비서입니다. 아래 프로젝트에 적합한 작업 단계를 설계하세요.\n\n'
     f'[프로젝트 지시]\n{user_input[:2000]}\n\n'
-    f'[팀장 분석]\n{analysis[:1000]}\n\n'
+    f'[비서 분석]\n{analysis[:1000]}\n\n'
     f'[회의 내용]\n{meeting_summary[:2000]}\n\n'
     '각 단계를 JSON으로 출력하세요:\n'
     '{"phases": [\n'
@@ -457,7 +457,7 @@ async def _plan_project_phases(
     ']}\n\n'
     '규칙:\n'
     '- 프로젝트 유형에 맞게 필요한 단계만 포함 (웹사이트면 디자인 포함, 분석 보고서면 불필요)\n'
-    '- assigned_to는 각 단계의 전문 영역에 맞는 팀원 배정\n'
+    '- assigned_to는 각 단계의 전문 영역에 맞는 역할 ID 배정\n'
     '- 같은 group의 단계들은 연속 배치 (그룹 끝에서 QA 검수 실행)\n'
     '- 최소 3단계, 최대 10단계\n'
     '- output_format: markdown(기본), html(웹페이지), html+pdf(보고서), md+code(코드 포함)\n\n'
@@ -748,7 +748,7 @@ async def _run_phase_with_qa(
   qa_fail_log_id = getattr(qa_fail_event, 'id', '') if qa_fail_event else ''
   revision_delta = 1
 
-  # QA pushback: 팀원 의견 → 팀장 중재 → ADOPT/MODIFY면 draft rule 등록.
+  # QA pushback: 전문 역할 의견 → 비서 중재 → ADOPT/MODIFY면 draft rule 등록.
   # 실패해도 revision 루프는 계속.
   try:
     from orchestration import agent_interactions, suggestion_filer
@@ -924,7 +924,7 @@ async def _execute_project(
     PHASES, project_type = _default_phases(office, user_input)
   office._current_project_type = project_type
 
-  # 팀원 피드백 초기화
+  # 전문 역할 피드백 초기화
   office._phase_feedback = []
 
   # 프로젝트 메트릭 수집 시작
@@ -962,12 +962,12 @@ async def _execute_project(
       office, phase, all_results, user_input, reference_context,
     )
 
-    # 팀원 피드백 주입 — high priority 우선
+    # 전문 역할 피드백 주입 — high priority 우선
     if office._phase_feedback:
       recent_fb = office._phase_feedback[-5:]
       recent_fb = sorted(recent_fb, key=lambda f: 0 if f.get('priority') == 'high' else 1)
       feedback_lines = [f'- {fb["from"]}: {fb["content"][:100]}' for fb in recent_fb]
-      phase_prompt += f'\n[팀원 피드백 — 가능한 반영할 것]\n' + '\n'.join(feedback_lines) + '\n\n'
+      phase_prompt += f'\n[전문 역할 피드백 — 가능한 반영할 것]\n' + '\n'.join(feedback_lines) + '\n\n'
 
     # 그룹 전환 시 인수인계 코멘트
     if _prev_group and current_group != _prev_group and _prev_agent != agent_name:
@@ -1020,12 +1020,12 @@ async def _execute_project(
       # ── 그룹 마지막: 자문 → 피어리뷰 (실질적 협업) ──
       group_content = '\n\n'.join(v for k, v in all_results.items() if current_group in k)
 
-      # 1) 타 팀원 자문
+      # 1) 다른 전문 역할 자문
       consultation_feedback = await agent_interactions._consult_peers(office, agent_name, group_content, phase, all_results)
       if consultation_feedback:
         # 자문 결과를 담당자에게 전달하여 보완 기회 제공
         await office._emit('teamlead', '자문 결과를 반영합니다.', 'response')
-        office._user_mid_feedback.append(f'[팀원 자문 결과]\n{consultation_feedback}')
+        office._user_mid_feedback.append(f'[전문 역할 자문 결과]\n{consultation_feedback}')
 
       # 2) 피어 리뷰 (실질적 피드백)
       peer_reviews = await agent_interactions._peer_review(office, agent_name, phase_name, group_content, user_input)
@@ -1194,7 +1194,7 @@ async def _emit_final_report(
   '''프로젝트 phase 루프 완료 후 최종 보고 발행.
 
   사이트 구축류(HTML 산출물 포함) → 요약 + 산출물 링크.
-  문서/분석류 → planner 취합 + 팀장 최종 검수 + MAX_REVISION_ROUNDS 보완 루프.
+  문서/분석류 → planner 취합 + 비서 최종 검수 + MAX_REVISION_ROUNDS 보완 루프.
   '''
   has_publishing = (
     any('퍼블리싱' in k for k in all_results)
@@ -1255,7 +1255,7 @@ async def _emit_final_report(
   await office._emit('planner', '', 'typing')
   await _run_planner_synthesize(office, user_input, all_results)
 
-  # 팀장 최종 검수 + 보완 루프
+  # 비서 최종 검수 + 보완 루프
   office._state = OfficeState.TEAMLEAD_REVIEW
   office._active_agent = 'teamlead'
   passed = await _teamlead_final_review(office, user_input, None)
@@ -1537,7 +1537,7 @@ async def _run_planner_synthesize(
 
   revision_section = ''
   if revision_feedback:
-    revision_section = f'[팀장 보완 지시 — 반드시 반영할 것]\n{revision_feedback}\n\n'
+    revision_section = f'[비서 보완 지시 — 반드시 반영할 것]\n{revision_feedback}\n\n'
 
   prompt = (
     f'[사용자 원본 지시]\n{user_input}\n\n'
@@ -1549,7 +1549,7 @@ async def _run_planner_synthesize(
     f'3. 최소 3000자 이상 작성\n'
     f'4. 모든 섹션을 끝까지 완성하라. 문장이 중간에 잘리면 절대 안 된다\n'
     f'5. 오탈자 없이 정확한 한국어로 작성하라\n'
-    f'{("6. 팀장 보완 지시 반영: " + revision_feedback[:500] if revision_feedback else "")}\n\n'
+    f'{("6. 비서 보완 지시 반영: " + revision_feedback[:500] if revision_feedback else "")}\n\n'
     f'마크다운 형식으로 직접 작성하세요.'
   )
 
@@ -1574,7 +1574,7 @@ async def _run_planner_synthesize(
 
 
 async def _teamlead_final_review(office: Any, user_input: str, task_graph: TaskGraph) -> bool:
-  '''팀장(Claude)이 최종 산출물을 검수한다.
+  '''비서가 최종 산출물을 검수한다.
 
   3단계 검증:
     1. 하드코딩 가드 — 파일 존재, 본문 길이, 빈 산출물 탐지
@@ -1682,7 +1682,7 @@ async def _create_handoff_guide(office: Any, group_name: str, group_results: dic
 
   try:
     guide = await run_claude_isolated(
-      f'당신은 팀장입니다. "{target_phase}" 담당자에게 작업 지시를 내려야 합니다.\n\n'
+      f'당신은 AI Office 비서입니다. "{target_phase}" 담당자에게 작업 지시를 내려야 합니다.\n\n'
       f'아래는 "{group_name}" 단계에서 완료된 문서들의 섹션 목록입니다:\n\n'
       f'{sections_text}\n\n'
       f'"{target_phase}" 작업을 수행할 때 어떤 문서의 어떤 섹션을 참고해야 하는지 '
@@ -1754,7 +1754,7 @@ async def _generate_stitch_mockup(office: Any, all_results: dict, user_input: st
 async def _extract_user_questions(office: Any, user_input: str, meeting_summary: str) -> str:
   '''회의 내용에서 사용자에게 확인이 필요한 사항을 추출한다.'''
   prompt = (
-    f'팀 회의가 끝났습니다. 당신은 팀장입니다.\n\n'
+    f'전문 역할 검토가 끝났습니다. 당신은 AI Office 비서입니다.\n\n'
     f'[사용자 요청]\n{user_input}\n\n'
     f'[회의 내용]\n{meeting_summary}\n\n'
     f'회의에서 사용자에게 확인이 필요한 사항이 있습니까?\n'

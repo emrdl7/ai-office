@@ -25,3 +25,15 @@ output_checklist:
   - 각 항목에 화면 위치 또는 컴포넌트명 명시
   - 개선안은 구체적 UI 변경으로 서술
   - 잘된 점은 포함하지 않음
+input_conditions:
+  - 화면, 플로우, 와이어프레임, UI 설명 중 하나 이상 필요
+  - 평가 기준은 닐슨 원칙으로 고정하되 해당 없는 원칙은 제외
+output_template:
+  - Summary
+  - Heuristic Violations
+  - Severity Ranking
+  - Fix Recommendations
+quality_rubric:
+  - 화면 위치 없는 위반 항목은 무효
+  - 원칙 번호와 현상이 연결되지 않으면 실패
+  - 개선안이 UI 변경으로 표현되지 않으면 실패

@@ -38,7 +38,7 @@ def office_stub(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_teamlead_mention_uses_claude(office_stub):
-  '''@팀장 멘션은 run_claude_isolated로 라우팅된다 (agent.respond_to 경로 아님).'''
+  '''@비서 멘션은 run_claude_isolated로 라우팅된다 (agent.respond_to 경로 아님).'''
   from orchestration import agent_interactions
 
   with patch(
@@ -48,7 +48,7 @@ async def test_teamlead_mention_uses_claude(office_stub):
     mock_claude.return_value = '네, 확인했습니다.'
     await agent_interactions._route_agent_mentions(
       office_stub, speaker='developer',
-      content='@팀장 이 부분 검토 부탁드립니다.',
+      content='@비서 이 부분 검토 부탁드립니다.',
     )
 
   mock_claude.assert_called_once()

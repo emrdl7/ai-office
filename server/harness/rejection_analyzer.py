@@ -89,7 +89,7 @@ def record_rejection(feedback: str, task_type: str, memory_root: str = 'data/mem
       task_id=f'rejection-{now[:10]}',
       task_type=task_type,
       success=False,
-      feedback=f'팀장 불합격: {"; ".join(issues[:3])}',
+      feedback=f'비서 검수 불합격: {"; ".join(issues[:3])}',
       tags=['claude_rejection', task_type],
       timestamp=now,
     ))

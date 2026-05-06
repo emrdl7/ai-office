@@ -1,4 +1,4 @@
-# 팀장 배치 리뷰 집계 — _summarize_team_dynamics + run_single fallback.
+# 비서 배치 리뷰 집계 — _summarize_team_dynamics + run_single fallback.
 # NOTE: orchestration.teamlead_review 는 4월 리팩터링에서 제거됨 — 전체 skip.
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch

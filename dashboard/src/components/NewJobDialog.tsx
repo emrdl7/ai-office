@@ -49,7 +49,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   depth: 'light | standard | deep',
   product: '예: B2B SaaS 대시보드 서비스',
   goals: '예: 신규 사용자 온보딩 완료율 +20%',
-  user_segments: '예: 비개발자 팀장, 20-40대',
+  user_segments: '예: 비개발 관리자, 20-40대',
   constraints: '예: 모바일 우선, 다국어 지원',
   project: '예: 메인 랜딩 페이지 리디자인',
   artifact: '리뷰할 URL, 파일 경로, 또는 내용 직접 입력',

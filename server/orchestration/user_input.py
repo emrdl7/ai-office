@@ -35,8 +35,8 @@ async def handle_mid_work_input(office: Any, user_input: str) -> None:
 
   3가지 경우 판단:
     1. 중단 키워드 → IDLE 전환
-    2. @멘션 → 해당 에이전트/팀장이 즉시 응답
-    3. 일반 의견 → 팀장 확인 + 작업 컨텍스트 누적
+    2. @멘션 → 해당 에이전트/비서가 즉시 응답
+    3. 일반 의견 → 비서 확인 + 작업 컨텍스트 누적
   '''
   from orchestration.meeting import MENTION_MAP
 
@@ -62,14 +62,14 @@ async def handle_mid_work_input(office: Any, user_input: str) -> None:
       if target_id == 'teamlead':
         try:
           response = await run_claude_isolated(
-            f'당신은 팀장 잡스입니다. 팀이 작업 중인데 사용자가 이렇게 말했습니다:\n'
+            f'당신은 AI Office 비서입니다. 작업 중인데 사용자가 이렇게 말했습니다:\n'
             f'"{msg}"\n짧게 1~2문장으로 응답하세요 (메신저 톤, 마크다운 금지).',
             model='claude-haiku-4-5-20251001',
             timeout=15.0,
           )
           response_text = response.strip()
         except Exception:
-          logger.debug("팀장 멘션 응답 생성 실패", exc_info=True)
+          logger.debug("비서 멘션 응답 생성 실패", exc_info=True)
           response_text = '네, 확인했습니다. 반영하겠습니다.'
         await office._emit('teamlead', response_text, 'response')
         await _record_commitment(office, 'teamlead', response_text, msg)
@@ -102,7 +102,7 @@ async def handle_mid_work_input(office: Any, user_input: str) -> None:
 
 
 async def _record_commitment(office: Any, committer_id: str, response_text: str, user_msg: str) -> None:
-  # 팀장/에이전트 응답에 다짐 마커("반영하겠" 등)가 있으면 다짐 게시판 등록.
+  # 비서/에이전트 응답에 다짐 마커("반영하겠" 등)가 있으면 다짐 게시판 등록.
   # _file_commitment_suggestion 내부에서 마커 매칭·중복 가드 처리.
   try:
     await office._file_commitment_suggestion(

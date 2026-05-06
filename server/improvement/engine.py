@@ -63,7 +63,7 @@ class ImprovementEngine:
     return report
 
   async def _report_improvements(self, report: ImprovementReport, new_rules: dict[str, list[str]]) -> None:
-    '''팀장이 자가개선 내역을 사용자에게 보고한다.'''
+    '''비서가 자가개선 내역을 사용자에게 보고한다.'''
     lines = [f'📊 **자가개선 분석 완료** (최근 {report.total_projects}개 프로젝트 기준)\n']
 
     # 에이전트 프로파일 요약

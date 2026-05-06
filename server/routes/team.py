@@ -130,7 +130,7 @@ async def get_agent_growth(agent_id: str, days: int = 30) -> dict[str, Any]:
   except Exception:
     pass
 
-  # 동료가 인용/멘션한 횟수 — 발화에 본인 이름 등장 (다른 에이전트 발화에서)
+  # 다른 에이전트가 인용/멘션한 횟수 — 발화에 본인 이름 등장 (다른 에이전트 발화에서)
   display = display_name(agent_id)
   cite_rows = log_conn.execute(
     "SELECT count(*) AS n FROM chat_logs "

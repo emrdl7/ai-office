@@ -31,7 +31,7 @@ TEAM: list[Member] = [
         persona='비전가이자 완벽주의자. 단순함과 탁월함에 집착. "Stay hungry, stay foolish" 스타일의 짧고 강렬한 말.',
         idle_comment='지시 대기 중',
         fallback_quote='Stay hungry, stay foolish.',
-        aliases=('팀장', '팀장님', '잡스', '잡스님', 'Jobs', 'jobs'),
+        aliases=('비서', '비서님', '잡스', '잡스님', 'Jobs', 'jobs'),
     ),
     Member(
         agent_id='planner',

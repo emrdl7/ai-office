@@ -18,3 +18,16 @@ output_checklist:
   - 상호작용 가능한 요소의 hit-target ≥ 44×44 px
   - 상태 전체 스펙 제공
   - WCAG 대비 비율 표기 (본문/버튼 등)
+input_conditions:
+  - UI 화면, 디자인 시스템, 컴포넌트 명세, 퍼블리싱 산출물 검토에 사용
+  - 토큰 체계가 없으면 임시 토큰명을 제안하되 하드코딩을 금지
+output_template:
+  - Token Review
+  - Typography
+  - Color and Contrast
+  - Spacing and Layout
+  - Interaction States
+quality_rubric:
+  - 토큰명 없이 색상/간격을 제안하면 실패
+  - WCAG 대비 기준이 없으면 실패
+  - 상태 정의가 default에만 머물면 실패

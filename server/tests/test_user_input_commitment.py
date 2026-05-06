@@ -1,4 +1,4 @@
-# handle_mid_work_input이 팀장/에이전트 응답의 다짐을 _file_commitment_suggestion에 흘리는지 검증.
+# handle_mid_work_input이 비서/에이전트 응답의 다짐을 _file_commitment_suggestion에 흘리는지 검증.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -25,6 +25,22 @@ _TOOLS_DIR = Path(__file__).parent / 'tools'
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / 'data' / 'tool_config.json'
 
+_CORE_TOOLS = {
+    'current_date', 'web_search', 'url_fetch',
+    'read_file', 'list_files', 'write_file', 'diff_files',
+    'run_python', 'job_context',
+}
+_OPTIONAL_TOOLS = {
+    'screenshot_url', 'rss_feed', 'figma_get_design',
+    'pdf_generate', 'docx_generate', 'pptx_generate', 'html_to_image',
+    'spreadsheet_read',
+}
+_EXPERIMENTAL_TOOLS = {
+    'slack_post', 'notion_write', 'image_generate', 'webhook_call',
+    'email_send', 'translate', 'airtable_query', 'google_drive_upload',
+    'calendar_create',
+}
+
 
 def _load_config() -> dict[str, str]:
     try:
@@ -44,6 +60,62 @@ def save_tool_config(updates: dict[str, str]) -> None:
 
 def get_tool_config() -> dict[str, str]:
     return _load_config()
+
+
+def _tool_maturity(tool_id: str, enabled: bool) -> str:
+    if not enabled:
+        return 'disabled'
+    if tool_id in _CORE_TOOLS:
+        return 'core'
+    if tool_id in _OPTIONAL_TOOLS:
+        return 'optional'
+    if tool_id in _EXPERIMENTAL_TOOLS:
+        return 'experimental'
+    return 'optional'
+
+
+def _tool_contract(tool: ToolSpec) -> dict[str, Any]:
+    required_inputs = [
+        param for param in tool.params
+        if param not in {'max_rows', 'sheet', 'headers', 'body', 'html', 'source_lang', 'description', 'calendar_id'}
+    ]
+    if not tool.enabled:
+        return {
+            'input_contract': required_inputs,
+            'output_contract': '사용 불가: 비활성 도구입니다.',
+            'failure_policy': '이 도구를 선택하지 말고 다른 실행 경로를 사용합니다.',
+            'recovery_hint': '스펙에서 제거하거나 활성화 조건을 먼저 충족하세요.',
+        }
+    output_by_category = {
+        'research': '출처 또는 수집 결과 요약 텍스트',
+        'file': '파일 내용, 파일 경로, 또는 생성 결과 메시지',
+        'code': '실행 로그와 표준 출력/오류 요약',
+        'design': '디자인 노드 메타데이터 또는 조회 실패 사유',
+        'integration': '외부 서비스 요청 결과 또는 실패 사유',
+        'general': '처리 결과 텍스트',
+    }
+    failure_by_category = {
+        'research': '검색/수집 실패 시 출처 없는 추정을 금지하고 사용자에게 확인 가능한 입력을 요청합니다.',
+        'file': '파일 없음, 권한, 경로 오류를 명시하고 대체 경로 또는 직접 입력을 요청합니다.',
+        'code': '실행 실패 로그를 보존하고 수정 가능한 최소 재현 정보를 산출물에 포함합니다.',
+        'design': '토큰 또는 노드 접근 실패를 명시하고 Figma 링크/file_key/node_id 재확인을 요청합니다.',
+        'integration': '외부 API 실패를 사용자에게 숨기지 않고 재시도 가능 조건을 분리합니다.',
+        'general': '실패 사유를 명시하고 추정 결과로 대체하지 않습니다.',
+    }
+    recovery_by_category = {
+        'research': '다른 검색어, URL 직접 입력, 또는 최신성 범위 축소를 시도합니다.',
+        'file': 'list_files/read_file 조합으로 경로를 재확인합니다.',
+        'code': '입력 축소 후 재실행하거나 정적 분석으로 대체합니다.',
+        'design': 'Figma 접근 토큰과 노드 ID를 먼저 검증합니다.',
+        'integration': '토큰/권한/요청 payload를 검증하고 재시도 여부를 산출물에 남깁니다.',
+        'general': '필수 입력을 다시 확인합니다.',
+    }
+    return {
+        'input_contract': required_inputs,
+        'output_contract': output_by_category.get(tool.category, output_by_category['general']),
+        'failure_policy': failure_by_category.get(tool.category, failure_by_category['general']),
+        'recovery_hint': recovery_by_category.get(tool.category, recovery_by_category['general']),
+    }
 
 
 @dataclass
@@ -285,6 +357,8 @@ def list_tools() -> list[dict[str, Any]]:
             'params': t.params,
             'env_var': t.env_var,
             'token_set': bool(t.env_var and (os.environ.get(t.env_var) or cfg.get(t.env_var))),
+            'maturity': _tool_maturity(t.id, t.enabled),
+            **_tool_contract(t),
         }
         for t in merged.values()
     ]

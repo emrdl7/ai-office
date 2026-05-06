@@ -20,3 +20,15 @@ output_checklist:
   - 수치 근거 출처 명시 (데이터 없으면 (추정) 표기)
   - 상위 3개 항목에 실행 이유 한 줄 요약
   - Won't Have 항목은 제외 이유 명시
+input_conditions:
+  - 비교할 후보 항목이 2개 이상 있어야 함
+  - 사용자/비즈니스 목표 또는 제약 조건이 있어야 함
+output_template:
+  - Scoring Assumptions
+  - RICE Table
+  - MoSCoW Buckets
+  - Top 3 Next Actions
+quality_rubric:
+  - 근거 없는 숫자는 반드시 (추정) 표기
+  - 점수와 최종 분류가 모순되면 실패
+  - 실행 순서가 리소스 제약을 반영하지 않으면 실패

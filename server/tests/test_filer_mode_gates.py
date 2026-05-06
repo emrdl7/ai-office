@@ -220,4 +220,4 @@ async def test_has_tech_token_patterns():
     assert sf._has_tech_token('/api/suggestions 엔드포인트')
     assert sf._has_tech_token('`is_duplicate` 함수')
     assert not sf._has_tech_token('프로세스를 개선해야 합니다')
-    assert not sf._has_tech_token('팀원 간 소통이 부족합니다')
+    assert not sf._has_tech_token('전문 역할 간 소통이 부족합니다')

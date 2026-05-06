@@ -80,6 +80,27 @@ async def get_cost_today() -> dict[str, Any]:
   return stats
 
 
+@router.get('/api/llm-provider')
+async def get_llm_provider_status() -> dict[str, Any]:
+  '''현재 LLM primary provider 설정과 사용 가능 여부를 반환한다.'''
+  from runners.model_router import provider_status
+  return provider_status()
+
+
+@router.post('/api/llm-provider')
+async def update_llm_provider(request: Request) -> dict[str, Any]:
+  '''Claude/Codex primary provider를 전환한다. body: {"provider":"claude|codex"}'''
+  from runners.model_router import provider_status, set_llm_provider
+
+  body = await request.json()
+  provider = str(body.get('provider', '')).strip().lower()
+  try:
+    set_llm_provider(provider)
+  except ValueError as exc:
+    raise HTTPException(status_code=400, detail=str(exc)) from exc
+  return provider_status()
+
+
 @router.post('/api/improvement/rules/{agent}/toggle')
 async def toggle_agent_rule(agent: str, request: Request) -> dict[str, Any]:
   '''규칙 활성화/비활성화 토글.'''
@@ -107,7 +128,7 @@ async def get_cost_daily(days: int = 7) -> dict[str, Any]:
 async def run_capability_audit(request: Request) -> dict[str, Any]:
   '''능력 선언 ↔ 실제 사용 교차 검증 — 수동 트리거.
 
-  쿼리 ?register=true 이면 unused 있을 때 팀장 건의게시판에도 등록.
+  쿼리 ?register=true 이면 unused 있을 때 비서 건의게시판에도 등록.
   '''
   import asyncio as _a
   from pathlib import Path as _Path

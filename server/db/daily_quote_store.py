@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 STORE_PATH = Path(__file__).parent.parent / 'data' / 'daily_quotes.json'
 
-# config/team.py에서 페르소나 가져옴 — 팀원 교체 시 그 쪽만 수정하면 됨
+# config/team.py에서 페르소나 가져옴 — 전문 역할 교체 시 그 쪽만 수정하면 됨
 from config.team import TEAM
 AGENT_PERSONAS = {m.agent_id: f'{m.full_name}. {m.persona}' for m in TEAM}
 

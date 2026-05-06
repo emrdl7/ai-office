@@ -1,4 +1,4 @@
-# 팀원 간 상호작용 — office.py에서 분리 (P1 로드맵 3단계)
+# 전문 역할 간 상호작용 — office.py에서 분리 (P1 로드맵 3단계)
 #
 # 원칙: 행동 변경 금지. self.* → office.* 기계적 치환만.
 # 10개 메서드: _team_chat, _team_reaction, _consult_peers, _peer_review,
@@ -38,7 +38,7 @@ async def _single_agent_chat(
   mentioned_ids: Collection[str],
   round_context: str = '',
 ) -> tuple[str, str]:
-  '''팀 채팅방에서 한 에이전트의 응답을 생성. PASS 혹은 실패 시 빈 문자열.
+  '''비서 대화방에서 한 에이전트의 응답을 생성. PASS 혹은 실패 시 빈 문자열.
 
   Round 1: round_context 빈 값, 멘션 여부에 따라 강제응답/자율판단 분기.
   Round 2: round_context에 Round 1 발언을 넣어 추가 반응 여부 결정.
@@ -52,7 +52,7 @@ async def _single_agent_chat(
 
   if round_context:
     prompt = (
-      f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+      f'아래는 비서 대화방의 현재 대화입니다.\n\n'
       f'{thread_text}\n\n'
       f'[라운드 1 발언]\n{round_context}\n\n'
       f'---\n\n'
@@ -63,7 +63,7 @@ async def _single_agent_chat(
     )
   elif is_mentioned:
     prompt = (
-      f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+      f'아래는 비서 대화방의 현재 대화입니다.\n\n'
       f'{thread_text}\n\n'
       f'---\n\n'
       f'당신은 {name}입니다.\n'
@@ -74,7 +74,7 @@ async def _single_agent_chat(
     )
   else:
     prompt = (
-      f'아래는 팀 채팅방의 현재 대화입니다.\n\n'
+      f'아래는 비서 대화방의 현재 대화입니다.\n\n'
       f'{thread_text}\n\n'
       f'---\n\n'
       f'당신은 {name}입니다.\n'
@@ -101,18 +101,18 @@ async def _single_agent_chat(
     is_pass = '[PASS]' in content.upper() or content.strip().upper() == 'PASS'
     return name, ('' if is_pass else content)
   except Exception:
-    logger.debug("팀 채팅 에이전트 응답 실패: %s", name, exc_info=True)
+    logger.debug("전문 역할 채팅 응답 실패: %s", name, exc_info=True)
     return name, ''
 
 
 async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual', teamlead_response: str = '') -> None:
-  '''팀 채널 대화 — 스레드 기반. 각 에이전트가 전체 대화 스레드를 읽고 판단한다.
+  '''비서 대화 — 스레드 기반. 각 에이전트가 전체 대화 스레드를 읽고 판단한다.
 
   핵심: 실제 그룹 채팅처럼 이전 발언을 모두 본 뒤 새 가치를 더할 수 있을 때만 발언.
-  업무 감지: [TASK_DETECTED:설명] 출력 시 팀장이 업무 흐름으로 전환
+  업무 감지: [TASK_DETECTED:설명] 출력 시 비서가 업무 흐름으로 전환
 
   chat_subtype: 'greeting'(인사) | 'question'(질문) | 'casual'(잡담)
-  teamlead_response: 팀장의 응답 (스레드에 포함)
+  teamlead_response: 비서의 응답 (스레드에 포함)
   '''
   from orchestration.meeting import MENTION_MAP
 
@@ -122,7 +122,7 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
     try:
       response = await run_claude_isolated(
         f'당신은 {display_name(responder)}입니다.\n'
-        f'팀장이 사용자에게 인사했습니다. 당신도 가볍게 한마디 하세요.\n'
+        f'비서가 사용자에게 인사했습니다. 당신도 가볍게 한마디 하세요.\n'
         f'10자 이내, 이모지 1개. 메신저 톤. 마크다운 금지.\n'
         f'예: "좋은 아침이에요 ☀️", "화이팅입니다 💪"',
         model='claude-haiku-4-5-20251001',
@@ -143,7 +143,7 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
         continue
       system = agent._build_system_prompt(task_hint=user_input)
       prompt = (
-        f'팀 채팅방에서 사용자가 질문했습니다:\n\n"{user_input}"\n\n'
+        f'비서 대화방에서 사용자가 질문했습니다:\n\n"{user_input}"\n\n'
         f'당신은 {name}입니다. 이 질문이 당신의 전문 영역과 관련이 있으면 답변하세요.\n'
         f'관련 없으면 [PASS]만 출력하세요.\n'
         f'답변은 2~3문장으로 짧게. 메신저 톤. 마크다운 금지.'
@@ -179,7 +179,7 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
     base_thread.append('---')
   base_thread.append(f'[사용자] {user_input}')
   if teamlead_response:
-    base_thread.append(f'[팀장] {teamlead_response}')
+    base_thread.append(f'[비서] {teamlead_response}')
 
   all_agents = ['planner', 'designer', 'developer', 'qa']
   round1_results = await asyncio.gather(
@@ -210,7 +210,7 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
     thread_after_r1.append(f'[{name}] {content}')
     responded.append(name)
 
-  # 업무 감지 → 팀장 전환
+  # 업무 감지 → 비서 전환
   if task_detected:
     await office._emit(
       'teamlead',
@@ -229,7 +229,7 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
     thread_text = '\n'.join(base_thread)
     try:
       response = await run_claude_isolated(
-        f'{system}\n\n---\n\n아래는 팀 채팅방의 현재 대화입니다.\n\n{thread_text}\n\n'
+        f'{system}\n\n---\n\n아래는 비서 대화방의 현재 대화입니다.\n\n{thread_text}\n\n'
         f'아무도 답을 안 했습니다. 당신이 대표로 한마디 해주세요.\n짧고 자연스럽게. 마크다운 금지.',
         model='claude-haiku-4-5-20251001',
         timeout=30.0,
@@ -239,7 +239,7 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
       thread_after_r1.append(f'[{fallback_name}] {content}')
       responded.append(fallback_name)
     except Exception:
-      logger.debug("팀 채팅 폴백 응답 실패", exc_info=True)
+      logger.debug("비서 대화 폴백 응답 실패", exc_info=True)
     return  # fallback 후 Round 2 불필요
 
   # ── Round 2: Round 1 응답을 보고 추가 반응 ──
@@ -259,11 +259,11 @@ async def _team_chat(office: Any, user_input: str, chat_subtype: str = 'casual',
 
 
 async def _team_reaction(office: Any, worker: str, phase_name: str, content_summary: str = '') -> None:
-  '''소단계 완료 후 다른 팀원이 성격 기반 맥락 리액션을 한다 (오피스 분위기).'''
+  '''소단계 완료 후 다른 전문 역할이 성격 기반 맥락 리액션을 한다.'''
   import random
   summary_section = f'\n[작업 결과 요약]\n{content_summary[:300]}\n' if content_summary else ''
 
-  # 작업자 외 팀원 중 1~2명이 리액션
+  # 작업자 외 전문 역할 중 1~2명이 리액션
   others = [n for n in ('teamlead', 'planner', 'designer', 'developer', 'qa') if n != worker]
   reactors = random.sample(others, min(random.choice([1, 1, 2]), len(others)))
 
@@ -275,7 +275,7 @@ async def _team_reaction(office: Any, worker: str, phase_name: str, content_summ
       prompt = (
         f'{display_name(worker)}이(가) [{phase_name}] 작업을 완료했습니다.\n'
         f'{summary_section}'
-        f'당신({display_name(reactor_name)})의 성격으로 동료로서 1문장 반응하세요.\n'
+        f'당신({display_name(reactor_name)})의 성격으로 전문 역할 관점의 1문장 반응을 작성하세요.\n'
         f'40~120자, 구체 근거 1개(수치·섹션명·기법명·파일명) 포함, 이모지 1개, 메신저 톤. 마크다운 금지.\n'
         f'개선 필요점이 있으면 마지막에 `[건의] 한줄 요약` 라벨을 붙이세요.'
       )
@@ -347,7 +347,7 @@ async def _team_reaction(office: Any, worker: str, phase_name: str, content_summ
         agent = office.agents.get(chain_responder)
         system = agent._build_system_prompt() if agent else ''
         prompt = (
-          f'동료 {display_name(first_reactor)}이(가) "{first_reaction_text}"라고 했습니다.\n'
+          f'전문 역할 {display_name(first_reactor)}이(가) "{first_reaction_text}"라고 했습니다.\n'
           f'이에 대해 15~30자로 구체 응답(동의+근거, 반론, 추가 정보 중 하나). '
           f'"굿굿/맞아요/좋네요/기대돼요" 같은 빈 맞장구면 [PASS]만 출력하세요.\n'
           f'메신저 톤. 마크다운 금지.'
@@ -376,7 +376,7 @@ async def _consult_peers(
   phase: dict,
   all_results: dict[str, str],
 ) -> str:
-  '''그룹 마지막 단계 완료 후, 산출물에서 다른 팀원의 전문 확인이 필요한 사항을 감지하고 자문한다.
+  '''그룹 마지막 단계 완료 후, 산출물에서 다른 전문 역할의 확인이 필요한 사항을 감지하고 자문한다.
 
   Returns:
     자문 결과 텍스트. 자문 불필요 시 빈 문자열.
@@ -384,10 +384,10 @@ async def _consult_peers(
   from runners.json_parser import parse_json
   # 1. Haiku로 자문 필요 여부 빠르게 판단
   check_prompt = (
-    '아래 산출물을 검토하세요. 다른 팀원의 전문 확인이 필요한 사항이 있으면 알려주세요.\n\n'
+    '아래 산출물을 검토하세요. 다른 전문 역할의 확인이 필요한 사항이 있으면 알려주세요.\n\n'
     f'[산출물 작성자] {worker_name}\n'
     f'[산출물 내용] {content[:3000]}\n\n'
-    '다른 팀원에게 확인이 필요하면:\n'
+    '다른 전문 역할에게 확인이 필요하면:\n'
     '{"needs_consultation": true, "consultations": [\n'
     '  {"target": "developer|designer|planner", "question": "구체적 질문"}\n'
     ']}\n\n'
@@ -458,7 +458,7 @@ async def _consult_peers(
             description=f'[{phase.get("name", "")}] {question[:80]}',
           )
       except Exception:
-        logger.debug("팀원 자문 실행 실패: %s", target, exc_info=True)
+        logger.debug("전문 역할 자문 실행 실패: %s", target, exc_info=True)
 
     return '\n'.join(consultation_results)
 
@@ -521,7 +521,7 @@ async def _maybe_file_relationship_suggestion(office: Any, reviewer_id: str, wor
   except Exception:
     logger.debug('관계 건의 등록 실패', exc_info=True)
 
-  # 선제 중재 — 회고를 기다리지 않고 팀장이 즉시 채팅에 중재 메시지 발화.
+  # 선제 중재 — 회고를 기다리지 않고 비서가 즉시 채팅에 중재 메시지 발화.
   # 24h 쿨다운 안에서 1회만. suggestion과 동일 topic_marker가 이미 있으면 위에서 return됨.
   try:
     recent_summary = '; '.join(recent_descriptions[:2]) or '반복 우려'
@@ -590,7 +590,7 @@ async def _peer_review(
   content: str,
   user_input: str,
 ) -> list[dict]:
-  '''그룹 완료 시 관련 팀원 1~2명이 실질적 피어 리뷰를 수행한다.
+  '''그룹 완료 시 관련 전문 역할 1~2명이 실질적 피어 리뷰를 수행한다.
 
   Returns:
     리뷰 결과 리스트. [CONCERN] 태그가 있으면 심각한 우려사항.
@@ -617,7 +617,7 @@ async def _peer_review(
     try:
       await office._emit(reviewer_id, '', 'typing')
       review_prompt = (
-        f'팀원 {worker_name_kr}이(가) {phase_name} 작업을 완료했습니다.\n\n'
+        f'전문 역할 {worker_name_kr}이(가) {phase_name} 작업을 완료했습니다.\n\n'
         f'[프로젝트] {user_input[:500]}\n'
         f'[산출물 요약] {content[:2000]}\n\n'
         f'당신({reviewer_name_kr})의 전문 관점에서 이 산출물에 대해 짧게 코멘트하세요.\n'
@@ -701,14 +701,14 @@ async def _qa_pushback_round(
   content: str,
   source_log_id: str = '',
 ) -> dict:
-  '''QA 불합격 직후 팀원들이 반박/지지/보강 의견을 내고 팀장이 중재한다.
+  '''QA 불합격 직후 전문 역할들이 반박/지지/보강 의견을 내고 비서가 중재한다.
 
-  목표: QA의 1회성 판정을 팀 합의로 승격시켜, 반복되는 사유는 prompt rule로 학습.
+  목표: QA의 1회성 판정을 전문 역할 합의로 승격시켜, 반복되는 사유는 prompt rule로 학습.
 
   Returns:
     {'decision': 'ADOPT'|'MODIFY'|'REJECT',
      'rule': str,  # 합의된 규칙 문장 (REJECT면 빈 문자열)
-     'reason': str,  # 팀장 판단 근거
+     'reason': str,  # 비서 판단 근거
      'opinions': [{'agent': id, 'stance': '지지'|'반박'|'보강', 'text': ...}]}
   '''
   # 리뷰어 선정: QA·담당자 제외한 워커 최대 2명
@@ -748,17 +748,17 @@ async def _qa_pushback_round(
   if not opinions:
     return {'decision': 'REJECT', 'rule': '', 'reason': '의견 수집 실패', 'opinions': []}
 
-  # 팀장 중재
+  # 비서 중재
   opinions_text = '\n'.join(f'- {display_name(o["agent"])} [{o["stance"]}]: {o["text"]}' for o in opinions)
   arbitrate_prompt = (
     f'QA({display_name("qa")})가 {display_name(offending_agent)}의 {phase_name}에 불합격을 냈고, '
-    f'팀원들이 다음 의견을 냈습니다.\n\n'
+    f'전문 역할들이 다음 의견을 냈습니다.\n\n'
     f'[QA 불합격 사유]\n{failure_reason[:400]}\n\n'
-    f'[팀원 의견]\n{opinions_text}\n\n'
-    f'팀장으로서 판단하세요. 반드시 아래 JSON 한 줄로만 응답:\n'
+    f'[전문 역할 의견]\n{opinions_text}\n\n'
+    f'AI Office 비서로서 판단하세요. 반드시 아래 JSON 한 줄로만 응답:\n'
     f'{{"decision":"ADOPT|MODIFY|REJECT","rule":"향후 {display_name(offending_agent)}가 지켜야 할 규칙 1문장","reason":"판단 근거 1문장"}}\n'
     f'- ADOPT: QA 지적 그대로 규칙화\n'
-    f'- MODIFY: 팀원 보강 의견 반영해 수정된 규칙\n'
+    f'- MODIFY: 전문 역할 보강 의견 반영해 수정된 규칙\n'
     f'- REJECT: 반박 의견이 타당, 규칙화 보류 (rule은 빈 문자열)\n'
   )
   try:
@@ -780,7 +780,7 @@ async def _qa_pushback_round(
     await office._emit('teamlead', teamlead_msg[:220], 'response')
     return {'decision': decision, 'rule': rule, 'reason': reason, 'opinions': opinions}
   except Exception:
-    logger.debug('팀장 중재 실패', exc_info=True)
+    logger.debug('비서 중재 실패', exc_info=True)
     return {'decision': 'REJECT', 'rule': '', 'reason': '중재 실패', 'opinions': opinions}
 
 
@@ -845,7 +845,7 @@ async def _task_acknowledgment(office: Any, agent_name: str, phase_name: str) ->
   try:
     response = await run_claude_isolated(
       f'당신은 {display_name(agent_name)}입니다.\n'
-      f'팀장이 "{phase_name}" 작업을 지시했습니다.\n'
+      f'비서가 "{phase_name}" 작업을 지시했습니다.\n'
       f'{prior_concern_line}'
       f'"네, 확인했습니다. [간단한 계획 한 줄]" 형태로 수령 확인하세요.\n'
       f'30자 이내, 메신저 톤. 마크다운 금지.',
@@ -867,7 +867,7 @@ async def _contextual_reaction(office: Any, reactor: str, phase_name: str, worke
     response = await run_claude_isolated(
       f'당신은 {display_name(reactor)}입니다.\n'
       f'{worker}이(가) "{phase_name}" 작업을 완료했습니다.\n'
-      f'동료로서 가볍게 리액션 한마디 해주세요.\n'
+      f'전문 역할 관점에서 가볍게 리액션 한마디 해주세요.\n'
       f'15자 이내, 이모지 1개 포함, 메신저 톤. 마크다운 금지.\n'
       f'예: "레이아웃 깔끔하네요 👍", "구현 문제없어 보여요 💪"',
       model='claude-haiku-4-5-20251001',
@@ -923,14 +923,14 @@ def _resolve_reviewer(office: Any, worker: str, prompt: str) -> tuple[str, str] 
 
 
 async def _work_commentary(office: Any, worker: str, phase_name: str, result_preview: str) -> None:
-  '''작업 완료 직후 관련 팀원 1명이 결과물 기반 전문 의견을 짧게 끼어든다.
+  '''작업 완료 직후 관련 전문 역할 1명이 결과물 기반 전문 의견을 짧게 보탠다.
 
   발동 확률: 40%. 매번 나오면 지루하므로 확률적으로 동작한다.
   '''
   if random.random() > 0.4:
     return
 
-  # 작업자와 다른 관련 팀원 선정
+  # 작업자와 다른 관련 전문 역할 선정
   commentary_map = {
     'planner': ['designer', 'developer'],
     'designer': ['developer', 'planner'],
@@ -945,7 +945,7 @@ async def _work_commentary(office: Any, worker: str, phase_name: str, result_pre
       f'{display_name(worker)}이(가) "{phase_name}" 작업을 완료했습니다.\n'
       f'결과물 미리보기:\n{result_preview[:300]}\n\n'
       f'전문가 관점에서 짧게 한마디 의견을 주세요 (30자 이내, 메신저 톤, 마크다운 금지).\n'
-      f'질문/제안이 있으면 자연스럽게 "@담당자명" 멘션을 포함하세요 (해당 팀원이 즉시 응답).\n'
+      f'질문/제안이 있으면 자연스럽게 "@담당자명" 멘션을 포함하세요 (해당 전문 역할이 즉시 응답).\n'
       f'예: "이 레이아웃 구현 문제없어 보입니다 👍", "@드러커 우선순위 재확인 가능할까요?"',
       model='claude-haiku-4-5-20251001',
       timeout=15.0,
@@ -953,7 +953,7 @@ async def _work_commentary(office: Any, worker: str, phase_name: str, result_pre
     text = response.strip().split('\n')[0][:50]
     if text:
       await office._emit(commenter, text, 'response')
-      # 코멘트에 @멘션 있으면 해당 팀원이 즉시 응답 — P2 work_commentary↔mention 연동
+      # 코멘트에 @멘션 있으면 해당 전문 역할이 즉시 응답 — P2 work_commentary↔mention 연동
       if '@' in text:
         try:
           await _route_agent_mentions(office, commenter, text)
@@ -967,7 +967,7 @@ async def _work_commentary(office: Any, worker: str, phase_name: str, result_pre
 async def _phase_intro(office: Any, agent_name: str, phase_name: str) -> None:
   '''프로젝트 각 단계 시작 시 담당 에이전트가 작업 포부/계획을 한마디 한다.
 
-  과거 실패 교훈 1개 + 팀원의 협업 조언 1줄을 프롬프트에 주입해
+  과거 실패 교훈 1개 + 전문 역할의 협업 조언 1줄을 프롬프트에 주입해
   맥락 있는 착수 메시지를 유도한다 (P2 보강).
   '''
   fallback_intros = {
@@ -1004,7 +1004,7 @@ async def _phase_intro(office: Any, agent_name: str, phase_name: str) -> None:
       f'당신은 {display_name(agent_name)}입니다.\n'
       f'"{phase_name}" 작업을 시작합니다.\n'
       f'{context_block}'
-      f'동료들에게 작업 포부를 한마디 해주세요 (20자 이내, 메신저 톤, 이모지 1개, 마크다운 금지).\n'
+      f'사용자에게 작업 포부를 한마디 해주세요 (20자 이내, 메신저 톤, 이모지 1개, 마크다운 금지).\n'
       f'위 맥락이 있으면 자연스럽게 반영하세요.\n'
       f'예: "사용자 동선 꼼꼼히 잡아볼게요 🎯", "반응형까지 깔끔하게 가겠습니다 💪"',
       model='claude-haiku-4-5-20251001',
@@ -1051,21 +1051,21 @@ async def _route_agent_mentions(office: Any, speaker: str, content: str) -> None
     if target_id == 'teamlead':
       try:
         response = await _run_claude_isolated(
-          f'당신은 팀장입니다. {display_name(speaker)}이(가) 작업 중 질문했습니다:\n'
+          f'당신은 AI Office 비서입니다. {display_name(speaker)}이(가) 작업 중 질문했습니다:\n'
           f'"{question}"\n짧게 1~2문장으로 답변하세요 (메신저 톤, 마크다운 금지).',
           model='claude-haiku-4-5-20251001', timeout=20.0,
         )
         await office._emit('teamlead', response.strip()[:150], 'response')
       except Exception:
-        logger.debug("에이전트→팀장 질문 라우팅 실패", exc_info=True)
+        logger.debug("에이전트→비서 질문 라우팅 실패", exc_info=True)
     else:
       agent = office.agents.get(target_id)
       if not agent:
-        # 멘션 대상이 아예 존재하지 않음 — 팀장이 즉시 해명
+        # 멘션 대상이 아예 존재하지 않음 — 비서가 즉시 해명
         try:
           await office._emit(
             'teamlead',
-            f'@{display_name(speaker)} — {raw_target} 라는 담당자가 팀에 없어 질문이 라우팅되지 못했습니다. 대상 확인 부탁드립니다.',
+            f'@{display_name(speaker)} — {raw_target} 라는 담당자가 없어 질문이 라우팅되지 못했습니다. 대상 확인 부탁드립니다.',
             'response',
           )
         except Exception:
@@ -1079,7 +1079,7 @@ async def _route_agent_mentions(office: Any, speaker: str, content: str) -> None
         logger.debug("에이전트 응답 실패: %s→%s", speaker, target_id, exc_info=True)
         answer = ''
       if not answer:
-        # SLA 위반 — 질문이 응답 없이 사라지는 공허한 외침을 막기 위해 팀장이 재촉
+        # SLA 위반 — 질문이 응답 없이 사라지는 공허한 외침을 막기 위해 비서가 재촉
         try:
           await office._emit(
             'teamlead',

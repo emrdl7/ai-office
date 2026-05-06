@@ -26,6 +26,8 @@ _PRICE_TABLE: dict[str, tuple[float, float]] = {
   'claude-opus-4-6': (0.015, 0.075),
   'claude-opus': (0.015, 0.075),
   'gemini': (0.0, 0.0),
+  'codex': (0.0, 0.0),
+  'gpt-': (0.0, 0.0),
 }
 
 # 일 한도 (USD)

@@ -965,7 +965,7 @@
     "/api/chat": {
       "post": {
         "summary": "Chat",
-        "description": "메신저 채팅 — 팀 채널 또는 특정 팀원에게 메시지 전송 (파일 첨부 지원)",
+        "description": "메신저 채팅 — 비서에게 메시지 전송 (파일 첨부 지원)",
         "operationId": "chat_api_chat_post",
         "requestBody": {
           "content": {

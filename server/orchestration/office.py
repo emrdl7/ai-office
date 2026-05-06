@@ -134,7 +134,7 @@ class Office:
     self._active_project_title: str = ''
     self._current_task_id: str = ''
     self._user_mid_feedback: list[str] = []  # 작업 중 사용자 피드백 축적
-    self._phase_feedback: list[dict] = []   # 팀원 리액션/인수인계 피드백
+    self._phase_feedback: list[dict] = []   # 전문 역할 리액션/인수인계 피드백
     self._current_project_type: str = ''    # 현재 프로젝트 유형 (phase_registry)
 
     # 자가개선 엔진
@@ -156,13 +156,13 @@ class Office:
     # _context_summary 동시 쓰기 방지
     self._context_lock: asyncio.Lock = asyncio.Lock()
 
-    # 팀장 배치 리뷰 (main.py 기동 시 주입)
+    # 비서 배치 리뷰 (main.py 기동 시 주입)
     self._review_running = False
     self._review_lock: asyncio.Lock | None = None
     self._teamlead_review_task: asyncio.Task[None] | None = None
     self.latest_digest_summary: str = ''
 
-    # 팀원 초기화
+    # 전문 역할 초기화
     self.agents: dict[str, Agent] = {}
     for name in ('planner', 'designer', 'developer', 'qa'):
       self.agents[name] = Agent(
@@ -259,7 +259,7 @@ class Office:
     planner = self.agents['planner']
     system = planner._build_system_prompt()
     prompt = (
-      f'아래는 팀 채팅방의 최근 대화 내역입니다.\n\n'
+      f'아래는 비서 대화방의 최근 대화 내역입니다.\n\n'
       f'{conversation_text}\n\n'
       f'기획자로서 이 대화를 압축 요약하세요.\n'
       f'- 논의된 주제, 결정된 사항, 미해결 이슈를 구분하세요\n'
@@ -399,7 +399,7 @@ class Office:
     # 1. 파일 참조 해석
     resolve_references(user_input)
 
-    # 2. 팀장 판단 — 최근 대화 맥락을 함께 전달 ("그거 조사해봐" 같은 지시어 해석용)
+    # 2. 비서 판단 — 최근 대화 맥락을 함께 전달 ("그거 조사해봐" 같은 지시어 해석용)
     recent_context = ''
     recent_logs: list = []
     try:
