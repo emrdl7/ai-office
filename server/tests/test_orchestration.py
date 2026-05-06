@@ -118,6 +118,17 @@ def test_workreport_monthly_calendar_stats(isolated_workreport_db):
     assert [task['task_name'] for task in day['tasks']] == ['기획 정리', '리뷰']
 
 
+def test_workreport_days_off_crud(isolated_workreport_db):
+    day_off = isolated_workreport_db.upsert_day_off('2026-05-08', '연차')
+
+    assert day_off['date'] == '2026-05-08'
+    assert day_off['name'] == '연차'
+    assert isolated_workreport_db.list_days_off('2026-05') == [day_off]
+    assert isolated_workreport_db.list_days_off('2026-06') == []
+    assert isolated_workreport_db.delete_day_off('2026-05-08') is True
+    assert isolated_workreport_db.list_days_off('2026-05') == []
+
+
 @pytest.mark.skip(reason='QUICK_TASK 직접 라우팅 제거됨 — 현재는 Job 파이프라인으로 처리 (2026-04)')
 @pytest.mark.asyncio
 async def test_quick_task_routes_to_single_agent(office_setup):

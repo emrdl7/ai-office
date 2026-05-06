@@ -57,6 +57,13 @@ def init_db() -> None:
             status TEXT DEFAULT 'pending',
             description TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS wr_days_off (
+            date TEXT PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '휴가',
+            kind TEXT NOT NULL DEFAULT 'vacation',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
         """)
         for column, definition in (
             ('linked_job_id', "TEXT DEFAULT ''"),
@@ -234,6 +241,52 @@ def get_recent_tasks(limit: int = 20) -> list[dict[str, Any]]:
             'SELECT * FROM wr_tasks ORDER BY date DESC, time DESC LIMIT ?', (limit,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Days off ───────────────────────────────────────────────────────────────
+
+def list_days_off(month: str = '') -> list[dict[str, Any]]:
+    if not month:
+        month = date.today().strftime('%Y-%m')
+    start = f'{month}-01'
+    year = int(month[:4])
+    month_num = int(month[5:7])
+    if month_num == 12:
+        end = f'{year + 1}-01-01'
+    else:
+        end = f'{year}-{month_num + 1:02d}-01'
+    with _conn() as c:
+        rows = c.execute(
+            'SELECT date, name, kind, created_at FROM wr_days_off WHERE date >= ? AND date < ? ORDER BY date',
+            (start, end),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_day_off(work_date: str, name: str = '휴가', kind: str = 'vacation') -> dict[str, Any]:
+    date.fromisoformat(work_date)
+    label = name.strip() or '휴가'
+    day_kind = kind.strip() or 'vacation'
+    with _conn() as c:
+        c.execute(
+            """
+            INSERT INTO wr_days_off (date, name, kind)
+            VALUES (?, ?, ?)
+            ON CONFLICT(date) DO UPDATE SET name=excluded.name, kind=excluded.kind
+            """,
+            (work_date, label, day_kind),
+        )
+        row = c.execute(
+            'SELECT date, name, kind, created_at FROM wr_days_off WHERE date=?',
+            (work_date,),
+        ).fetchone()
+    return dict(row)
+
+
+def delete_day_off(work_date: str) -> bool:
+    with _conn() as c:
+        cur = c.execute('DELETE FROM wr_days_off WHERE date=?', (work_date,))
+    return cur.rowcount > 0
 
 
 # ── Project ────────────────────────────────────────────────────────────────

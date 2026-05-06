@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from db.workreport_store import (
     create_task, update_task, delete_task,
     get_daily_tasks, get_weekly_tasks, get_monthly_tasks, get_recent_tasks,
+    list_days_off, upsert_day_off, delete_day_off,
     list_projects, upsert_project_meta,
     list_milestones, create_milestone, update_milestone, delete_milestone,
     get_dashboard,
@@ -48,6 +49,12 @@ class TaskUpdate(BaseModel):
 class TaskJobLink(BaseModel):
     linked_job_id: str
     status: str = 'delegated'
+
+
+class DayOffCreate(BaseModel):
+    date: str
+    name: str = '휴가'
+    kind: str = 'vacation'
 
 
 @router.post('/api/workreport/tasks')
@@ -111,12 +118,33 @@ def api_weekly(start: str = '') -> dict[str, Any]:
 def api_monthly(month: str = '') -> dict[str, Any]:
     monthly = get_monthly_tasks(month)
     monthly['holidays'] = get_public_holidays(monthly['month'])
+    monthly['days_off'] = list_days_off(monthly['month'])
     return monthly
 
 
 @router.get('/api/workreport/tasks/recent')
 def api_recent(limit: int = 20) -> list[dict[str, Any]]:
     return get_recent_tasks(limit)
+
+
+@router.get('/api/workreport/days-off')
+def api_days_off(month: str = '') -> list[dict[str, Any]]:
+    return list_days_off(month)
+
+
+@router.post('/api/workreport/days-off')
+def api_upsert_day_off(body: DayOffCreate) -> dict[str, Any]:
+    try:
+        return upsert_day_off(body.date, body.name, body.kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail='날짜 형식은 YYYY-MM-DD여야 합니다') from exc
+
+
+@router.delete('/api/workreport/days-off/{work_date}')
+def api_delete_day_off(work_date: str) -> dict[str, str]:
+    if not delete_day_off(work_date):
+        raise HTTPException(status_code=404, detail='등록된 휴가일을 찾을 수 없습니다')
+    return {'ok': 'deleted'}
 
 
 # ── Project ───────────────────────────────────────────────────────────────

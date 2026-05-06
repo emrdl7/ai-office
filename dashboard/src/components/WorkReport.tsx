@@ -53,6 +53,13 @@ interface PublicHoliday {
   sequence?: string
 }
 
+interface DayOff {
+  date: string
+  name: string
+  kind: string
+  created_at?: string
+}
+
 interface MonthlyCalendar {
   month: string
   period: { start: string; end: string }
@@ -60,6 +67,7 @@ interface MonthlyCalendar {
   days: MonthlyDay[]
   tasks?: CalendarTask[]
   holidays?: PublicHoliday[]
+  days_off?: DayOff[]
 }
 
 type CalendarTask = Pick<
@@ -395,6 +403,7 @@ async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
     days,
     tasks,
     holidays: [],
+    days_off: [],
   }
 }
 
@@ -463,10 +472,14 @@ function WorkCalendar({
     const weeks = chunkWeeks(cells)
     const byDate = new Map<string, MonthlyDay>()
     const holidaysByDate = new Map<string, PublicHoliday[]>()
+    const daysOffByDate = new Map<string, DayOff[]>()
     for (const data of dataByMonth.values()) {
       for (const day of data.days ?? []) byDate.set(day.date, day)
       for (const holiday of data.holidays ?? []) {
         holidaysByDate.set(holiday.date, [...(holidaysByDate.get(holiday.date) ?? []), holiday])
+      }
+      for (const dayOff of data.days_off ?? []) {
+        daysOffByDate.set(dayOff.date, [...(daysOffByDate.get(dayOff.date) ?? []), dayOff])
       }
     }
     const allTasks = Array.from(new Map(
@@ -531,7 +544,13 @@ function WorkCalendar({
                 const monthData = dataByMonth.get(cellMonth)
                 const isMonthLoading = monthQueries[months.indexOf(cellMonth)]?.isLoading
                 const holidays = holidaysByDate.get(cell.date) ?? []
+                const daysOff = daysOffByDate.get(cell.date) ?? []
                 const isHoliday = holidays.length > 0
+                const isDayOff = daysOff.length > 0
+                const dayLabels = [
+                  ...daysOff.map((item) => item.name),
+                  ...holidays.map((holiday) => holiday.name),
+                ]
                 return (
                   <button
                     key={cell.date}
@@ -541,7 +560,7 @@ function WorkCalendar({
                       onSelectDate(cell.date)
                     }}
                     className={`relative h-full min-h-[118px] border-l border-slate-300 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-700 dark:hover:bg-cyan-950/20
-                      ${isHoliday ? 'bg-rose-50/70 dark:bg-rose-950/10' : 'bg-white/50 dark:bg-slate-950/20'}
+                      ${isDayOff ? 'bg-amber-50/80 dark:bg-amber-950/15' : isHoliday ? 'bg-rose-50/70 dark:bg-rose-950/10' : 'bg-white/50 dark:bg-slate-950/20'}
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
@@ -551,16 +570,16 @@ function WorkCalendar({
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
                     )}
-                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isHoliday ? 'text-rose-600 dark:text-rose-300' : isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
+                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday ? 'text-rose-600 dark:text-rose-300' : isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
                       {cell.day}
                     </span>
-                    {isHoliday && (
-                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[10px] font-black text-rose-600 dark:text-rose-300 ${isFirstDay ? 'top-7' : 'top-2'}`}>
-                        {holidays.map((holiday) => holiday.name).join(', ')}
+                    {dayLabels.length > 0 && (
+                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[10px] font-black ${isDayOff ? 'text-amber-700 dark:text-amber-200' : 'text-rose-600 dark:text-rose-300'} ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                        {dayLabels.join(', ')}
                       </span>
                     )}
                     {day && (
-                      <span className={`absolute left-2 text-[10px] font-black text-slate-500 dark:text-slate-300 ${isHoliday && isFirstDay ? 'top-12' : isHoliday || isFirstDay ? 'top-7' : 'top-2'}`}>
+                      <span className={`absolute left-2 text-[10px] font-black text-slate-500 dark:text-slate-300 ${dayLabels.length > 0 && isFirstDay ? 'top-12' : dayLabels.length > 0 || isFirstDay ? 'top-7' : 'top-2'}`}>
                         {day.task_count}
                       </span>
                     )}
@@ -773,6 +792,15 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     refetchInterval: 30000,
   })
 
+  const { data: daysOff = [] } = useQuery<DayOff[]>({
+    queryKey: ['wr-days-off', viewDate.slice(0, 7)],
+    queryFn: async () => {
+      const res = await fetch(`/api/workreport/days-off?month=${viewDate.slice(0, 7)}`)
+      if (!res.ok) return []
+      return res.json()
+    },
+  })
+
   const updateProgress = useMutation({
     mutationFn: async ({ id, progress }: { id: number; progress: number }) => {
       const res = await fetch(`/api/workreport/tasks/${id}`, {
@@ -785,6 +813,32 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wr-daily', viewDate] })
       qc.invalidateQueries({ queryKey: ['wr-dashboard'] })
+    },
+  })
+
+  const registerDayOff = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/workreport/days-off', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: viewDate, name: '휴가', kind: 'vacation' }),
+      })
+      if (!res.ok) throw new Error()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wr-days-off', viewDate.slice(0, 7)] })
+      qc.invalidateQueries({ queryKey: ['wr-monthly'] })
+    },
+  })
+
+  const deleteDayOff = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/workreport/days-off/${viewDate}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) throw new Error()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wr-days-off', viewDate.slice(0, 7)] })
+      qc.invalidateQueries({ queryKey: ['wr-monthly'] })
     },
   })
 
@@ -823,6 +877,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
 
   const isToday = viewDate === today
   const isCurrentWeek = weekStart === getWeekStart(today)
+  const selectedDayOff = daysOff.find((item) => item.date === viewDate)
   const avgProgress = tasks.length
     ? Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
     : 0
@@ -973,6 +1028,30 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
             className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800
               cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
             <MatIcon name="chevron_right" className="text-[20px] text-gray-500" />
+          </button>
+        </div>
+
+        <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+          selectedDayOff
+            ? 'border-amber-200 bg-amber-50/80 text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-100'
+            : 'border-slate-200 bg-white/75 text-slate-700 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300'
+        }`}>
+          <div className="min-w-0">
+            <p className="text-xs font-black">{selectedDayOff ? selectedDayOff.name : '이 날짜를 휴가일로 표시'}</p>
+            <p className="mt-0.5 text-[11px] opacity-70">
+              {selectedDayOff ? '업무 캘린더에서 직접 등록 휴무일로 표시됩니다' : '개인 휴가, 연차, 대체휴무처럼 공휴일이 아닌 휴무를 등록합니다'}
+            </p>
+          </div>
+          <button
+            onClick={() => selectedDayOff ? deleteDayOff.mutate() : registerDayOff.mutate()}
+            disabled={registerDayOff.isPending || deleteDayOff.isPending}
+            className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
+              selectedDayOff
+                ? 'bg-amber-200 text-amber-950 hover:bg-amber-300 dark:bg-amber-300 dark:hover:bg-amber-200'
+                : 'bg-slate-950 text-white hover:bg-amber-600 dark:bg-amber-300 dark:text-slate-950 dark:hover:bg-amber-200'
+            }`}
+          >
+            {selectedDayOff ? '휴가 해제' : '휴가 등록'}
           </button>
         </div>
 
