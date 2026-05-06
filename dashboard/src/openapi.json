@@ -1938,7 +1938,7 @@
     "/api/jobs/insights": {
       "get": {
         "summary": "Job Insights",
-        "description": "Job 파이프라인 인사이트 — 완료율, 모델 사용, 스펙별 통계.",
+        "description": "Job 파이프라인 인사이트 — 완료율, 라우팅 품질, 스펙별 통계.",
         "operationId": "job_insights_api_jobs_insights_get",
         "responses": {
           "200": {

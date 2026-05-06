@@ -27,7 +27,6 @@ interface RoutingQualityItem {
   revised: number
   revision_rate: number
   fallback_count: number
-  avg_cost_usd: number
   avg_quality_score: number
 }
 

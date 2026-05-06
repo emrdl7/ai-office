@@ -215,7 +215,7 @@ async def submit_job(
 
 @router.get('/api/jobs/insights')
 async def job_insights() -> dict[str, Any]:
-    """Job 파이프라인 인사이트 — 완료율, 모델 사용, 스펙별 통계."""
+    """Job 파이프라인 인사이트 — 완료율, 라우팅 품질, 스펙별 통계."""
     from db.job_store import _conn as _jconn
     from db.job_store import get_routing_quality_stats
 
@@ -233,12 +233,6 @@ async def job_insights() -> dict[str, Any]:
     for r in spec_rows:
         by_spec.setdefault(r['spec_id'], {})
         by_spec[r['spec_id']][r['status']] = r['cnt']
-
-    model_rows = c.execute(
-        "SELECT model_used, COUNT(*) as cnt FROM job_steps "
-        "WHERE status='done' AND model_used != '' GROUP BY model_used ORDER BY cnt DESC"
-    ).fetchall()
-    model_usage = [{'model': r['model_used'], 'count': r['cnt']} for r in model_rows]
 
     time_rows = c.execute(
         "SELECT started_at, finished_at FROM jobs "
@@ -270,17 +264,6 @@ async def job_insights() -> dict[str, Any]:
     ).fetchall()
     daily_done = [{'day': r['day'], 'count': r['cnt']} for r in daily_rows]
 
-    cost_row = c.execute(
-        "SELECT COALESCE(SUM(total_cost_usd), 0.0) as total_cost "
-        "FROM jobs WHERE status='done'"
-    ).fetchone()
-    total_cost_usd = round(float(cost_row['total_cost'] or 0), 4)
-
-    step_cost_row = c.execute(
-        "SELECT COALESCE(SUM(cost_usd), 0.0) as total FROM job_steps WHERE status='done'"
-    ).fetchone()
-    step_cost_usd = round(float(step_cost_row['total'] or 0), 4)
-
     c.close()
     total = sum(by_status.values())
     done = by_status.get('done', 0)
@@ -290,13 +273,10 @@ async def job_insights() -> dict[str, Any]:
         'completion_rate': round(done / total * 100, 1) if total else 0,
         'avg_duration_sec': avg_duration,
         'by_spec': by_spec,
-        'model_usage': model_usage,
         'total_revised': total_revised,
         'total_steps_done': total_steps,
         'revision_rate': round(total_revised / total_steps * 100, 1) if total_steps else 0,
         'daily_done': daily_done,
-        'total_cost_usd': total_cost_usd,
-        'step_cost_usd': step_cost_usd,
         'routing_quality': get_routing_quality_stats(),
     }
 
