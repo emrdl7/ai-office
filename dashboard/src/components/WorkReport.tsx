@@ -589,7 +589,7 @@ function WorkCalendar({
                       {cell.day}
                     </span>
                     {dayLabels.length > 0 && (
-                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[10px] font-black ${isDayOff ? 'text-amber-700 dark:text-amber-200' : 'text-rose-600 dark:text-rose-300'} ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[9px] font-semibold ${isDayOff ? 'text-amber-700/85 dark:text-amber-200/85' : 'text-rose-600/85 dark:text-rose-300/85'} ${isFirstDay ? 'top-7' : 'top-2'}`}>
                         {dayLabels.join(', ')}
                       </span>
                     )}
