@@ -435,9 +435,9 @@ function WorkCalendar({
   const [months, setMonths] = useState(() => buildMonthRange(month, 0, 6))
   const [visibleMonth, setVisibleMonth] = useState(month)
   const ribbonTop = 40
-  const ribbonRowHeight = 20
-  const ribbonRowGap = 3
-  const ribbonBottomPadding = 14
+  const ribbonRowHeight = 17
+  const ribbonRowGap = 1
+  const ribbonBottomPadding = 10
   const monthQueries = useQueries({
     queries: months.map((m) => ({
       queryKey: ['wr-monthly', m],
@@ -610,14 +610,14 @@ function WorkCalendar({
               })}
 
               <div
-                className="pointer-events-none absolute inset-x-0 grid grid-cols-7 gap-y-[3px] overflow-hidden px-1.5"
+                className="pointer-events-none absolute inset-x-0 grid grid-cols-7 gap-y-px overflow-hidden px-1.5"
                 style={{ top: ribbonTop, gridAutoRows: ribbonRowHeight }}
               >
                 {weekRibbons.map(({ task, startCol, endCol, row, startsBefore, endsAfter }) => {
                   return (
                     <div
                       key={`${task.id}-${weekIndex}`}
-                      className={`min-w-0 self-start px-2.5 py-0.5 text-[10px] font-black leading-none shadow-sm ring-1 ring-white/20 ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
+                      className={`min-w-0 self-start px-2.5 py-0 text-[10px] font-semibold leading-[17px] shadow-sm ring-1 ring-white/20 ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
                       style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row }}
                       title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
                     >
