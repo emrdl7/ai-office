@@ -402,6 +402,7 @@ function WorkCalendar({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [months, setMonths] = useState(() => buildMonthRange(month, 0, 6))
+  const [visibleMonth, setVisibleMonth] = useState(month)
   const monthQueries = useQueries({
     queries: months.map((m) => ({
       queryKey: ['wr-monthly', m],
@@ -420,6 +421,14 @@ function WorkCalendar({
   function handleScroll() {
     const el = scrollRef.current
     if (!el) return
+    const probeY = el.getBoundingClientRect().top + 72
+    const visibleDate = Array.from(el.querySelectorAll<HTMLElement>('[data-calendar-date]'))
+      .find((node) => node.getBoundingClientRect().bottom >= probeY)
+      ?.dataset.calendarDate
+    if (visibleDate) {
+      const nextVisibleMonth = visibleDate.slice(0, 7)
+      if (nextVisibleMonth !== visibleMonth) setVisibleMonth(nextVisibleMonth)
+    }
     if (el.scrollTop < 280) {
       const previousHeight = el.scrollHeight
       setMonths((prev) => {
@@ -483,6 +492,7 @@ function WorkCalendar({
                 return (
                   <button
                     key={cell.date}
+                    data-calendar-date={cell.date}
                     onClick={() => {
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
@@ -540,14 +550,15 @@ function WorkCalendar({
     <div className="command-surface rounded-3xl p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(month)}</p>
+          <p className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(visibleMonth)}</p>
           <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-            {dataByMonth.get(month)?.total ?? 0}개 작업 기록
+            {dataByMonth.get(visibleMonth)?.total ?? 0}개 작업 기록
           </p>
         </div>
         <button
           onClick={() => {
             onMonthChange(today.slice(0, 7))
+            setVisibleMonth(today.slice(0, 7))
             onSelectDate(today)
           }}
           className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-cyan-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200"
