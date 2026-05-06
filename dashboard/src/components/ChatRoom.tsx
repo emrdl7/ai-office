@@ -187,37 +187,29 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
       </header>
 
       {activeChannel === 'all' && (
-        <section className="shrink-0 px-4 md:px-6 py-3 border-b border-slate-200/70 dark:border-slate-800/70">
-          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold text-slate-900 dark:text-white">대화로 업무를 요청하세요</p>
-              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                비서가 요청 내용을 해석해 필요한 페르소나, 스킬, 툴, 실행 방식을 선택합니다.
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Active Jobs</p>
-              <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{activeJobs.length}</p>
-            </div>
+        <aside className="pointer-events-none fixed right-3 top-[76px] z-30 sm:right-5">
+          <div className="pointer-events-auto min-w-24 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2 text-right shadow-lg shadow-slate-900/10 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/80">
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Active Jobs</p>
+            <p className="text-xl font-black leading-none text-slate-900 tabular-nums dark:text-white">{activeJobs.length}</p>
           </div>
           {activeJobs.length > 0 && (
-            <div className="max-w-5xl mx-auto mt-2 flex gap-2 overflow-x-auto no-scrollbar">
+            <div className="pointer-events-auto mt-2 flex max-w-[260px] flex-col gap-1.5">
               {activeJobs.map((job) => (
                 <button
                   key={job.id}
                   onClick={() => useStore.getState().setActiveChannel('jobs')}
-                  className="shrink-0 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/60 px-3 py-2 text-left hover:border-cyan-400 transition-colors"
+                  className="rounded-xl border border-slate-200/80 bg-white/85 px-3 py-2 text-left shadow-md shadow-slate-900/10 backdrop-blur-xl transition-colors hover:border-cyan-400 dark:border-slate-700/80 dark:bg-slate-950/80"
                 >
                   <div className="flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full ${job.status === 'waiting_gate' ? 'bg-amber-400' : job.status === 'running' ? 'bg-cyan-400 animate-pulse' : 'bg-slate-400'}`} />
-                    <span className="max-w-[220px] truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{job.title}</span>
+                    <span className="max-w-[210px] truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{job.title}</span>
                   </div>
                   <p className="mt-0.5 text-[10px] text-slate-400">{job.current_step || job.status}</p>
                 </button>
               ))}
             </div>
           )}
-        </section>
+        </aside>
       )}
 
       {/* 검색 바 */}
