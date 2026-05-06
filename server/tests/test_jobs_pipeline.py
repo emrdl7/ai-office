@@ -211,6 +211,35 @@ class TestJobStoreCrud:
         assert len(steps) == 1
         assert steps[0]['output'] == '연구 결과'
 
+    def test_upsert_step_persists_selection_metadata(self):
+        from db.job_store import create_job, upsert_step, get_steps
+        from jobs.models import StepRun
+        from datetime import datetime, timezone
+        job = self._make_job('j022')
+        create_job(job)
+        step = StepRun(
+            job_id='j022',
+            step_id='step_review',
+            status='done',
+            started_at=datetime.now(timezone.utc).isoformat(),
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            output='검토 결과',
+            persona='code_reviewer',
+            skills=['code_review'],
+            tools=['diff_files'],
+            execution_mode='review',
+            selection_source='spec_static',
+            selection_reason='검토 스텝이라 코드 리뷰 페르소나를 사용합니다.',
+        )
+        upsert_step(step)
+        stored = get_steps('j022')[0]
+        assert stored['persona'] == 'code_reviewer'
+        assert stored['skills'] == ['code_review']
+        assert stored['tools'] == ['diff_files']
+        assert stored['execution_mode'] == 'review'
+        assert stored['selection_source'] == 'spec_static'
+        assert '코드 리뷰' in stored['selection_reason']
+
     def test_upsert_step_idempotent(self):
         """같은 step_id로 두 번 upsert해도 row가 하나여야 함."""
         from db.job_store import create_job, upsert_step, get_steps

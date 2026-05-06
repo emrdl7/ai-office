@@ -16,6 +16,7 @@ _SKILLS_DIR = _DATA / 'skills'
 # 툴 목록은 tool_registry에서 가져오므로 캐시만 보관
 _persona_catalog: list[dict] | None = None
 _skill_catalog: list[dict] | None = None
+_EXECUTION_MODES = {'single', 'tool_assisted', 'research', 'review', 'parallel_safe'}
 
 
 def invalidate_catalog_cache() -> None:
@@ -75,6 +76,55 @@ def _load_tool_catalog() -> list[dict]:
         return []
 
 
+def _infer_execution_mode(step) -> str:
+    if getattr(step, 'parallel', False):
+        return 'parallel_safe'
+    tool_ids = set(getattr(step, 'tools', []) or [])
+    skill_ids = set(getattr(step, 'skills', []) or [])
+    agent = str(getattr(step, 'agent', '') or '').lower()
+    tier = str(getattr(step, 'tier', '') or '').lower()
+    if 'reviewer' in agent or {'critique', 'code_review', 'test_case_design'} & skill_ids:
+        return 'review'
+    if tier == 'research' or {'web_search', 'url_fetch', 'rss_feed'} & tool_ids:
+        return 'research'
+    if tool_ids:
+        return 'tool_assisted'
+    return 'single'
+
+
+def _static_selection_reason(step) -> str:
+    parts = []
+    if getattr(step, 'persona', ''):
+        parts.append(f'persona={step.persona}')
+    if getattr(step, 'skills', None):
+        parts.append(f'skills={",".join(step.skills)}')
+    if getattr(step, 'tools', None):
+        parts.append(f'tools={",".join(step.tools)}')
+    if not parts:
+        return '명시된 선택값이 없어 기본 단일 실행으로 처리합니다.'
+    return '업무 스펙에 명시된 선택값을 사용합니다: ' + '; '.join(parts)
+
+
+def _clean_selection_reason(value: str) -> str:
+    reason = str(value or '').strip()
+    replacements = {
+        '팀원': '전문 모드',
+        '동료': '전문 모드',
+        '회의': '검토',
+        '에이전트': '실행 모드',
+    }
+    for src, dst in replacements.items():
+        reason = reason.replace(src, dst)
+    return reason[:500]
+
+
+def _normalize_execution_mode(value: str, step) -> str:
+    mode = str(value or '').strip()
+    if mode in _EXECUTION_MODES:
+        return mode
+    return _infer_execution_mode(step)
+
+
 def _build_selection_prompt(step, context: dict[str, str]) -> str:
     personas = _load_persona_catalog()
     skills = _load_skill_catalog()
@@ -109,8 +159,9 @@ def _build_selection_prompt(step, context: dict[str, str]) -> str:
     if context.get('output_format'):
         hint_block += f'\n[출력 형식 요청] {context["output_format"]} → deliver 스텝이면 반드시 이 형식에 맞는 툴 선택:\n  pdf → pdf_generate | docx → docx_generate | pptx → pptx_generate | notion → notion_write | slack → slack_post | drive → google_drive_upload\n'
 
-    return f"""당신은 AI 에이전트 오케스트레이터입니다.
+    return f"""당신은 AI 업무 오케스트레이터입니다.
 아래 Step의 목적에 가장 적합한 페르소나 1개, 스킬 1-3개, 툴 0-3개를 선택하세요.
+여러 자율 에이전트를 만들지 말고, 단일 실행 흐름 안에서 필요한 전문 모드만 고르세요.
 
 [Step 정보]
 id: {step.id}
@@ -135,9 +186,11 @@ prompt 요약: {step.prompt_template[:300]}
 - 스킬: prompt에서 요구하는 사고방식과 출력 형식에 필요한 것만
 - 툴: prompt에서 실제로 호출할 가능성이 높은 것만 (없어도 됨)
 - 힌트가 있고 적절하면 그대로 사용
+- execution_mode: single | tool_assisted | research | review | parallel_safe 중 하나
+- selection_reason: 왜 이 조합이 필요한지 1문장, 내부 팀/동료/회의 표현 금지
 
 다음 JSON만 출력하세요 (설명 없이):
-{{"persona": "persona_id", "skills": ["skill_id1"], "tools": ["tool_id1"]}}"""
+{{"persona": "persona_id", "skills": ["skill_id1"], "tools": ["tool_id1"], "execution_mode": "single", "selection_reason": "선택 근거"}}"""
 
 
 async def configure_step(step, context: dict[str, str]):
@@ -145,9 +198,16 @@ async def configure_step(step, context: dict[str, str]):
 
     spec에 모두 지정돼 있으면 Haiku 호출을 건너뛴다 (비용 0).
     """
-    # persona와 skills 모두 spec에 지정돼 있으면 Haiku 호출 불필요
+    import dataclasses
+
+    # persona와 skills 모두 spec에 지정돼 있으면 LLM 호출 불필요
     if step.persona and step.skills:
-        return step
+        return dataclasses.replace(
+            step,
+            execution_mode=step.execution_mode or _infer_execution_mode(step),
+            selection_source=step.selection_source or 'spec_static',
+            selection_reason=step.selection_reason or _static_selection_reason(step),
+        )
 
     # Haiku 호출
     try:
@@ -168,11 +228,15 @@ async def configure_step(step, context: dict[str, str]):
                 raw = raw[4:]
         config = json.loads(raw.strip())
     except Exception as e:
-        logger.warning('[step_configurator] Haiku 선택 실패(%s) — spec 값 유지: %s', step.id, e)
-        return step
+        logger.warning('[step_configurator] 선택 실패(%s) — spec 값 유지: %s', step.id, e)
+        return dataclasses.replace(
+            step,
+            execution_mode=step.execution_mode or _infer_execution_mode(step),
+            selection_source=step.selection_source or 'fallback',
+            selection_reason=step.selection_reason or _static_selection_reason(step),
+        )
 
     # spec 힌트 우선: 이미 지정된 필드는 덮어쓰지 않음
-    import dataclasses
     updates = {}
     if not step.persona and config.get('persona'):
         updates['persona'] = config['persona']
@@ -180,6 +244,19 @@ async def configure_step(step, context: dict[str, str]):
         updates['skills'] = config['skills']
     if not step.tools and config.get('tools'):
         updates['tools'] = config['tools']
+    proposed_step = dataclasses.replace(step, **updates) if updates else step
+    updates['execution_mode'] = step.execution_mode or _normalize_execution_mode(
+        config.get('execution_mode', ''),
+        proposed_step,
+    )
+    updates['selection_source'] = step.selection_source or (
+        'llm_partial' if step.persona or step.skills or step.tools else 'llm_configurator'
+    )
+    updates['selection_reason'] = (
+        step.selection_reason
+        or _clean_selection_reason(config.get('selection_reason', ''))
+        or _static_selection_reason(proposed_step)
+    )
 
     if updates:
         step = dataclasses.replace(step, **updates)

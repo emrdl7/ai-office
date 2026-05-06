@@ -35,6 +35,9 @@ class StepSpec:
     inputs: list[str] = field(default_factory=list)  # 선택적 컨텍스트 주입 키 (비어있으면 전체)
     optional: bool = False                   # True이면 job_planner가 스킵 결정 가능
     when: str = ''                           # 결정적 skip 조건 — _eval_gate_condition 문법 (contains/equals/not_empty)
+    execution_mode: str = ''                 # single/tool_assisted/research/review/parallel_safe
+    selection_source: str = ''               # spec_static/llm_configurator/llm_partial/fallback
+    selection_reason: str = ''               # 페르소나·스킬·툴 선택 근거
 
 
 @dataclass
@@ -67,6 +70,9 @@ class StepRun:
     persona: str = ''                      # Haiku가 선택한 페르소나
     skills: list[str] = field(default_factory=list)   # Haiku가 선택한 스킬
     tools: list[str] = field(default_factory=list)    # Haiku가 선택한 툴
+    execution_mode: str = ''
+    selection_source: str = ''
+    selection_reason: str = ''
 
 
 @dataclass

@@ -62,6 +62,9 @@ def _parse(data: dict[str, Any]) -> JobSpec:
             inputs=s.get('inputs', []),
             optional=s.get('optional', False),
             when=s.get('when', ''),
+            execution_mode=s.get('execution_mode', ''),
+            selection_source=s.get('selection_source', ''),
+            selection_reason=s.get('selection_reason', ''),
         )
         for s in data.get('steps', [])
     ]

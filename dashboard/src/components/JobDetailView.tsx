@@ -171,6 +171,29 @@ const STEP_STATUS_ICON: Record<string, { icon: string; cls: string }> = {
   failed:  { icon: 'cancel',                 cls: 'text-red-500' },
 }
 
+const EXECUTION_MODE_LABEL: Record<string, { text: string; cls: string }> = {
+  single: {
+    text: '단일 실행',
+    cls: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+  },
+  tool_assisted: {
+    text: '툴 보조',
+    cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+  },
+  research: {
+    text: '리서치',
+    cls: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300',
+  },
+  review: {
+    text: '검토',
+    cls: 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300',
+  },
+  parallel_safe: {
+    text: '병렬 안전',
+    cls: 'bg-lime-100 dark:bg-lime-900/30 text-lime-700 dark:text-lime-300',
+  },
+}
+
 function elapsed(start: string, end?: string): string {
   if (!start) return ''
   const s = new Date(start).getTime()
@@ -216,6 +239,7 @@ function StepCard({
   const isHtmlPreview = step.step_id === 'preview_html' && step.output?.includes('```html')
   const isCode = !hasMermaid && !hasVega && !isHtmlPreview && (step.output?.includes('```html') || step.output?.includes('```css'))
   const setActiveChannel = useStore((state) => state.setActiveChannel)
+  const executionMode = step.execution_mode ? EXECUTION_MODE_LABEL[step.execution_mode] : null
 
   function openComponentLibrary(e: ReactMouseEvent) {
     e.stopPropagation()
@@ -291,6 +315,11 @@ function StepCard({
                 {step.model_used.replace('claude-', '').replace('-4-5-20251001', '').replace('-4-6', '')}
               </span>
             )}
+            {executionMode && (
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${executionMode.cls}`}>
+                {executionMode.text}
+              </span>
+            )}
             {step.started_at && (
               <span className="text-[10px] text-gray-400 shrink-0">
                 {elapsed(step.started_at, step.finished_at || undefined)}
@@ -341,6 +370,14 @@ function StepCard({
                 </span>
               ))}
             </div>
+          )}
+          {(step.selection_reason || step.selection_source) && (
+            <p className="mt-1 text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+              {step.selection_reason}
+              {step.selection_source && (
+                <span className="ml-1 font-mono opacity-60">({step.selection_source})</span>
+              )}
+            </p>
           )}
           {step.status === 'failed' && step.error && (
             <p className="text-[11px] text-red-500 mt-0.5">{step.error}</p>

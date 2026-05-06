@@ -409,7 +409,7 @@ async def _execute(
                     await emit(
                         f'⚡ 병렬 그룹 시작 ({len(group_steps)}): {[s.id for s in group_steps]}',
                         'job_step_group_started',
-                        {'step_ids': [s.id for s in group_steps]},
+                        {'step_ids': [s.id for s in group_steps], 'execution_mode': 'parallel_safe'},
                     )
                     configured_group = await asyncio.gather(
                         *[configure_step(s, context) for s in group_steps]
@@ -428,6 +428,9 @@ async def _execute(
                     f'▶ Step: {step.id} (parallel)', 'job_step_started',
                     {'step_id': step.id, 'tier': step.tier,
                      'persona': step.persona, 'skills': step.skills,
+                     'tools': step.tools, 'execution_mode': step.execution_mode,
+                     'selection_source': step.selection_source,
+                     'selection_reason': step.selection_reason,
                      'parallel': True},
                 )
             else:
@@ -435,12 +438,18 @@ async def _execute(
                 step = await configure_step(step, context)
                 await emit(f'▶ Step: {step.id}', 'job_step_started',
                            {'step_id': step.id, 'tier': step.tier,
-                            'persona': step.persona, 'skills': step.skills})
+                            'persona': step.persona, 'skills': step.skills,
+                            'tools': step.tools, 'execution_mode': step.execution_mode,
+                            'selection_source': step.selection_source,
+                            'selection_reason': step.selection_reason})
                 step_run = await _run_step(job.id, step, context)
-            # Haiku가 결정한 persona/skills/tools를 step_run에 기록
+            # 실행 결정 메타데이터를 step_run에 기록
             step_run.persona = step.persona
             step_run.skills = step.skills
             step_run.tools = step.tools
+            step_run.execution_mode = step.execution_mode
+            step_run.selection_source = step.selection_source
+            step_run.selection_reason = step.selection_reason
             upsert_step(step_run)
 
             if step_run.status == 'failed':
@@ -741,6 +750,12 @@ async def _run_step(
         step_id=step.id,
         status='running',
         started_at=started,
+        persona=step.persona,
+        skills=step.skills,
+        tools=step.tools,
+        execution_mode=step.execution_mode,
+        selection_source=step.selection_source,
+        selection_reason=step.selection_reason,
     )
     upsert_step(step_run)
 

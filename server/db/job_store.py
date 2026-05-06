@@ -69,6 +69,9 @@ def _conn() -> sqlite3.Connection:
         ('job_steps', 'persona', 'TEXT DEFAULT ""'),
         ('job_steps', 'skills_json', "TEXT DEFAULT '[]'"),
         ('job_steps', 'tools_json', "TEXT DEFAULT '[]'"),
+        ('job_steps', 'execution_mode', 'TEXT DEFAULT ""'),
+        ('job_steps', 'selection_source', 'TEXT DEFAULT ""'),
+        ('job_steps', 'selection_reason', 'TEXT DEFAULT ""'),
         ('jobs', 'total_cost_usd', 'REAL DEFAULT 0.0'),
         ('jobs', 'artifact_kinds_json', "TEXT DEFAULT '{}'"),
         ('jobs', 'planned_steps_json', "TEXT DEFAULT '[]'"),
@@ -164,14 +167,16 @@ def upsert_step(step: StepRun) -> None:
     c.execute(
         'INSERT INTO job_steps (job_id, step_id, status, started_at, finished_at, '
         'output, error, model_used, cost_usd, revised, revision_feedback, '
-        'persona, skills_json, tools_json) '
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) '
+        'persona, skills_json, tools_json, execution_mode, selection_source, selection_reason) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) '
         'ON CONFLICT(job_id, step_id) DO UPDATE SET '
         'status=excluded.status, started_at=excluded.started_at, '
         'finished_at=excluded.finished_at, output=excluded.output, '
         'error=excluded.error, model_used=excluded.model_used, cost_usd=excluded.cost_usd, '
         'revised=excluded.revised, revision_feedback=excluded.revision_feedback, '
-        'persona=excluded.persona, skills_json=excluded.skills_json, tools_json=excluded.tools_json',
+        'persona=excluded.persona, skills_json=excluded.skills_json, tools_json=excluded.tools_json, '
+        'execution_mode=excluded.execution_mode, selection_source=excluded.selection_source, '
+        'selection_reason=excluded.selection_reason',
         (step.job_id, step.step_id, step.status,
          step.started_at, step.finished_at,
          step.output or '',
@@ -179,7 +184,10 @@ def upsert_step(step: StepRun) -> None:
          step.revised, step.revision_feedback,
          step.persona,
          json.dumps(step.skills, ensure_ascii=False),
-         json.dumps(step.tools, ensure_ascii=False)),
+         json.dumps(step.tools, ensure_ascii=False),
+         step.execution_mode,
+         step.selection_source,
+         step.selection_reason),
     )
     c.commit()
     c.close()

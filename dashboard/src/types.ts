@@ -91,6 +91,9 @@ export interface JobStep extends JobStepMeta {
   persona?: string
   skills?: string[]
   tools?: string[]
+  execution_mode?: string
+  selection_source?: string
+  selection_reason?: string
 }
 
 export interface JobGate {
