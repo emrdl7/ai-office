@@ -35,8 +35,8 @@ function StepGroupCard({ logs }: { logs: LogEntry[] }) {
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-2xl
-          bg-white/72 dark:bg-slate-900/62 border border-slate-200/80 dark:border-slate-700/70
-          shadow-sm hover:border-cyan-400/70 transition-colors cursor-pointer touch-manipulation"
+          bg-white/82 dark:bg-slate-900/68 border border-white/70 dark:border-slate-700/70
+          shadow-sm shadow-slate-900/5 hover:border-teal-400/70 transition-colors cursor-pointer touch-manipulation backdrop-blur"
       >
         <MatIcon
           name={failedCount > 0 ? 'error' : allDone ? 'check_circle' : 'pending'}
@@ -91,7 +91,7 @@ function OperationEventCard({ log }: { log: LogEntry }) {
     : 'border-slate-200/80 bg-white/80 text-slate-700 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-200'
   return (
     <div className="py-1.5">
-      <div className={`mx-auto flex max-w-2xl items-start gap-2.5 rounded-2xl border px-3 py-2.5 shadow-sm backdrop-blur ${tone}`}>
+      <div className={`mx-auto flex max-w-2xl items-start gap-2.5 rounded-3xl border px-3 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur ${tone}`}>
         <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/70 text-current dark:bg-slate-950/50">
           <MatIcon name={icon} className="text-[15px]" />
         </span>
@@ -180,7 +180,7 @@ export function MessageList({ logs, onImageClick }: MessageListProps) {
       elements.push(
         <div key={`date-${currentDate}`} className="flex items-center gap-3 py-5">
           <div className="flex-1 h-px bg-gradient-to-r from-transparent to-slate-300 dark:to-slate-700" />
-          <span className="rounded-full border border-slate-200/80 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-400 dark:border-slate-700/80 dark:bg-slate-900/70 whitespace-nowrap">{currentDate}</span>
+          <span className="rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[11px] font-bold text-slate-400 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/70 whitespace-nowrap">{currentDate}</span>
           <div className="flex-1 h-px bg-gradient-to-l from-transparent to-slate-300 dark:to-slate-700" />
         </div>
       )
@@ -334,9 +334,9 @@ function UserMessageText({ text }: { text: string }) {
     : text
 
   return (
-    <div className="bg-gradient-to-br from-slate-950 via-cyan-700 to-teal-600 text-white
-      px-4 py-3 rounded-[20px] rounded-tr-[6px]
-      text-sm leading-relaxed shadow-lg shadow-cyan-500/20
+    <div className="bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 text-white
+      px-4 py-3 rounded-[22px] rounded-tr-[7px]
+      text-sm leading-relaxed shadow-xl shadow-teal-500/18
       ring-1 ring-inset ring-white/10">
       {linkify(display)}
       {isLong && (
@@ -376,7 +376,7 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClickProp }: {
 
   return (
     <div className="group relative">
-      <div className={`px-3.5 md:px-4 py-3 rounded-[22px] rounded-tl-[7px] text-sm leading-relaxed
+      <div className={`px-3.5 md:px-4 py-3 rounded-[24px] rounded-tl-[8px] text-sm leading-relaxed
         transition-all duration-150
         ${needsInput
           ? 'bg-amber-50 dark:bg-amber-900/25 border-2 border-amber-300 dark:border-amber-600/70 shadow-md shadow-amber-500/10'
@@ -385,7 +385,7 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClickProp }: {
             : isColleagueQ
               ? 'bg-teal-50/70 dark:bg-teal-900/20 border border-teal-200/60 dark:border-teal-700/40 shadow-sm'
               : isResponse
-                ? 'bg-white/82 dark:bg-slate-900/82 border border-slate-200/80 dark:border-slate-700/70 shadow-sm backdrop-blur hover:shadow-md hover:border-cyan-300/70 dark:hover:border-cyan-500/50'
+                ? 'bg-white/84 dark:bg-slate-900/80 border border-white/70 dark:border-slate-700/70 shadow-sm shadow-slate-900/5 backdrop-blur hover:shadow-md hover:border-teal-300/70 dark:hover:border-teal-500/50'
                 : 'bg-slate-100/80 dark:bg-slate-800/60 border border-transparent'
         }`}>
         {needsInput && (

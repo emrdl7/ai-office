@@ -43,9 +43,10 @@ body {
   line-height: var(--line-height-base);
   color: var(--color-text-primary);
   background:
-    radial-gradient(circle at 12% 8%, rgba(20, 184, 166, 0.12), transparent 28rem),
-    radial-gradient(circle at 88% 4%, rgba(79, 70, 229, 0.14), transparent 30rem),
-    linear-gradient(135deg, #f8fafc 0%, #eef2ff 46%, #ecfeff 100%);
+    radial-gradient(circle at 10% -10%, rgba(14, 165, 233, 0.22), transparent 34rem),
+    radial-gradient(circle at 82% 8%, rgba(245, 158, 11, 0.16), transparent 30rem),
+    radial-gradient(circle at 58% 104%, rgba(20, 184, 166, 0.18), transparent 34rem),
+    linear-gradient(135deg, #f6f3eb 0%, #edf7f7 42%, #edf2ff 100%);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'ss01' 1, 'tnum' 1;  /* 가독성 향상 + 고정폭 숫자 */
@@ -53,9 +54,10 @@ body {
 
 .dark body {
   background:
-    radial-gradient(circle at 12% 8%, rgba(20, 184, 166, 0.13), transparent 30rem),
-    radial-gradient(circle at 86% 2%, rgba(129, 140, 248, 0.16), transparent 32rem),
-    linear-gradient(135deg, #020617 0%, #08111f 48%, #031a1d 100%);
+    radial-gradient(circle at 8% -8%, rgba(34, 211, 238, 0.15), transparent 34rem),
+    radial-gradient(circle at 84% 4%, rgba(245, 158, 11, 0.12), transparent 32rem),
+    radial-gradient(circle at 54% 105%, rgba(20, 184, 166, 0.13), transparent 34rem),
+    linear-gradient(135deg, #070b12 0%, #0f172a 46%, #07171a 100%);
 }
 
 code, kbd, samp, pre {
@@ -86,9 +88,9 @@ h3 { font-size: var(--font-size-lg);  font-weight: var(--font-weight-semibold); 
   position: relative;
   isolation: isolate;
   background:
-    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
-  background-size: 28px 28px;
+    linear-gradient(rgba(15, 23, 42, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.026) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 .app-chrome::before {
@@ -98,42 +100,68 @@ h3 { font-size: var(--font-size-lg);  font-weight: var(--font-weight-semibold); 
   pointer-events: none;
   z-index: -1;
   background:
-    radial-gradient(circle at 45% 0%, rgba(255, 255, 255, 0.72), transparent 34rem),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.72), transparent 42%),
+    radial-gradient(circle at 45% 0%, rgba(255, 255, 255, 0.78), transparent 34rem),
     radial-gradient(circle at 100% 72%, rgba(20, 184, 166, 0.14), transparent 28rem);
+}
+
+.app-chrome::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.12;
+  background-image:
+    linear-gradient(115deg, transparent 0 42%, rgba(15, 23, 42, 0.08) 42% 42.35%, transparent 42.35% 100%);
+  background-size: 220px 220px;
 }
 
 .dark .app-chrome {
   background:
-    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
-  background-size: 30px 30px;
+    linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 .dark .app-chrome::before {
   background:
+    linear-gradient(120deg, rgba(15, 23, 42, 0.58), transparent 46%),
     radial-gradient(circle at 48% 0%, rgba(30, 41, 59, 0.72), transparent 34rem),
     radial-gradient(circle at 100% 72%, rgba(20, 184, 166, 0.12), transparent 28rem);
 }
 
+.dark .app-chrome::after {
+  opacity: 0.14;
+  background-image:
+    linear-gradient(115deg, transparent 0 42%, rgba(148, 163, 184, 0.11) 42% 42.35%, transparent 42.35% 100%);
+}
+
 .glass-panel {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(203, 213, 225, 0.78);
-  box-shadow: 0 20px 60px -36px rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(22px);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.66));
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 24px 70px -44px rgba(15, 23, 42, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(24px) saturate(1.18);
 }
 
 .dark .glass-panel {
-  background: rgba(15, 23, 42, 0.72);
-  border-color: rgba(51, 65, 85, 0.78);
-  box-shadow: 0 24px 70px -38px rgba(0, 0, 0, 0.8);
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.64));
+  border-color: rgba(148, 163, 184, 0.16);
+  box-shadow:
+    0 24px 74px -42px rgba(0, 0, 0, 0.86),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .command-surface {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.78)),
-    radial-gradient(circle at top right, rgba(20, 184, 166, 0.12), transparent 18rem);
-  border: 1px solid rgba(203, 213, 225, 0.72);
-  box-shadow: 0 20px 60px -40px rgba(15, 23, 42, 0.65);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 251, 235, 0.56)),
+    radial-gradient(circle at top right, rgba(20, 184, 166, 0.14), transparent 18rem);
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  box-shadow: 0 24px 70px -42px rgba(15, 23, 42, 0.58);
 }
 
 .dark .command-surface {
@@ -141,6 +169,38 @@ h3 { font-size: var(--font-size-lg);  font-weight: var(--font-weight-semibold); 
     linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.74)),
     radial-gradient(circle at top right, rgba(20, 184, 166, 0.12), transparent 18rem);
   border-color: rgba(51, 65, 85, 0.72);
+}
+
+.sidebar-shell {
+  background:
+    radial-gradient(circle at 22% 8%, rgba(45, 212, 191, 0.22), transparent 14rem),
+    radial-gradient(circle at 92% 0%, rgba(251, 191, 36, 0.12), transparent 12rem),
+    linear-gradient(180deg, #0b1220 0%, #0a0f1c 48%, #060a12 100%);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.08),
+    18px 0 48px -38px rgba(15, 23, 42, 0.7);
+}
+
+.chat-canvas {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.52), transparent 22rem),
+    radial-gradient(circle at 80% 10%, rgba(20, 184, 166, 0.1), transparent 20rem);
+}
+
+.dark .chat-canvas {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(30, 41, 59, 0.42), transparent 22rem),
+    radial-gradient(circle at 82% 10%, rgba(20, 184, 166, 0.08), transparent 20rem);
+}
+
+.input-dock {
+  background:
+    linear-gradient(180deg, transparent, rgba(246, 243, 235, 0.72) 38%, rgba(246, 243, 235, 0.92));
+}
+
+.dark .input-dock {
+  background:
+    linear-gradient(180deg, transparent, rgba(7, 11, 18, 0.72) 38%, rgba(7, 11, 18, 0.94));
 }
 
 #root {

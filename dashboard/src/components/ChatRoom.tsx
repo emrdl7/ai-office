@@ -142,7 +142,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           )}
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold">{channelTitle}</h2>
+              <h2 className="text-sm font-black tracking-tight">{channelTitle}</h2>
               <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold
                 ${connected ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-slate-500/15 text-slate-500'}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-slate-400'}`} />
@@ -227,8 +227,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
       {/* 대화 영역 — 입력창 아래까지 확장되어 유리효과가 보임 */}
       <div
-        className={`flex-1 overflow-y-auto min-h-0 relative
-          bg-transparent
+        className={`chat-canvas flex-1 overflow-y-auto min-h-0 relative
           ${isDragging ? 'ring-2 ring-inset ring-blue-400' : ''}`}
         role="log" aria-live="polite" aria-label="대화"
         onDragOver={handleDragOver}
@@ -244,11 +243,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           </div>
         )}
-        <div className="max-w-4xl mx-auto px-3 md:px-6 space-y-1 pt-4 pb-36">
+        <div className="max-w-4xl mx-auto px-3 md:px-6 space-y-1 pt-5 pb-36">
           {channelLogs.length === 0 ? (
             <div className="py-24 md:py-32">
-              <div className="command-surface mx-auto max-w-xl rounded-3xl p-6 text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white dark:bg-cyan-300 dark:text-slate-950">
+              <div className="command-surface mx-auto max-w-xl rounded-[2rem] p-7 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 text-white shadow-lg shadow-teal-500/20 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 dark:text-slate-950">
                   <MatIcon name="auto_awesome" className="text-[26px]" />
                 </div>
                 <h3 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">무엇을 맡길까요?</h3>
@@ -269,16 +268,16 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
 
         {/* 입력창 */}
-        <div className="sticky bottom-0 px-3 md:px-5 pb-4 pt-2">
+        <div className="input-dock sticky bottom-0 px-3 md:px-5 pb-4 pt-8">
           <div className="max-w-3xl mx-auto">
             <input ref={fileInputRef} type="file" multiple accept="*/*"
               onChange={handleFileChange} className="hidden" />
 
-            <div className={`rounded-[28px] px-4 pt-3 pb-2
-              backdrop-blur-xl shadow-lg transition-all duration-200 border
+            <div className={`rounded-[30px] px-4 pt-3 pb-2
+              backdrop-blur-2xl shadow-2xl transition-all duration-200 border
               ${message.trim() || files.length > 0
-                ? 'bg-white/90 dark:bg-slate-950/90 border-cyan-400/70 dark:border-cyan-400/50 shadow-cyan-500/15'
-                : 'bg-white/78 dark:bg-slate-950/78 border-slate-200/70 dark:border-slate-700/60'
+                ? 'bg-white/92 dark:bg-slate-950/92 border-teal-400/70 dark:border-cyan-400/50 shadow-teal-500/18'
+                : 'bg-white/82 dark:bg-slate-950/82 border-white/70 dark:border-slate-700/60 shadow-slate-900/10'
               }`}>
 
               {/* 첨부파일 미리보기 */}
@@ -352,7 +351,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                     className={`flex items-center justify-center w-8 h-8 rounded-xl
                       transition-all duration-200 cursor-pointer
                       ${message.trim() || files.length > 0
-                        ? 'bg-slate-950 hover:bg-cyan-600 dark:bg-cyan-300 dark:hover:bg-cyan-200 text-white dark:text-slate-950 shadow-sm shadow-cyan-500/30 hover:scale-105 active:scale-95'
+                        ? 'bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 hover:from-slate-900 hover:via-teal-600 hover:to-amber-400 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 text-white dark:text-slate-950 shadow-md shadow-teal-500/30 hover:scale-105 active:scale-95'
                         : 'text-gray-400/40 dark:text-gray-600 cursor-not-allowed'
                       } disabled:opacity-60`}>
                     {sending

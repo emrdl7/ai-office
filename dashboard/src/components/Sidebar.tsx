@@ -113,25 +113,23 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <aside
       className="w-72 h-full flex-shrink-0 flex flex-col relative overflow-hidden
-        bg-slate-950 text-slate-100
-        border-r border-white/10"
+        sidebar-shell text-slate-100"
       aria-label="채널 목록"
     >
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[260px] pointer-events-none
-        bg-[radial-gradient(ellipse_at_top_left,rgba(20,184,166,0.22),transparent_58%),radial-gradient(ellipse_at_top_right,rgba(99,102,241,0.2),transparent_56%)]" />
+      <div aria-hidden className="absolute inset-x-5 top-5 h-24 pointer-events-none rounded-full bg-cyan-300/10 blur-3xl" />
 
       {/* 브랜드 헤더 */}
       <div className="relative px-4 h-[64px] flex items-center justify-between shrink-0
         border-b border-white/10">
         <div className="flex items-center gap-2.5">
-          <div className="relative w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600
-            flex items-center justify-center shadow-lg shadow-indigo-500/30">
+          <div className="relative w-9 h-9 rounded-2xl bg-gradient-to-br from-cyan-300 via-teal-400 to-amber-300
+            flex items-center justify-center shadow-lg shadow-cyan-500/25 ring-1 ring-white/20">
             <MatIcon name="auto_awesome" className="text-white text-[18px]" />
-            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-white dark:ring-slate-950" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-300 ring-2 ring-slate-950" />
           </div>
           <div className="leading-tight">
-            <h1 className="text-[13px] font-bold text-white tracking-tight">AI Office</h1>
-            <p className="text-[10px] text-cyan-200/70 font-medium">Command operating system</p>
+            <h1 className="text-[14px] font-black text-white tracking-tight">AI Office</h1>
+            <p className="text-[10px] text-cyan-100/62 font-semibold tracking-[0.08em] uppercase">Work agent</p>
           </div>
         </div>
         <button
