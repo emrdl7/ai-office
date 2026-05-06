@@ -1,7 +1,7 @@
 """Job 스텝 system prompt 3-레이어 합성기."""
 from __future__ import annotations
 from pathlib import Path
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 _DATA = Path(__file__).parent.parent.parent / 'data'
 PERSONAS_DIR = _DATA / 'personas'
