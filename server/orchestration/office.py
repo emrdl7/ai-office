@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from core import paths
+from core.dates import kst_today
 from orchestration.intent import IntentType, classify_intent, classify_project_type, detect_worklog_intent
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
@@ -89,6 +90,71 @@ def _is_worklog_help_request(text: str) -> bool:
     '작업해', '맡겨', '이거 해', '이 업무 해', '방금 업무',
   )
   return any(phrase in text for phrase in phrases)
+
+
+_DAY_OFF_KEYWORDS = ('오전반차', '오전 반차', '오후반차', '오후 반차', '휴가', '연차', '휴무', '반차', '대체휴무', '쉬는날', '쉬는 날')
+_DAY_OFF_DELETE_KEYWORDS = ('해제', '삭제', '취소', '빼', '빼줘', '제거')
+
+
+def _parse_korean_calendar_date(text: str, base: date | None = None) -> str | None:
+  '''Parse common Korean chat date expressions as Asia/Seoul dates.'''
+  base_date = base or kst_today()
+
+  iso_match = re.search(r'(20\d{2})[-./](\d{1,2})[-./](\d{1,2})', text)
+  if iso_match:
+    y, m, d = map(int, iso_match.groups())
+    try:
+      return date(y, m, d).isoformat()
+    except ValueError:
+      return None
+
+  month_day_match = re.search(r'(\d{1,2})\s*월\s*(\d{1,2})\s*일?', text)
+  if month_day_match:
+    m, d = map(int, month_day_match.groups())
+    try:
+      return date(base_date.year, m, d).isoformat()
+    except ValueError:
+      return None
+
+  slash_match = re.search(r'(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})(?!\d)', text)
+  if slash_match:
+    m, d = map(int, slash_match.groups())
+    try:
+      return date(base_date.year, m, d).isoformat()
+    except ValueError:
+      return None
+
+  relatives = (
+    ('그제', -2),
+    ('어제', -1),
+    ('오늘', 0),
+    ('내일', 1),
+    ('모레', 2),
+  )
+  for token, offset in relatives:
+    if token in text:
+      return (base_date + timedelta(days=offset)).isoformat()
+
+  return None
+
+
+def _detect_day_off_intent(text: str) -> dict[str, str] | None:
+  if not any(keyword in text for keyword in _DAY_OFF_KEYWORDS):
+    return None
+  work_date = _parse_korean_calendar_date(text) or kst_today().isoformat()
+  action = 'delete' if any(keyword in text for keyword in _DAY_OFF_DELETE_KEYWORDS) else 'upsert'
+  name = next((keyword for keyword in _DAY_OFF_KEYWORDS if keyword in text), '휴가')
+  if name in ('쉬는날', '쉬는 날'):
+    name = '휴무'
+  name = name.replace(' ', '')
+  kind = 'vacation'
+  if name == '오전반차':
+    kind = 'half_day_am'
+  elif name == '오후반차':
+    kind = 'half_day_pm'
+  elif name == '반차':
+    kind = 'half_day'
+  return {'action': action, 'date': work_date, 'name': name, 'kind': kind}
 
 
 from orchestration.state import OfficeState  # re-export for main.py, tests
@@ -423,6 +489,10 @@ class Office:
     if self._worklog_session is not None:
       return await self._step_worklog_session(user_input)
 
+    day_off_intent = _detect_day_off_intent(user_input)
+    if day_off_intent:
+      return await self._handle_day_off_intent(day_off_intent, user_input)
+
     # 업무일지 등록 시작 트리거
     _wl_triggers = ['업무일지 추가', '업무일지 등록', '업무 기록', '작업 기록']
     if any(t in user_input for t in _wl_triggers):
@@ -718,6 +788,21 @@ class Office:
       raw,
       f'업무일지에 {action}.\n**{task.get("project") or "기타"}** / {task["task_name"]} — {progress_label}{help_hint}',
     )
+
+  async def _handle_day_off_intent(self, intent: dict[str, str], raw: str) -> dict[str, Any]:
+    '''Register or remove a user-defined day off from chat.'''
+    from db.workreport_store import delete_day_off, upsert_day_off
+
+    work_date = intent['date']
+    if intent['action'] == 'delete':
+      deleted = await asyncio.to_thread(delete_day_off, work_date)
+      message = f'{work_date} 휴가일을 해제했습니다.' if deleted else f'{work_date}에는 등록된 휴가일이 없습니다.'
+      return await self._emit_reply(raw, message)
+
+    name = intent.get('name') or '휴가'
+    kind = intent.get('kind') or 'vacation'
+    day_off = await asyncio.to_thread(upsert_day_off, work_date, name, kind)
+    return await self._emit_reply(raw, f'{day_off["date"]}을(를) **{day_off["name"]}**로 등록했습니다.')
 
   async def _handle_worklog_help_request(self, user_input: str, recent_context: str = '') -> dict[str, Any]:
     '''최근 업무일지 task를 실제 실행 Job으로 연결한다.'''

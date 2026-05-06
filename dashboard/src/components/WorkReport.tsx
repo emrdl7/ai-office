@@ -60,6 +60,19 @@ interface DayOff {
   created_at?: string
 }
 
+const DAY_OFF_OPTIONS = [
+  { name: '휴가', kind: 'vacation' },
+  { name: '오전반차', kind: 'half_day_am' },
+  { name: '오후반차', kind: 'half_day_pm' },
+]
+
+function dayOffLabel(dayOff: DayOff): string {
+  if (dayOff.kind === 'half_day_am') return '오전반차'
+  if (dayOff.kind === 'half_day_pm') return '오후반차'
+  if (dayOff.kind === 'half_day') return '반차'
+  return dayOff.name || '휴가'
+}
+
 interface MonthlyCalendar {
   month: string
   period: { start: string; end: string }
@@ -548,7 +561,7 @@ function WorkCalendar({
                 const isHoliday = holidays.length > 0
                 const isDayOff = daysOff.length > 0
                 const dayLabels = [
-                  ...daysOff.map((item) => item.name),
+                  ...daysOff.map(dayOffLabel),
                   ...holidays.map((holiday) => holiday.name),
                 ]
                 return (
@@ -817,11 +830,11 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
   })
 
   const registerDayOff = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ name, kind }: { name: string; kind: string }) => {
       const res = await fetch('/api/workreport/days-off', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: viewDate, name: '휴가', kind: 'vacation' }),
+        body: JSON.stringify({ date: viewDate, name, kind }),
       })
       if (!res.ok) throw new Error()
     },
@@ -1037,22 +1050,33 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
             : 'border-slate-200 bg-white/75 text-slate-700 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300'
         }`}>
           <div className="min-w-0">
-            <p className="text-xs font-black">{selectedDayOff ? selectedDayOff.name : '이 날짜를 휴가일로 표시'}</p>
+            <p className="text-xs font-black">{selectedDayOff ? dayOffLabel(selectedDayOff) : '이 날짜를 휴무로 표시'}</p>
             <p className="mt-0.5 text-[11px] opacity-70">
-              {selectedDayOff ? '업무 캘린더에서 직접 등록 휴무일로 표시됩니다' : '개인 휴가, 연차, 대체휴무처럼 공휴일이 아닌 휴무를 등록합니다'}
+              {selectedDayOff ? '업무 캘린더에서 직접 등록 휴무로 표시됩니다' : '휴가, 오전반차, 오후반차처럼 공휴일이 아닌 휴무를 등록합니다'}
             </p>
           </div>
-          <button
-            onClick={() => selectedDayOff ? deleteDayOff.mutate() : registerDayOff.mutate()}
-            disabled={registerDayOff.isPending || deleteDayOff.isPending}
-            className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
-              selectedDayOff
-                ? 'bg-amber-200 text-amber-950 hover:bg-amber-300 dark:bg-amber-300 dark:hover:bg-amber-200'
-                : 'bg-slate-950 text-white hover:bg-amber-600 dark:bg-amber-300 dark:text-slate-950 dark:hover:bg-amber-200'
-            }`}
-          >
-            {selectedDayOff ? '휴가 해제' : '휴가 등록'}
-          </button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+            {selectedDayOff ? (
+              <button
+                onClick={() => deleteDayOff.mutate()}
+                disabled={deleteDayOff.isPending}
+                className="rounded-xl bg-amber-200 px-3 py-2 text-xs font-bold text-amber-950 transition-colors hover:bg-amber-300 disabled:opacity-50 dark:bg-amber-300 dark:hover:bg-amber-200"
+              >
+                휴무 해제
+              </button>
+            ) : (
+              DAY_OFF_OPTIONS.map((option) => (
+                <button
+                  key={option.kind}
+                  onClick={() => registerDayOff.mutate(option)}
+                  disabled={registerDayOff.isPending}
+                  className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-amber-600 disabled:opacity-50 dark:bg-amber-300 dark:text-slate-950 dark:hover:bg-amber-200"
+                >
+                  {option.name}
+                </button>
+              ))
+            )}
+          </div>
         </div>
 
         {/* 진행도 요약 바 */}

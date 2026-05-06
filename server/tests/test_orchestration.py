@@ -81,6 +81,41 @@ async def test_worklog_help_request_links_job(office_setup, isolated_workreport_
     assert tasks[0]['status'] == 'delegated'
 
 
+@pytest.mark.asyncio
+async def test_chat_registers_and_removes_day_off(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+
+    registered = await office.receive('2026-05-08 연차 등록')
+    days_off = isolated_workreport_db.list_days_off('2026-05')
+
+    assert registered['state'] == 'completed'
+    assert days_off[0]['date'] == '2026-05-08'
+    assert days_off[0]['name'] == '연차'
+
+    removed = await office.receive('2026-05-08 연차 해제')
+
+    assert removed['state'] == 'completed'
+    assert isolated_workreport_db.list_days_off('2026-05') == []
+
+
+@pytest.mark.asyncio
+async def test_chat_registers_half_day_off(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+
+    await office.receive('2026-05-08 오전반차 등록')
+    morning = isolated_workreport_db.list_days_off('2026-05')[0]
+
+    assert morning['name'] == '오전반차'
+    assert morning['kind'] == 'half_day_am'
+
+    await office.receive('2026-05-09 오후 반차 등록')
+    days_off = isolated_workreport_db.list_days_off('2026-05')
+
+    assert days_off[1]['date'] == '2026-05-09'
+    assert days_off[1]['name'] == '오후반차'
+    assert days_off[1]['kind'] == 'half_day_pm'
+
+
 def test_workreport_monthly_calendar_stats(isolated_workreport_db):
     isolated_workreport_db.create_task(
         task_name='기획 정리',

@@ -6,6 +6,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from core.dates import kst_today
+
 _DB = Path('data/workreport.db')
 
 
@@ -94,7 +96,7 @@ def create_task(
     linked_job_id: str = '',
     status: str = 'active',
 ) -> dict[str, Any]:
-    today = work_date or date.today().isoformat()
+    today = work_date or kst_today().isoformat()
     now_time = work_time or datetime.now().strftime('%H:%M')
     with _conn() as c:
         cur = c.execute(
@@ -172,7 +174,7 @@ def get_monthly_tasks(month: str) -> dict[str, Any]:
     """
     from datetime import timedelta
     if not month:
-        month = date.today().strftime('%Y-%m')
+        month = kst_today().strftime('%Y-%m')
     start = date.fromisoformat(f'{month}-01')
     if start.month == 12:
         end = date(start.year + 1, 1, 1)
@@ -247,7 +249,7 @@ def get_recent_tasks(limit: int = 20) -> list[dict[str, Any]]:
 
 def list_days_off(month: str = '') -> list[dict[str, Any]]:
     if not month:
-        month = date.today().strftime('%Y-%m')
+        month = kst_today().strftime('%Y-%m')
     start = f'{month}-01'
     year = int(month[:4])
     month_num = int(month[5:7])
@@ -382,7 +384,7 @@ def delete_milestone(milestone_id: int) -> bool:
 # ── Dashboard ─────────────────────────────────────────────────────────────
 
 def get_dashboard() -> dict[str, Any]:
-    today = date.today().isoformat()
+    today = kst_today().isoformat()
     with _conn() as c:
         total = c.execute('SELECT COUNT(*) FROM wr_tasks').fetchone()[0]
         today_count = c.execute(

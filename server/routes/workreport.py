@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from core.dates import kst_today
 
 from db.workreport_store import (
     create_task, update_task, delete_task,
@@ -102,14 +103,14 @@ def api_delete_task(task_id: int) -> dict[str, str]:
 
 @router.get('/api/workreport/tasks/daily')
 def api_daily(work_date: str = '') -> list[dict[str, Any]]:
-    return get_daily_tasks(work_date or date.today().isoformat())
+    return get_daily_tasks(work_date or kst_today().isoformat())
 
 
 @router.get('/api/workreport/tasks/weekly')
 def api_weekly(start: str = '') -> dict[str, Any]:
     from datetime import timedelta
     if not start:
-        today = date.today()
+        today = kst_today()
         start = (today - timedelta(days=today.weekday())).isoformat()
     return get_weekly_tasks(start)
 
@@ -230,7 +231,7 @@ def api_weekly_summary(start: str = '') -> dict[str, Any]:
     """주간 작업을 프로젝트별로 취합하고 복사용 텍스트를 생성한다."""
     from datetime import timedelta
     if not start:
-        today = date.today()
+        today = kst_today()
         start = (today - timedelta(days=today.weekday())).isoformat()
 
     weekly = get_weekly_tasks(start)
