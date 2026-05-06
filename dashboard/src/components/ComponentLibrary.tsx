@@ -315,7 +315,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
   return (
     <div className="chat-canvas flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
-      <header className="flex items-center gap-2 px-4 md:px-5 h-[64px] shrink-0 border-b border-slate-200/70 dark:border-slate-800/70 glass-panel rounded-none border-x-0 border-t-0">
+      <header className="flex items-center gap-2 px-4 md:px-5 h-[64px] shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={onBack}
           aria-label="뒤로"
@@ -323,16 +323,16 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
         >
           <MatIcon name="arrow_back" className="text-[20px]" />
         </button>
-        <div className="w-8 h-8 rounded-xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center shrink-0">
-          <MatIcon name="widgets" className="text-[18px] text-white dark:text-slate-950" />
+        <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
+          <MatIcon name="widgets" className="text-[18px] text-white" />
         </div>
         <div className="flex-1 min-w-0 leading-tight">
-          <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">컴포넌트 라이브러리</h1>
+          <h1 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-white">컴포넌트 라이브러리</h1>
         </div>
       </header>
 
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-3 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/50 dark:bg-slate-950/24 backdrop-blur">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           {[
             ['전체', summary.total],
             ['정상', summary.ok],
@@ -340,7 +340,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
             ['오류', summary.error + summary.broken_ref_count],
             ['평균품질', summary.avg_quality_score],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-white/70 bg-white/74 px-3 py-2 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/62">
+            <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
               <div className="text-[11px] text-gray-500">{label}</div>
               <div className="text-lg font-semibold text-gray-900 dark:text-white">{value}</div>
             </div>
@@ -349,14 +349,14 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
       )}
 
       {/* 탭 + 검색 */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/50 dark:bg-slate-950/24 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         {(['personas', 'skills', 'tools'] as const).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); setCategoryFilter('all') }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               tab === t
-                ? 'bg-slate-950 dark:bg-cyan-300 text-white dark:text-slate-950'
+                ? 'bg-indigo-500 text-white'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
             }`}
           >
@@ -367,7 +367,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-            className="px-2 py-1.5 rounded-xl text-sm bg-white/76 dark:bg-slate-900/72 border border-white/70 dark:border-slate-700/70 focus:border-teal-400 outline-none"
+            className="px-2 py-1.5 rounded-lg text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-indigo-400 outline-none"
           >
             <option value="all">전체 상태</option>
             <option value="ok">정상</option>
@@ -378,7 +378,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-2 py-1.5 rounded-xl text-sm bg-white/76 dark:bg-slate-900/72 border border-white/70 dark:border-slate-700/70 focus:border-teal-400 outline-none"
+            className="px-2 py-1.5 rounded-lg text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-indigo-400 outline-none"
           >
             <option value="all">전체 분류</option>
             {categories.map((cat) => (
@@ -389,7 +389,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="검색"
-            className="px-3 py-1.5 rounded-xl text-sm bg-white/76 dark:bg-slate-900/72 border border-white/70 dark:border-slate-700/70 focus:border-teal-400 outline-none w-40 md:w-60"
+            className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-indigo-400 outline-none w-40 md:w-60"
           />
         </div>
       </div>
@@ -409,7 +409,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           </div>
         )}
         {summary && (
-          <div className="mb-3 rounded-2xl border border-white/70 bg-white/76 px-4 py-3 text-xs text-gray-600 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72 dark:text-gray-300">
+          <div className="mb-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-gray-600 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-300">
             실행 준비도: ready {summary.ready}개 · review {summary.needs_review}개 · blocked {summary.blocked}개 · 미사용 {summary.unused}개
           </div>
         )}

@@ -11,31 +11,19 @@ type ChannelDef = {
   id: ChannelId
   label: string
   icon: string
-  accent: string  // active 색상 (indigo/emerald/amber/violet)
 }
 
 const CHANNELS: ChannelDef[] = [
-  { id: 'all',         label: 'TALK',              icon: 'forum',            accent: 'indigo'  },
-  { id: 'jobs',        label: '작업 보드',          icon: 'view_kanban',      accent: 'emerald' },
-  { id: 'gates',       label: '검토 수신함',        icon: 'rule',             accent: 'amber'   },
-  { id: 'workreport',  label: '업무일지',           icon: 'edit_note',        accent: 'teal'    },
-  { id: 'components',  label: '컴포넌트 라이브러리', icon: 'widgets',          accent: 'violet'  },
+  { id: 'all',         label: 'TALK',              icon: 'forum'        },
+  { id: 'jobs',        label: '작업 보드',          icon: 'view_kanban'  },
+  { id: 'gates',       label: '검토 수신함',        icon: 'rule'         },
+  { id: 'workreport',  label: '업무일지',           icon: 'edit_note'    },
+  { id: 'components',  label: '컴포넌트 라이브러리', icon: 'widgets'      },
 ]
 
-const ACCENT_ACTIVE: Record<string, string> = {
-  indigo:  'bg-indigo-400/15 text-indigo-200 ring-1 ring-inset ring-indigo-400/30',
-  emerald: 'bg-emerald-400/15 text-emerald-200 ring-1 ring-inset ring-emerald-400/30',
-  amber:   'bg-amber-400/15 text-amber-200 ring-1 ring-inset ring-amber-400/30',
-  violet:  'bg-violet-400/15 text-violet-200 ring-1 ring-inset ring-violet-400/30',
-  teal:    'bg-teal-400/15 text-teal-200 ring-1 ring-inset ring-teal-400/30',
-}
-const ACCENT_BAR: Record<string, string> = {
-  indigo:  'bg-indigo-500',
-  emerald: 'bg-emerald-500',
-  amber:   'bg-amber-500',
-  violet:  'bg-violet-500',
-  teal:    'bg-teal-500',
-}
+const ACCENT_ACTIVE = 'bg-white/10 text-white'
+const ACCENT_BAR = 'bg-indigo-400'
+const BADGE_BG = 'bg-indigo-500'
 
 // ── Gate 대기 수 뱃지 ────────────────────────────────────────────
 function useGatesCount() {
@@ -58,21 +46,20 @@ function ChannelItem({
   return (
     <button
       onClick={onClick}
-      className={`group relative w-full flex items-center gap-3 pl-3 pr-3 py-2.5 rounded-xl
-        text-sm cursor-pointer transition-all duration-150
+      className={`group relative w-full flex items-center gap-3 pl-3 pr-3 py-2.5 rounded-lg
+        text-sm cursor-pointer transition-colors
         ${active
-          ? ACCENT_ACTIVE[def.accent] + ' font-semibold'
-          : 'text-slate-400 hover:bg-white/8 hover:text-slate-100'}`}
+          ? ACCENT_ACTIVE + ' font-semibold'
+          : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'}`}
     >
-      {/* 좌측 accent bar (active 때만) */}
-      <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-full transition-opacity
-        ${active ? ACCENT_BAR[def.accent] : 'opacity-0'}`} />
-      <MatIcon name={def.icon} className={`text-[18px] shrink-0 transition-transform group-hover:scale-110
+      <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-full
+        ${active ? ACCENT_BAR : 'opacity-0'}`} />
+      <MatIcon name={def.icon} className={`text-[18px] shrink-0
         ${active ? '' : 'opacity-80'}`} />
       <span className="flex-1 text-left">{def.label}</span>
       {badge !== undefined && badge > 0 && (
         <span className={`inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5
-          rounded-full text-[10px] font-bold ${ACCENT_BAR[def.accent]} text-white shadow-sm`}>
+          rounded-full text-[10px] font-bold ${BADGE_BG} text-white`}>
           {badge}
         </span>
       )}
@@ -90,7 +77,7 @@ function UtilBtn({ icon, label, onClick, title }: {
       title={title}
       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg
         text-[13px] text-slate-400
-        hover:bg-white/8 hover:text-slate-100
+        hover:bg-white/5 hover:text-slate-100
         cursor-pointer transition-colors"
     >
       <MatIcon name={icon} className="text-[16px] shrink-0 opacity-80" />
@@ -116,20 +103,18 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         sidebar-shell text-slate-100"
       aria-label="채널 목록"
     >
-      <div aria-hidden className="absolute inset-x-5 top-5 h-24 pointer-events-none rounded-full bg-cyan-300/10 blur-3xl" />
-
       {/* 브랜드 헤더 */}
       <div className="relative px-4 h-[64px] flex items-center justify-between shrink-0
         border-b border-white/10">
         <div className="flex items-center gap-2.5">
-          <div className="relative w-9 h-9 rounded-2xl bg-gradient-to-br from-cyan-300 via-teal-400 to-amber-300
-            flex items-center justify-center shadow-lg shadow-cyan-500/25 ring-1 ring-white/20">
+          <div className="relative w-9 h-9 rounded-lg bg-indigo-500
+            flex items-center justify-center">
             <MatIcon name="auto_awesome" className="text-white text-[18px]" />
-            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-300 ring-2 ring-slate-950" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-slate-950" />
           </div>
           <div className="leading-tight">
-            <h1 className="text-[14px] font-black text-white tracking-tight">AI Office</h1>
-            <p className="text-[10px] text-cyan-100/62 font-semibold tracking-[0.08em] uppercase">Work agent</p>
+            <h1 className="text-[14px] font-semibold text-white tracking-tight">AI Office</h1>
+            <p className="text-[10px] text-slate-400 font-medium tracking-[0.08em] uppercase">Work agent</p>
           </div>
         </div>
         <button

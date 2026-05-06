@@ -68,10 +68,10 @@ function JobCard({
 
   return (
     <div
-      className={`relative group w-full rounded-2xl transition-all duration-200
+      className={`relative group w-full rounded-xl border transition-colors
         ${isSelected
-          ? 'bg-white/92 dark:bg-slate-900/86 ring-2 ring-teal-400/70 dark:ring-cyan-400/55 shadow-lg shadow-teal-500/10'
-          : 'bg-white/74 dark:bg-slate-900/64 ring-1 ring-white/70 dark:ring-slate-700/70 backdrop-blur hover:ring-teal-300/70 dark:hover:ring-cyan-500/40 hover:-translate-y-0.5 hover:shadow-md'
+          ? 'bg-white dark:bg-slate-900 border-indigo-400 dark:border-indigo-400/60 shadow-sm'
+          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/50'
         }`}
     >
       {/* 좌측 상태 컬러바 */}
@@ -79,15 +79,15 @@ function JobCard({
 
       <button onClick={onClick} className="w-full text-left cursor-pointer p-3.5 pl-4">
         <div className="flex items-start gap-3">
-          <div className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shrink-0
-            ${meta.tile} shadow-sm ring-1 ring-black/5 dark:ring-white/10`}>
+          <div className={`relative w-10 h-10 rounded-lg flex items-center justify-center shrink-0
+            ${meta.tile}`}>
             <MatIcon name={meta.icon} className={`text-[18px] ${meta.iconTone}`} />
             {isLive && totalSteps > 0 && (
               <svg className="absolute -top-1 -right-1 w-5 h-5" viewBox="0 0 20 20">
                 <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor"
-                        className="text-white/40 dark:text-slate-900/80" strokeWidth="2" />
+                        className="text-white dark:text-slate-900" strokeWidth="2" />
                 <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor"
-                        className="text-teal-500" strokeWidth="2" strokeLinecap="round"
+                        className="text-indigo-500" strokeWidth="2" strokeLinecap="round"
                         strokeDasharray={`${(progress/100) * 50.27} 50.27`}
                         transform="rotate(-90 10 10)" />
               </svg>
@@ -97,16 +97,16 @@ function JobCard({
           <div className="flex-1 min-w-0 pr-6">
             <div className="flex items-start justify-between gap-1">
               <p className={`text-[13.5px] font-semibold leading-snug line-clamp-2
-                ${isSelected ? 'text-teal-800 dark:text-cyan-200' : 'text-slate-900 dark:text-slate-100'}`}>
+                ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100'}`}>
                 {job.title}
               </p>
               {hasPendingGate && (
-                <MatIcon name="pending_actions" className="text-[16px] text-amber-500 shrink-0 mt-0.5 animate-bounce" />
+                <MatIcon name="pending_actions" className="text-[16px] text-amber-500 shrink-0 mt-0.5" />
               )}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>
+              <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full ${s.badge}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
                 {s.label}
               </span>
@@ -121,7 +121,7 @@ function JobCard({
             <div className="flex items-center justify-between mt-2">
               {job.current_step && isLive ? (
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate font-medium flex items-center gap-1">
-                  <MatIcon name="play_arrow" className="text-[12px] text-teal-500" />
+                  <MatIcon name="play_arrow" className="text-[12px] text-indigo-500" />
                   {job.current_step}
                 </p>
               ) : (
@@ -190,13 +190,12 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
   return (
     <div className="chat-canvas flex-1 flex min-h-0 overflow-x-hidden bg-transparent">
       {/* 좌측: Job 목록 */}
-      <div className={`flex flex-col border-r border-slate-200/70 dark:border-slate-800/70
-        glass-panel rounded-none border-y-0 border-l-0
+      <div className={`flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800
         ${selectedJobId ? 'hidden md:flex md:w-80 lg:w-96' : 'flex w-full md:w-80 lg:w-96'}`}>
 
         {/* 헤더 */}
-        <div className="border-b border-slate-200/70 dark:border-slate-800/70">
-          <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center justify-between">
+        <div className="border-b border-slate-200 dark:border-slate-800">
+          <div className="px-4 md:px-5 h-[64px] shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-1">
               {onBack && (
                 <button
@@ -210,14 +209,14 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
                   <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
                 </button>
               )}
-              <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">작업 보드</h2>
+              <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-white">작업 보드</h2>
             </div>
             <div className="flex gap-1.5 items-center">
               <button
                 onClick={() => setShowPlaybook(true)}
                 className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium
-                  text-slate-700 dark:text-slate-200 bg-white/70 dark:bg-slate-800/70
-                  ring-1 ring-slate-200/80 dark:ring-slate-700/80 hover:ring-teal-300 rounded-lg transition-colors cursor-pointer"
+                  text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800
+                  border border-slate-200 dark:border-slate-700 hover:border-indigo-300 rounded-lg transition-colors cursor-pointer"
                 title="플레이북 — 여러 작업을 순서대로 자동 실행"
               >
                 <MatIcon name="play_circle" className="text-[14px]" />
@@ -226,7 +225,7 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
               <button
                 onClick={() => setShowNewJob(true)}
                 className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-white
-                  bg-slate-950 hover:bg-teal-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 rounded-lg shadow-sm shadow-slate-900/15 transition-colors cursor-pointer"
+                  bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors cursor-pointer"
               >
                 <MatIcon name="add" className="text-[14px]" />
                 새 Job
@@ -235,14 +234,14 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
           </div>
 
           {/* 상태 필터 탭 */}
-          <div className="flex gap-1 overflow-x-auto no-scrollbar px-4 md:px-5 pb-2 border-t border-slate-100/80 dark:border-slate-800/60 pt-2">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar px-4 md:px-5 pb-2 border-t border-slate-100 dark:border-slate-800 pt-2">
             {STATUS_TABS.map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setFilter(tab.key)}
                 className={`shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer
                   ${filter === tab.key
-                    ? 'bg-slate-950 dark:bg-cyan-300 text-white dark:text-slate-950 shadow-sm'
+                    ? 'bg-indigo-500 text-white'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
               >
@@ -337,9 +336,9 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
         </div>
       ) : (
         <div className="hidden md:flex flex-1 items-center justify-center text-center p-8">
-          <div className="max-w-md rounded-[2rem] border border-white/70 bg-white/76 p-8 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
-            <MatIcon name="work_outline" className="text-[48px] text-teal-500/70 mb-3" />
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Job을 선택하면 실행 흐름이 열립니다</p>
+          <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-700 dark:bg-slate-900">
+            <MatIcon name="work_outline" className="text-[48px] text-indigo-400 mb-3" />
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Job을 선택하면 실행 흐름이 열립니다</p>
           </div>
         </div>
       )}

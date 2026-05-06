@@ -125,7 +125,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
       {/* 헤더 */}
       <header className="flex items-center justify-between px-4 md:px-5 h-[64px] shrink-0
-        glass-panel border-x-0 border-t-0 rounded-none">
+        bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <button onClick={onMenuClick}
             className="md:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100
@@ -142,10 +142,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
           )}
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-black tracking-tight">{channelTitle}</h2>
-              <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold
-                ${connected ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-slate-500/15 text-slate-500'}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+              <h2 className="text-sm font-semibold tracking-tight">{channelTitle}</h2>
+              <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium
+                ${connected ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-slate-500/10 text-slate-500'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                 {connected ? 'LIVE' : 'OFFLINE'}
               </span>
             </div>
@@ -185,9 +185,9 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
       {activeChannel === 'all' && (
         <aside className="pointer-events-none fixed right-3 top-[76px] z-30 sm:right-5">
-          <div className="pointer-events-auto min-w-24 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2 text-right shadow-lg shadow-slate-900/10 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/80">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Active Jobs</p>
-            <p className="text-xl font-black leading-none text-slate-900 tabular-nums dark:text-white">{activeJobs.length}</p>
+          <div className="pointer-events-auto min-w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-right shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">Active Jobs</p>
+            <p className="text-xl font-semibold leading-none text-slate-900 tabular-nums dark:text-white">{activeJobs.length}</p>
           </div>
           {activeJobs.length > 0 && (
             <div className="pointer-events-auto mt-2 flex max-w-[260px] flex-col gap-1.5">
@@ -195,11 +195,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                 <button
                   key={job.id}
                   onClick={() => useStore.getState().setActiveChannel('jobs')}
-                  className="rounded-xl border border-slate-200/80 bg-white/85 px-3 py-2 text-left shadow-md shadow-slate-900/10 backdrop-blur-xl transition-colors hover:border-cyan-400 dark:border-slate-700/80 dark:bg-slate-950/80"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition-colors hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-900"
                 >
                   <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${job.status === 'waiting_gate' ? 'bg-amber-400' : job.status === 'running' ? 'bg-cyan-400 animate-pulse' : 'bg-slate-400'}`} />
-                    <span className="max-w-[210px] truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{job.title}</span>
+                    <span className={`h-2 w-2 rounded-full ${job.status === 'waiting_gate' ? 'bg-amber-500' : job.status === 'running' ? 'bg-indigo-500 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className="max-w-[210px] truncate text-xs font-medium text-slate-700 dark:text-slate-200">{job.title}</span>
                   </div>
                   <p className="mt-0.5 text-[10px] text-slate-400">{job.current_step || job.status}</p>
                 </button>
@@ -243,11 +243,11 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         <div className="max-w-4xl mx-auto px-3 md:px-6 space-y-1 pt-5 pb-36">
           {channelLogs.length === 0 ? (
             <div className="py-24 md:py-32">
-              <div className="mx-auto max-w-md rounded-[2rem] border border-white/70 bg-white/76 p-7 text-center shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-950 text-white shadow-lg shadow-slate-900/15 dark:bg-cyan-300 dark:text-slate-950">
+              <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-7 text-center dark:border-slate-700 dark:bg-slate-900">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500 text-white">
                   <MatIcon name="auto_awesome" className="text-[26px]" />
                 </div>
-                <h3 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">무엇을 맡길까요?</h3>
+                <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">무엇을 맡길까요?</h3>
                 {activeChannel !== 'all' && (
                   <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{profile?.name}에게 메시지를 보내세요.</p>
                 )}
@@ -268,11 +268,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             <input ref={fileInputRef} type="file" multiple accept="*/*"
               onChange={handleFileChange} className="hidden" />
 
-            <div className={`rounded-[30px] px-4 pt-3 pb-2
-              backdrop-blur-2xl shadow-2xl transition-all duration-200 border
+            <div className={`rounded-2xl px-4 pt-3 pb-2 transition-colors border bg-white dark:bg-slate-900
               ${message.trim() || files.length > 0
-                ? 'bg-white/92 dark:bg-slate-950/92 border-teal-400/70 dark:border-cyan-400/50 shadow-teal-500/18'
-                : 'bg-white/82 dark:bg-slate-950/82 border-white/70 dark:border-slate-700/60 shadow-slate-900/10'
+                ? 'border-indigo-400 dark:border-indigo-400/60 shadow-sm'
+                : 'border-slate-200 dark:border-slate-700'
               }`}>
 
               {/* 첨부파일 미리보기 */}
@@ -343,10 +342,10 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                   <button onClick={handleSend}
                     disabled={sending || (!message.trim() && files.length === 0)}
                     aria-label="전송"
-                    className={`flex items-center justify-center w-8 h-8 rounded-xl
-                      transition-all duration-200 cursor-pointer
+                    className={`flex items-center justify-center w-8 h-8 rounded-lg
+                      transition-colors cursor-pointer
                       ${message.trim() || files.length > 0
-                        ? 'bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 hover:from-slate-900 hover:via-teal-600 hover:to-amber-400 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 text-white dark:text-slate-950 shadow-md shadow-teal-500/30 hover:scale-105 active:scale-95'
+                        ? 'bg-indigo-500 hover:bg-indigo-600 text-white'
                         : 'text-gray-400/40 dark:text-gray-600 cursor-not-allowed'
                       } disabled:opacity-60`}>
                     {sending

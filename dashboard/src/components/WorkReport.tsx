@@ -350,16 +350,16 @@ function taskEndDate(task: CalendarTask): string {
 }
 
 const RIBBON_TONES = [
-  'bg-blue-600 text-white dark:bg-blue-400 dark:text-slate-950',
-  'bg-emerald-600 text-white dark:bg-emerald-400 dark:text-slate-950',
-  'bg-amber-500 text-white dark:bg-amber-300 dark:text-slate-950',
+  'bg-indigo-500 text-white dark:bg-indigo-400 dark:text-slate-950',
+  'bg-emerald-500 text-white dark:bg-emerald-400 dark:text-slate-950',
+  'bg-sky-500 text-white dark:bg-sky-400 dark:text-slate-950',
+  'bg-violet-500 text-white dark:bg-violet-400 dark:text-slate-950',
+  'bg-amber-500 text-white dark:bg-amber-400 dark:text-slate-950',
   'bg-rose-500 text-white dark:bg-rose-400 dark:text-slate-950',
-  'bg-violet-600 text-white dark:bg-violet-400 dark:text-slate-950',
-  'bg-cyan-600 text-white dark:bg-cyan-300 dark:text-slate-950',
-  'bg-orange-600 text-white dark:bg-orange-400 dark:text-slate-950',
-  'bg-teal-600 text-white dark:bg-teal-300 dark:text-slate-950',
-  'bg-fuchsia-600 text-white dark:bg-fuchsia-400 dark:text-slate-950',
-  'bg-lime-600 text-white dark:bg-lime-300 dark:text-slate-950',
+  'bg-teal-500 text-white dark:bg-teal-400 dark:text-slate-950',
+  'bg-fuchsia-500 text-white dark:bg-fuchsia-400 dark:text-slate-950',
+  'bg-cyan-500 text-white dark:bg-cyan-400 dark:text-slate-950',
+  'bg-lime-500 text-white dark:bg-lime-400 dark:text-slate-950',
 ]
 
 function stableColorIndex(value: string): number {
@@ -553,7 +553,7 @@ function WorkCalendar({
           return (
             <div
               key={`${weekStart}-${weekEnd}`}
-              className="relative grid grid-cols-7 overflow-hidden border-t border-slate-300/80 first:border-t-0 dark:border-slate-700/80"
+              className="relative grid grid-cols-7 overflow-hidden border-t border-slate-200 first:border-t-0 dark:border-slate-700"
               style={{ minHeight: weekHeight }}
             >
               {week.map((cell) => {
@@ -581,27 +581,27 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative h-full min-h-[126px] border-l border-slate-300/80 p-2 text-left transition-colors first:border-l-0 hover:bg-teal-50/70 dark:border-slate-700/80 dark:hover:bg-teal-950/20
-                      ${isDayOff ? 'bg-amber-50/78 dark:bg-amber-950/16' : isHoliday || isSunday ? 'bg-rose-50/68 dark:bg-rose-950/10' : isSaturday ? 'bg-sky-50/68 dark:bg-sky-950/10' : 'bg-white/62 dark:bg-slate-950/24'}
-                      ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
+                    className={`relative h-full min-h-[126px] border-l border-slate-200 p-2 text-left transition-colors first:border-l-0 hover:bg-indigo-50/60 dark:border-slate-700 dark:hover:bg-indigo-950/20
+                      ${isDayOff ? 'bg-amber-50/60 dark:bg-amber-950/15' : isHoliday || isSunday ? 'bg-rose-50/50 dark:bg-rose-950/10' : isSaturday ? 'bg-sky-50/50 dark:bg-sky-950/10' : 'bg-white dark:bg-slate-900'}
+                      ${isToday ? 'shadow-[inset_0_0_0_2px_rgb(99_102_241)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
                     {isFirstDay && (
-                      <span className="absolute left-2 top-1.5 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black text-white shadow-sm dark:bg-cyan-300 dark:text-slate-950">
+                      <span className="absolute left-2 top-1.5 rounded-md bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">
                         {monthLabel(cellMonth)}
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
                     )}
-                    <span className={`absolute right-2 top-1.5 text-base font-black tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday || isSunday ? 'text-rose-600 dark:text-rose-300' : isSaturday ? 'text-sky-600 dark:text-sky-300' : isToday ? 'text-teal-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
+                    <span className={`absolute right-2 top-1.5 text-base font-semibold tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday || isSunday ? 'text-rose-600 dark:text-rose-300' : isSaturday ? 'text-sky-600 dark:text-sky-300' : isToday ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-100'}`}>
                       {cell.day}
                     </span>
                     {dayLabels.length > 0 && (
-                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[9px] font-semibold ${isDayOff ? 'text-amber-700/85 dark:text-amber-200/85' : 'text-rose-600/85 dark:text-rose-300/85'} ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                      <span className={`absolute left-2 max-w-[calc(100%-1rem)] truncate text-[9px] font-medium ${isDayOff ? 'text-amber-700/80 dark:text-amber-200/80' : 'text-rose-600/80 dark:text-rose-300/80'} ${isFirstDay ? 'top-7' : 'top-2'}`}>
                         {dayLabels.join(', ')}
                       </span>
                     )}
                     {day && (
-                      <span className={`absolute left-2 text-[10px] font-black text-slate-500 dark:text-slate-300 ${dayLabels.length > 0 && isFirstDay ? 'top-12' : dayLabels.length > 0 || isFirstDay ? 'top-7' : 'top-2'}`}>
+                      <span className={`absolute left-2 text-[10px] font-medium text-slate-500 dark:text-slate-400 ${dayLabels.length > 0 && isFirstDay ? 'top-12' : dayLabels.length > 0 || isFirstDay ? 'top-7' : 'top-2'}`}>
                         {day.task_count}
                       </span>
                     )}
@@ -617,7 +617,7 @@ function WorkCalendar({
                   return (
                     <div
                       key={`${task.id}-${weekIndex}`}
-                      className={`min-w-0 self-start px-2.5 py-0 text-[10px] font-semibold leading-[17px] shadow-sm ring-1 ring-white/20 ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
+                      className={`min-w-0 self-start px-2.5 py-0 text-[10px] font-medium leading-[17px] ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
                       style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row }}
                       title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
                     >
@@ -634,11 +634,11 @@ function WorkCalendar({
   }
 
   return (
-    <div className="rounded-[2rem] border border-white/70 bg-white/84 p-5 shadow-xl shadow-slate-900/8 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-3xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">{monthLabel(visibleMonth)}</p>
-          <p className="mt-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          <p className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{monthLabel(visibleMonth)}</p>
+          <p className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
             {dataByMonth.get(visibleMonth)?.total ?? 0}개 작업 기록
           </p>
         </div>
@@ -648,15 +648,15 @@ function WorkCalendar({
             setVisibleMonth(today.slice(0, 7))
             onSelectDate(today)
           }}
-          className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-teal-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200"
+          className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-600"
         >
           오늘
         </button>
       </div>
 
-      <div className="sticky top-0 z-10 grid grid-cols-7 rounded-t-2xl border border-x-0 border-slate-300/80 bg-white/82 text-center shadow-sm backdrop-blur-xl dark:border-slate-700/80 dark:bg-slate-950/82">
+      <div className="sticky top-0 z-10 grid grid-cols-7 border-y border-slate-200 bg-slate-50 text-center dark:border-slate-700 dark:bg-slate-800/60">
         {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
-          <div key={d} className="py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{d}</div>
+          <div key={d} className="py-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{d}</div>
         ))}
       </div>
 
@@ -665,7 +665,7 @@ function WorkCalendar({
         onScroll={handleScroll}
         className="max-h-[calc(100vh-214px)] min-h-[640px] overflow-y-auto pr-2"
       >
-        <div className="overflow-hidden rounded-b-2xl border-b border-slate-300/80 bg-white/38 dark:border-slate-700/80 dark:bg-slate-950/20">
+        <div className="overflow-hidden border-b border-slate-200 dark:border-slate-700">
           {renderCalendarRows()}
         </div>
       </div>
@@ -706,20 +706,20 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
   return (
     <div className="space-y-4">
       {/* 복사 텍스트 박스 */}
-      <div className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100/80 dark:border-slate-800
-          bg-white/54 dark:bg-slate-800/50">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 dark:border-slate-800
+          bg-slate-50 dark:bg-slate-800/40">
           <div className="flex items-center gap-2">
             <MatIcon name="content_copy" className="text-[14px] text-gray-500" />
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">주간업무 복사용 텍스트</span>
           </div>
           <button
             onClick={copy}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium
               transition-colors cursor-pointer
               ${copied
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 hover:bg-teal-200 dark:hover:bg-teal-900/50'
+                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50'
               }`}
           >
             <MatIcon name={copied ? 'check' : 'content_copy'} className="text-[13px]" />
@@ -737,8 +737,8 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
           const done = tasks.filter(t => t.progress >= 100).length
           const avg = Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
           return (
-            <div key={project} className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
-              <div className="px-4 py-2.5 border-b border-slate-100/80 dark:border-slate-800 flex items-center gap-2">
+            <div key={project} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+              <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{project}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
                   {tasks.length}건 · 완료 {done}
@@ -754,8 +754,8 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
                     <span className="text-[10px] text-gray-400 tabular-nums w-16 shrink-0">{t.date.slice(5)}</span>
                     <span className="flex-1 text-xs text-gray-700 dark:text-gray-300">{t.task_name}</span>
                     <span className={`text-[10px] font-medium shrink-0 ${
-                      t.progress >= 100 ? 'text-green-600 dark:text-green-400' :
-                      t.progress > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'
+                      t.progress >= 100 ? 'text-emerald-600 dark:text-emerald-400' :
+                      t.progress > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'
                     }`}>
                       {t.progress >= 100 ? '완료' : t.progress > 0 ? `${t.progress}%` : '-'}
                     </span>
@@ -768,13 +768,13 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
       </div>
 
       {data.overdue.length > 0 && (
-        <div className="rounded-2xl border border-orange-200/80 bg-orange-50/82 p-4 shadow-sm shadow-orange-500/10 backdrop-blur dark:border-orange-800/30 dark:bg-orange-900/10">
-          <p className="text-xs font-semibold text-orange-700 dark:text-orange-400 mb-2">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/30 dark:bg-amber-900/10">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">
             마감 초과 작업 ({data.overdue.length}건)
           </p>
           <ul className="space-y-1">
             {data.overdue.map(t => (
-              <li key={t.id} className="text-xs text-orange-600 dark:text-orange-400">
+              <li key={t.id} className="text-xs text-amber-700 dark:text-amber-400">
                 {t.project} · {t.task_name} ({t.due_date} 마감)
               </li>
             ))}
@@ -909,10 +909,10 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
   const weekEnd = weekEndDt
 
   const statCards = [
-    { label: '오늘 작업', value: dash?.today_count ?? 0, icon: 'task_alt', cls: 'bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400' },
-    { label: '평균 진행도', value: `${dash?.avg_progress_today ?? 0}%`, icon: 'trending_up', cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' },
-    { label: '마감 초과', value: dash?.overdue_count ?? 0, icon: 'warning', cls: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' },
-    { label: '활성 프로젝트', value: dash?.active_projects ?? 0, icon: 'folder_open', cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400' },
+    { label: '오늘 작업', value: dash?.today_count ?? 0, icon: 'task_alt', cls: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300' },
+    { label: '평균 진행도', value: `${dash?.avg_progress_today ?? 0}%`, icon: 'trending_up', cls: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300' },
+    { label: '마감 초과', value: dash?.overdue_count ?? 0, icon: 'warning', cls: 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300' },
+    { label: '활성 프로젝트', value: dash?.active_projects ?? 0, icon: 'folder_open', cls: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' },
   ]
   const latestTaskMonth = dash?.recent_tasks?.[0]?.date?.slice(0, 7)
   const calendarAnchorMonth = calendarMonth === today.slice(0, 7) && dash?.today_count === 0 && latestTaskMonth
@@ -923,7 +923,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     <div className="chat-canvas flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
       <div className="px-4 md:px-5 h-[64px] shrink-0 flex items-center gap-2
-        border-b border-slate-200/70 dark:border-slate-800/70 glass-panel rounded-none border-x-0 border-t-0">
+        bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         {onBack && (
           <button
             onClick={onBack}
@@ -935,23 +935,23 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-9 h-9 rounded-2xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center shadow-sm">
-            <MatIcon name="edit_note" className="text-[18px] text-white dark:text-slate-950" />
+          <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
+            <MatIcon name="edit_note" className="text-[18px] text-white" />
           </div>
           <div>
-            <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">업무일지</h2>
-            <p className="hidden sm:block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Calendar log</p>
+            <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-white">업무일지</h2>
+            <p className="hidden sm:block text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Calendar log</p>
           </div>
         </div>
         {/* 탭 */}
-        <div className="flex items-center gap-1 rounded-2xl border border-white/70 bg-white/60 p-1 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/60">
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
           {(['daily', 'weekly'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer
                 ${tab === t
-                  ? 'bg-slate-950 text-white shadow-sm dark:bg-cyan-300 dark:text-slate-950'
+                  ? 'bg-indigo-500 text-white'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
             >
@@ -966,7 +966,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         {/* 주간 탭 */}
         {tab === 'weekly' && (
           <>
-            <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/82 px-4 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900">
               <button onClick={prevWeek}
                 className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors">
                 <MatIcon name="chevron_left" className="text-[20px] text-gray-500" />
@@ -978,7 +978,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
                   {weekEnd.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })}
                 </p>
                 {isCurrentWeek && (
-                  <span className="text-[10px] text-teal-600 dark:text-teal-400 font-medium">이번 주</span>
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">이번 주</span>
                 )}
               </div>
               <button onClick={nextWeek}
@@ -1016,11 +1016,11 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         {dash && isToday && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {statCards.map(({ label, value, icon, cls }) => (
-              <div key={label} className="rounded-2xl border border-white/70 bg-white/78 p-3 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-950/42">
+              <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${cls}`}>
                   <MatIcon name={icon} className="text-[15px]" />
                 </div>
-                <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{value}</p>
                 <p className="text-[11px] text-gray-500">{label}</p>
               </div>
             ))}
@@ -1028,7 +1028,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         )}
 
         {/* 날짜 네비게이션 */}
-        <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/82 px-4 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900">
           <button onClick={prevDay}
             className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors">
             <MatIcon name="chevron_left" className="text-[20px] text-gray-500" />
@@ -1040,7 +1040,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
               })}
             </p>
             {isToday && (
-              <span className="text-[10px] text-teal-600 dark:text-teal-400 font-medium">오늘</span>
+              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">오늘</span>
             )}
           </div>
           <button onClick={nextDay}
@@ -1051,13 +1051,13 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </button>
         </div>
 
-        <div className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-sm backdrop-blur ${
+        <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
           selectedDayOff
-            ? 'border-amber-200/80 bg-amber-50/84 text-amber-900 shadow-amber-500/10 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-100'
-            : 'border-white/70 bg-white/76 text-slate-700 shadow-slate-900/5 dark:border-slate-700/70 dark:bg-slate-950/38 dark:text-slate-300'
+            ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-100'
+            : 'border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
         }`}>
           <div className="min-w-0">
-            <p className="text-xs font-black">{selectedDayOff ? dayOffLabel(selectedDayOff) : '이 날짜를 휴무로 표시'}</p>
+            <p className="text-xs font-semibold">{selectedDayOff ? dayOffLabel(selectedDayOff) : '이 날짜를 휴무로 표시'}</p>
             <p className="mt-0.5 text-[11px] opacity-70">
               {selectedDayOff ? '업무 캘린더에서 직접 등록 휴무로 표시됩니다' : '휴가, 오전반차, 오후반차처럼 공휴일이 아닌 휴무를 등록합니다'}
             </p>
@@ -1067,7 +1067,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
               <button
                 onClick={() => deleteDayOff.mutate()}
                 disabled={deleteDayOff.isPending}
-                className="rounded-xl bg-amber-200 px-3 py-2 text-xs font-bold text-amber-950 transition-colors hover:bg-amber-300 disabled:opacity-50 dark:bg-amber-300 dark:hover:bg-amber-200"
+                className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/40 dark:text-amber-100 dark:hover:bg-amber-900/60"
               >
                 휴무 해제
               </button>
@@ -1077,7 +1077,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
                   key={option.kind}
                   onClick={() => registerDayOff.mutate(option)}
                   disabled={registerDayOff.isPending}
-                  className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-amber-600 disabled:opacity-50 dark:bg-amber-300 dark:text-slate-950 dark:hover:bg-amber-200"
+                  className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                   {option.name}
                 </button>
@@ -1088,7 +1088,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
 
         {/* 진행도 요약 바 */}
         {tasks.length > 0 && (
-          <div className="rounded-2xl border border-white/70 bg-white/82 p-3 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-gray-500">전체 진행도</span>
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{avgProgress}%</span>
@@ -1108,9 +1108,9 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
             <MatIcon name="hourglass_empty" className="text-[40px]" />
           </div>
         ) : tasks.length === 0 ? (
-          <div className="rounded-[2rem] border border-white/70 bg-white/62 px-5 py-12 text-center shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-950/36">
-            <div className="mx-auto w-14 h-14 rounded-3xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center mb-3 shadow-sm">
-              <MatIcon name="edit_note" className="text-[28px] text-white dark:text-slate-950" />
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center dark:border-slate-700 dark:bg-slate-900">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500 flex items-center justify-center mb-3">
+              <MatIcon name="edit_note" className="text-[28px] text-white" />
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {isToday ? '오늘 기록된 작업이 없습니다' : '이 날 기록된 작업이 없습니다'}

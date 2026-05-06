@@ -79,13 +79,13 @@ function GateItem({ gate }: { gate: PendingGate }) {
   const isCode = gate.step_output?.includes('```html') || gate.step_output?.includes('```css')
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-white/70 bg-white/84 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
 
       {/* 헤더 */}
-      <div className="border-b border-slate-100/80 bg-white/46 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+      <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/40">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-            <MatIcon name={SPEC_ICONS[gate.job_spec_id] || 'work'} className="text-[16px] text-amber-700 dark:text-amber-300" />
+          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+            <MatIcon name={SPEC_ICONS[gate.job_spec_id] || 'work'} className="text-[16px] text-amber-600 dark:text-amber-300" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{gate.job_title}</p>
@@ -129,11 +129,11 @@ function GateItem({ gate }: { gate: PendingGate }) {
 
       {/* 검토할 산출물 */}
       {gate.step_output ? (
-        <div className="mx-4 mb-3 overflow-hidden rounded-2xl border border-white/70 bg-white/70 dark:border-slate-700/70 dark:bg-slate-950/30">
+        <div className="mx-4 mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
           <button
             onClick={() => setOutputOpen(!outputOpen)}
             className="w-full flex items-center justify-between px-3 py-2
-              bg-slate-50/80 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900
+              bg-slate-50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-900
               transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-2">
@@ -152,7 +152,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
           </button>
 
           {outputOpen && (
-            <div className="px-3 py-3 max-h-[50vh] overflow-y-auto border-t border-slate-200/80 dark:border-slate-700/70">
+            <div className="px-3 py-3 max-h-[50vh] overflow-y-auto border-t border-slate-200 dark:border-slate-700">
               {isCode ? (
                 <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
                   {gate.step_output}
@@ -176,9 +176,9 @@ function GateItem({ gate }: { gate: PendingGate }) {
           value={feedback}
           onChange={e => setFeedback(e.target.value)}
           placeholder="수정 요청 시 피드백을 입력하세요 (없으면 비워두고 승인/거절)"
-          className="w-full resize-none rounded-2xl border border-slate-200/80 bg-white/76 px-3 py-2 text-sm
-            text-gray-900 outline-none focus:ring-2 focus:ring-amber-400/45
-            dark:border-slate-700/70 dark:bg-slate-950/35 dark:text-gray-100"
+          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm
+            text-gray-900 outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400
+            dark:border-slate-700 dark:bg-slate-950 dark:text-gray-100"
         />
 
         <div className="flex flex-wrap gap-2">
@@ -186,7 +186,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
             onClick={() => decide.mutate('approved')}
             disabled={decide.isPending}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white
-              bg-slate-950 hover:bg-emerald-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 rounded-xl transition-colors cursor-pointer
+              bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors cursor-pointer
               disabled:opacity-50"
           >
             <MatIcon name="check" className="text-[16px]" />
@@ -198,8 +198,8 @@ function GateItem({ gate }: { gate: PendingGate }) {
             disabled={decide.isPending || !feedback.trim()}
             title={!feedback.trim() ? '피드백을 먼저 입력하세요' : ''}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium
-              text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30
-              hover:bg-blue-100 dark:hover:bg-blue-950/50 rounded-xl transition-colors
+              text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800
+              hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors
               cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <MatIcon name="refresh" className="text-[16px]" />
@@ -211,7 +211,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
             disabled={decide.isPending}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium
               text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20
-              hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl transition-colors
+              hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors
               cursor-pointer disabled:opacity-50"
           >
             <MatIcon name="cancel" className="text-[16px]" />
@@ -242,7 +242,7 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
   return (
     <div className="chat-canvas flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
-      <div className="glass-panel rounded-none border-x-0 border-t-0 px-4 md:px-5 h-[64px] shrink-0 flex items-center gap-2 border-b border-slate-200/70 dark:border-slate-800/70">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-5 h-[64px] shrink-0 flex items-center gap-2">
         {onBack && (
           <button
             onClick={onBack}
@@ -255,11 +255,11 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
           </button>
         )}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center">
             <MatIcon name="rule" className="text-[18px] text-amber-600 dark:text-amber-400" />
           </div>
           <div className="leading-tight">
-            <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">검토 수신함</h2>
+            <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-white">검토 수신함</h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {isLoading ? '로딩 중...' : `${gates.length}개 검토 대기 중`}
             </p>
@@ -277,8 +277,8 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
 
         {!isLoading && gates.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-green-100 dark:bg-green-900/20 flex items-center justify-center mb-4">
-              <MatIcon name="check_circle" className="text-[32px] text-green-500" />
+            <div className="w-16 h-16 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center mb-4">
+              <MatIcon name="check_circle" className="text-[32px] text-emerald-500" />
             </div>
             <p className="text-base font-semibold text-gray-700 dark:text-gray-300">검토 대기 없음</p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">모든 게이트가 처리되었습니다</p>
@@ -286,7 +286,7 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
         )}
 
         {error && (
-          <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl text-red-600 dark:text-red-400">
+          <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400">
             <MatIcon name="error" className="text-[18px]" />
             <p className="text-sm">검토 목록을 불러오지 못했습니다</p>
           </div>

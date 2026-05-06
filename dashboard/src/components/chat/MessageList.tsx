@@ -34,9 +34,9 @@ function StepGroupCard({ logs }: { logs: LogEntry[] }) {
     <div className="py-1">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-2xl
-          bg-white/82 dark:bg-slate-900/68 border border-white/70 dark:border-slate-700/70
-          shadow-sm shadow-slate-900/5 hover:border-teal-400/70 transition-colors cursor-pointer touch-manipulation backdrop-blur"
+        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg
+          bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700
+          hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors cursor-pointer touch-manipulation"
       >
         <MatIcon
           name={failedCount > 0 ? 'error' : allDone ? 'check_circle' : 'pending'}
@@ -85,19 +85,19 @@ function OperationEventCard({ log }: { log: LogEntry }) {
   const isFallback = log.event_type === 'model_fallback'
   const icon = isFallback ? 'alt_route' : isGate ? 'rule' : 'hub'
   const tone = isFallback
-    ? 'border-amber-300/70 bg-amber-50/80 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200'
+    ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200'
     : isGate
-    ? 'border-cyan-300/70 bg-cyan-50/80 text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-950/20 dark:text-cyan-200'
-    : 'border-slate-200/80 bg-white/80 text-slate-700 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-200'
+    ? 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-950/20 dark:text-indigo-200'
+    : 'border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
   return (
     <div className="py-1.5">
-      <div className={`mx-auto flex max-w-2xl items-start gap-2.5 rounded-3xl border px-3 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur ${tone}`}>
-        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/70 text-current dark:bg-slate-950/50">
+      <div className={`mx-auto flex max-w-2xl items-start gap-2.5 rounded-lg border px-3 py-2.5 ${tone}`}>
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/70 text-current dark:bg-slate-950/50">
           <MatIcon name={icon} className="text-[15px]" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] opacity-70">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">
               {isFallback ? 'Routing fallback' : isGate ? 'Review gate' : 'Pipeline event'}
             </span>
             <span className="ml-auto text-[10px] opacity-55">{formatTime(log.timestamp)}</span>
@@ -179,9 +179,9 @@ export function MessageList({ logs, onImageClick }: MessageListProps) {
     if (currentDate !== prevDate) {
       elements.push(
         <div key={`date-${currentDate}`} className="flex items-center gap-3 py-5">
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent to-slate-300 dark:to-slate-700" />
-          <span className="rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[11px] font-bold text-slate-400 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/70 whitespace-nowrap">{currentDate}</span>
-          <div className="flex-1 h-px bg-gradient-to-l from-transparent to-slate-300 dark:to-slate-700" />
+          <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400 whitespace-nowrap">{currentDate}</span>
+          <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
         </div>
       )
       prevDate = currentDate
@@ -334,18 +334,17 @@ function UserMessageText({ text }: { text: string }) {
     : text
 
   return (
-    <div className="bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 text-white
-      px-4 py-3 rounded-[22px] rounded-tr-[7px]
-      text-sm leading-relaxed shadow-xl shadow-teal-500/18
-      ring-1 ring-inset ring-white/10">
+    <div className="bg-indigo-500 text-white
+      px-4 py-3 rounded-2xl rounded-tr-md
+      text-sm leading-relaxed">
       {linkify(display)}
       {isLong && (
         <div className="flex justify-center mt-3 pt-2 border-t border-white/15">
           <button onClick={() => setExpanded(!expanded)}
             className="inline-flex items-center gap-1 px-3 py-1 rounded-full
-              bg-blue-500/40 hover:bg-blue-400/60 backdrop-blur-sm
-              text-[11px] font-medium text-blue-50 hover:text-white
-              cursor-pointer transition-all duration-150">
+              bg-white/15 hover:bg-white/25
+              text-[11px] font-medium text-white
+              cursor-pointer transition-colors">
             <span>{expanded ? '접기' : `${text.length - PREVIEW}자 더 보기`}</span>
             <MatIcon name="expand_more"
               className={`text-[14px] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
@@ -376,17 +375,17 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClickProp }: {
 
   return (
     <div className="group relative">
-      <div className={`px-3.5 md:px-4 py-3 rounded-[24px] rounded-tl-[8px] text-sm leading-relaxed
-        transition-all duration-150
+      <div className={`px-3.5 md:px-4 py-3 rounded-2xl rounded-tl-md text-sm leading-relaxed
+        transition-colors
         ${needsInput
-          ? 'bg-amber-50 dark:bg-amber-900/25 border-2 border-amber-300 dark:border-amber-600/70 shadow-md shadow-amber-500/10'
+          ? 'bg-amber-50 dark:bg-amber-900/25 border border-amber-300 dark:border-amber-600/70'
           : isAutonomous
-            ? 'bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200/60 dark:border-indigo-700/40 shadow-sm'
+            ? 'bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700/40'
             : isColleagueQ
-              ? 'bg-teal-50/70 dark:bg-teal-900/20 border border-teal-200/60 dark:border-teal-700/40 shadow-sm'
+              ? 'bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700'
               : isResponse
-                ? 'bg-white/84 dark:bg-slate-900/80 border border-white/70 dark:border-slate-700/70 shadow-sm shadow-slate-900/5 backdrop-blur hover:shadow-md hover:border-teal-300/70 dark:hover:border-teal-500/50'
-                : 'bg-slate-100/80 dark:bg-slate-800/60 border border-transparent'
+                ? 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/50'
+                : 'bg-slate-100 dark:bg-slate-800/60 border border-transparent'
         }`}>
         {needsInput && (
           <div className="flex items-center gap-1.5 mb-2 text-amber-600 dark:text-amber-400">
@@ -396,8 +395,8 @@ function MessageBubble({ log, isResponse, onImageClick: _onImageClickProp }: {
           </div>
         )}
         {isColleagueQ && (
-          <div className="flex items-center gap-1 mb-1.5 text-teal-500 dark:text-teal-400">
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-800/40">
+          <div className="flex items-center gap-1 mb-1.5 text-slate-500 dark:text-slate-400">
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700/60">
               <MatIcon name="record_voice_over" className="text-[12px]" /> 추가 확인
             </span>
           </div>
@@ -436,15 +435,15 @@ function JobBadge({ jobId, jobTitle }: { jobId: string; jobTitle?: string }) {
   return (
     <button
       onClick={() => setActiveChannel('jobs')}
-      className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg
-        bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-900/20 dark:hover:bg-cyan-900/40
-        border border-cyan-200 dark:border-cyan-700/40
-        text-xs font-medium text-cyan-700 dark:text-cyan-300
+      className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md
+        bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40
+        border border-indigo-200 dark:border-indigo-700/40
+        text-xs font-medium text-indigo-700 dark:text-indigo-300
         cursor-pointer transition-colors touch-manipulation"
     >
       <MatIcon name="assignment" className="text-[13px]" />
       <span className="truncate max-w-[180px]">{jobTitle || '작업'}</span>
-      <span className="text-cyan-500 dark:text-cyan-400 font-mono text-[10px]">#{jobId.slice(0, 6)}</span>
+      <span className="text-indigo-500 dark:text-indigo-400 font-mono text-[10px]">#{jobId.slice(0, 6)}</span>
       <MatIcon name="open_in_new" className="text-[11px] opacity-60" />
     </button>
   )
