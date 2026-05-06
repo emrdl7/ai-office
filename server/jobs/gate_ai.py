@@ -116,7 +116,7 @@ async def suggest_gate_decision(
         from db.job_store import update_gate_ai
         update_gate_ai(
             job_id=job_id, gate_id=gate_id,
-            suggestion=decision, confidence=int(payload['confidence']),
+            suggestion=decision, confidence=int(str(payload['confidence'])),
             model=model_used, reason=str(payload['reason']),
         )
     except Exception as _e:

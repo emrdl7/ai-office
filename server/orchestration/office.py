@@ -99,6 +99,26 @@ _WORKLOG_REF_KEYWORDS = (
 _WORKLOG_DONE_KEYWORDS = ('완료', '끝냈', '끝남', '마침', '마무리', '다 됐', '다됨')
 _WORKLOG_PROGRESS_KEYWORDS = ('진행', '진행률', '진척', '완료율')
 _WORKLOG_MOVE_KEYWORDS = ('미뤄', '옮겨', '변경', '이동', '연기', '로 해', '로 바꿔')
+_WORKLOG_DELETE_KEYWORDS = ('삭제', '지워', '제거', '취소')
+_WORKLOG_PAUSE_KEYWORDS = ('보류', '중지', '멈춰', '잠깐 멈', '홀드')
+_WORKLOG_RESUME_KEYWORDS = ('재개', '다시 시작', '이어', '진행 재개')
+
+
+def _extract_worklog_target_query(text: str) -> str:
+  '''후속 명령에서 작업명 후보만 남긴다.'''
+  query = text
+  query = re.sub(r'(20\d{2})[-./](\d{1,2})[-./](\d{1,2})', ' ', query)
+  query = re.sub(r'\d{1,2}\s*월\s*\d{1,2}\s*일?', ' ', query)
+  query = re.sub(r'(?<!\d)\d{1,2}\s*/\s*\d{1,2}(?!\d)', ' ', query)
+  query = re.sub(r'\d{1,3}\s*%', ' ', query)
+  remove_tokens = (
+    _WORKLOG_REF_KEYWORDS + _WORKLOG_DONE_KEYWORDS + _WORKLOG_PROGRESS_KEYWORDS
+    + _WORKLOG_MOVE_KEYWORDS + _WORKLOG_DELETE_KEYWORDS + _WORKLOG_PAUSE_KEYWORDS
+    + _WORKLOG_RESUME_KEYWORDS + ('오늘', '내일', '어제', '모레', '그제', '업무', '작업', '일정', '일지')
+  )
+  for token in sorted(remove_tokens, key=len, reverse=True):
+    query = query.replace(token, ' ')
+  return re.sub(r'\s+', ' ', query).strip()
 
 
 def _detect_worklog_followup(text: str) -> dict[str, Any] | None:
@@ -116,6 +136,15 @@ def _detect_worklog_followup(text: str) -> dict[str, Any] | None:
     fields['progress'] = 100
     fields['status'] = 'done'
 
+  if any(keyword in text for keyword in _WORKLOG_DELETE_KEYWORDS):
+    fields['_action'] = 'delete'
+
+  if any(keyword in text for keyword in _WORKLOG_PAUSE_KEYWORDS):
+    fields['status'] = 'paused'
+
+  if any(keyword in text for keyword in _WORKLOG_RESUME_KEYWORDS):
+    fields['status'] = 'active'
+
   target_date = _parse_korean_calendar_date(text)
   if target_date and any(keyword in text for keyword in _WORKLOG_MOVE_KEYWORDS):
     fields['date'] = target_date
@@ -126,7 +155,12 @@ def _detect_worklog_followup(text: str) -> dict[str, Any] | None:
 
   # "70% 진행"처럼 명확한 상태 업데이트는 지시어가 없어도 허용한다.
   # "랜딩 완료"처럼 작업명이 있는 문장은 일반 업무일지 의도 감지로 넘긴다.
-  if has_ref or explicit_progress:
+  has_update_instruction = bool(fields)
+  query = _extract_worklog_target_query(text)
+  if query:
+    fields['_target_query'] = query
+
+  if has_ref or explicit_progress or has_update_instruction:
     return fields
   return None
 
@@ -862,13 +896,28 @@ class Office:
     return await self._emit_reply(raw, f'{day_off["date"]}을(를) **{day_off["name"]}**로 등록했습니다.')
 
   async def _handle_worklog_followup(self, user_input: str, fields: dict[str, Any]) -> dict[str, Any]:
-    '''"이거 완료", "70% 진행", "내일로 미뤄"를 최근 업무에 반영한다.'''
-    from db.workreport_store import get_recent_tasks, update_task
+    '''"이거 완료", "70% 진행", "내일로 미뤄", "제안서 삭제"를 업무일지에 반영한다.'''
+    from db.workreport_store import delete_task, get_recent_tasks, update_task
 
     recent_tasks = await asyncio.to_thread(get_recent_tasks, 20)
-    task = _pick_recent_worklog_task(self._last_worklog_task, recent_tasks)
+    target_query = str(fields.pop('_target_query', '') or '').strip()
+    action = str(fields.pop('_action', '') or '').strip()
+    task = _find_worklog_task_match(target_query, recent_tasks) if target_query else None
+    if task is None:
+      task = _pick_recent_worklog_task(self._last_worklog_task, recent_tasks)
     if not task:
       return await self._emit_reply(user_input, '수정할 최근 업무가 없습니다. 먼저 업무를 등록해 주세요.')
+
+    if action == 'delete':
+      deleted = await asyncio.to_thread(delete_task, int(task['id']))
+      if not deleted:
+        return await self._emit_reply(user_input, '업무일지를 삭제하지 못했습니다.')
+      if self._last_worklog_task and int(self._last_worklog_task.get('id') or 0) == int(task['id']):
+        self._last_worklog_task = None
+      return await self._emit_reply(
+        user_input,
+        f'업무일지에서 삭제했습니다.\n**{task.get("project") or "기타"}** / {task["task_name"]}',
+      )
 
     updated = await asyncio.to_thread(update_task, int(task['id']), **fields)
     if not updated:
@@ -876,7 +925,13 @@ class Office:
 
     self._last_worklog_task = updated
     progress = int(updated.get('progress') or 0)
-    progress_label = '완료' if progress >= 100 else f'{progress}% 진행' if progress else '진행 중'
+    status = str(updated.get('status') or '')
+    if status == 'paused':
+      progress_label = '보류'
+    elif status == 'cancelled':
+      progress_label = '취소'
+    else:
+      progress_label = '완료' if progress >= 100 else f'{progress}% 진행' if progress else '진행 중'
     date_label = f' · {updated["date"]}' if fields.get('date') else ''
     return await self._emit_reply(
       user_input,

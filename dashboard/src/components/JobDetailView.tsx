@@ -194,6 +194,25 @@ const EXECUTION_MODE_LABEL: Record<string, { text: string; cls: string }> = {
   },
 }
 
+const SELECTION_SOURCE_LABEL: Record<string, { text: string; cls: string }> = {
+  spec_static: {
+    text: '스펙 지정',
+    cls: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+  },
+  llm_configurator: {
+    text: '자동 선택',
+    cls: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300',
+  },
+  llm_partial: {
+    text: '부분 자동',
+    cls: 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300',
+  },
+  fallback: {
+    text: '대체 경로',
+    cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+  },
+}
+
 function elapsed(start: string, end?: string): string {
   if (!start) return ''
   const s = new Date(start).getTime()
@@ -240,6 +259,7 @@ function StepCard({
   const isCode = !hasMermaid && !hasVega && !isHtmlPreview && (step.output?.includes('```html') || step.output?.includes('```css'))
   const setActiveChannel = useStore((state) => state.setActiveChannel)
   const executionMode = step.execution_mode ? EXECUTION_MODE_LABEL[step.execution_mode] : null
+  const selectionSource = step.selection_source ? SELECTION_SOURCE_LABEL[step.selection_source] : null
 
   function openComponentLibrary(e: ReactMouseEvent) {
     e.stopPropagation()
@@ -308,6 +328,11 @@ function StepCard({
             {executionMode && (
               <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${executionMode.cls}`}>
                 {executionMode.text}
+              </span>
+            )}
+            {selectionSource && (
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${selectionSource.cls}`}>
+                {selectionSource.text}
               </span>
             )}
             {step.started_at && (

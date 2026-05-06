@@ -38,10 +38,10 @@
 ### W2-2. Tool Registry 분할 (부분 완료, 점진 이동) 🔄
 - `jobs/tools/__init__.py` — `load_plugin_tools()` 자동 로더
 - `jobs/tools/_common.py` — `resolve_token` 공용 헬퍼
-- 이동 완료: `current_date.py` / `job_context.py` / `url_fetch.py` / `slack_post.py`
+- 이동 완료: `current_date.py` / `job_context.py` / `url_fetch.py` / `slack_post.py` / `notion_write.py`
 - `tool_registry.py` — 플러그인 우선, legacy builtin fallback
 - 테스트: `tests/test_tool_registry_manifest.py` — YAML 참조 id / 플러그인 로더 / 중복 id 검증
-- **점진 이동 필요**: 남은 legacy 도구(web_search, read_file, notion_write, pdf_generate 등)를 차례로 `tools/<id>.py`로 이동
+- **점진 이동 필요**: 남은 legacy 도구(web_search, read_file, pdf_generate 등)를 차례로 `tools/<id>.py`로 이동
 
 ### W2-3. CI/mypy/TODOS 정합 ✅
 - `server-tests.yml` mypy 경로 — 삭제된 `teamlead_review`/`autonomous_loop` 제거, `suggestion_filer`/`office` 추가
@@ -54,7 +54,7 @@
 
 ### tool_registry 점진 이동 (W2-2 후속)
 남은 legacy 도구를 `jobs/tools/<id>.py`로 하나씩 이동. 각 단계에서 manifest 테스트가 회귀 방지.
-우선순위: 외부 API 의존 있는 것부터 (notion_write, pdf_generate, email_send → 파라미터 검증 단위 테스트 동반).
+우선순위: 외부 API 의존 있는 것부터 (pdf_generate, email_send, google_drive_upload → 파라미터 검증 단위 테스트 동반).
 
 ### 병렬 그룹 정적 검증
 현재는 그룹 내 step이 서로의 output_key를 의존하면 런타임 빈 값. 정적 체크(스펙 로드 시 검사):

@@ -16,7 +16,7 @@ _registry: dict[str, JobSpec] = {}
 def load_all() -> dict[str, JobSpec]:
     """specs/ 디렉토리의 모든 YAML을 로드해 레지스트리를 채운다."""
     try:
-        import yaml  # type: ignore[import]
+        import yaml  # type: ignore[import-untyped]
     except ImportError:
         logger.error('PyYAML이 없습니다. pip install pyyaml')
         return {}

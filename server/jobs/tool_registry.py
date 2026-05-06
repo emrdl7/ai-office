@@ -225,15 +225,7 @@ _BUILTIN_TOOLS: dict[str, ToolSpec] = {
         params=['file_key', 'node_id', 'properties'],
         env_var='FIGMA_TOKEN',
     ),
-    # 'slack_post' → jobs/tools/slack_post.py 로 이동됨
-    'notion_write': ToolSpec(
-        id='notion_write',
-        name='Notion 페이지 작성',
-        description='context의 page_id와 content를 Notion 페이지에 추가한다.',
-        category='integration',
-        params=['page_id', 'content'],
-        env_var='NOTION_TOKEN',
-    ),
+    # 'slack_post', 'notion_write' → jobs/tools/*.py 로 이동됨
     'pdf_generate': ToolSpec(
         id='pdf_generate',
         name='PDF 생성',
@@ -397,8 +389,6 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
         return _figma_create_frame(context)
     if tool_id == 'figma_update_node':
         return _figma_update_node(context)
-    if tool_id == 'notion_write':
-        return _notion_write(context)
     if tool_id == 'pdf_generate':
         return _pdf_generate(context)
     if tool_id == 'image_generate':
@@ -696,11 +686,11 @@ def _pdf_generate(context: dict[str, str]) -> str:
     try:
         # weasyprint 우선, 없으면 playwright fallback
         try:
-            import weasyprint  # type: ignore
+            import weasyprint
             import tempfile, os
             # Markdown → HTML 변환 시도
             try:
-                import markdown as _md  # type: ignore
+                import markdown as _md  # type: ignore[import-untyped]
                 html = _md.markdown(content, extensions=['tables', 'fenced_code'])
             except ImportError:
                 html = f'<pre>{content}</pre>'
@@ -774,8 +764,8 @@ def _docx_generate(context: dict[str, str]) -> str:
     if not content:
         return '[docx_generate: content 없음]'
     try:
-        from docx import Document  # type: ignore
-        from docx.shared import Pt, RGBColor  # type: ignore
+        from docx import Document
+        from docx.shared import Pt, RGBColor
 
         def _add_inline(para, text: str) -> None:
             parts = _re.split(r'(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)', text)
@@ -841,8 +831,8 @@ def _pptx_generate(context: dict[str, str]) -> str:
     if not content:
         return '[pptx_generate: content 없음]'
     try:
-        from pptx import Presentation  # type: ignore
-        from pptx.util import Inches, Pt  # type: ignore
+        from pptx import Presentation
+        from pptx.util import Inches, Pt
 
         prs = Presentation()
         slide_layout_title = prs.slide_layouts[0]  # 제목 슬라이드
@@ -975,18 +965,18 @@ def _spreadsheet_read(context: dict[str, str]) -> str:
             return f'[spreadsheet_read CSV 실패: {e}]'
     elif ext in ('.xlsx', '.xls'):
         try:
-            import openpyxl  # type: ignore
+            import openpyxl
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb.active
-            rows = []
+            xlsx_rows: list[list[str]] = []
             for row in ws.iter_rows(values_only=True):
-                if len(rows) >= max_rows:
+                if len(xlsx_rows) >= max_rows:
                     break
-                rows.append([str(c) if c is not None else '' for c in row])
-            if not rows:
+                xlsx_rows.append([str(c) if c is not None else '' for c in row])
+            if not xlsx_rows:
                 return '[spreadsheet_read: 데이터 없음]'
-            lines = ['\t'.join(rows[0])] + ['\t'.join(r) for r in rows[1:]]
-            return f'[Excel: {file_path} — {len(rows) - 1}행]\n' + '\n'.join(lines)
+            lines = ['\t'.join(xlsx_rows[0])] + ['\t'.join(r) for r in xlsx_rows[1:]]
+            return f'[Excel: {file_path} — {len(xlsx_rows) - 1}행]\n' + '\n'.join(lines)
         except ImportError:
             return '[spreadsheet_read: openpyxl 미설치 — pip install openpyxl]'
         except Exception as e:
@@ -1137,9 +1127,9 @@ def _google_drive_upload(context: dict[str, str]) -> str:
     if not file_name:
         file_name = p.name
     try:
-        import google.oauth2.service_account as _sa  # type: ignore
-        import googleapiclient.discovery as _discovery  # type: ignore
-        from googleapiclient.http import MediaFileUpload  # type: ignore
+        import google.oauth2.service_account as _sa
+        import googleapiclient.discovery as _discovery
+        from googleapiclient.http import MediaFileUpload
         creds = _sa.Credentials.from_service_account_info(
             _json.loads(sa_json_str),
             scopes=['https://www.googleapis.com/auth/drive.file'],
@@ -1173,8 +1163,8 @@ def _calendar_create(context: dict[str, str]) -> str:
     if not title or not start or not end:
         return '[calendar_create: title, start, end(ISO 8601) 필요]'
     try:
-        import google.oauth2.service_account as _sa  # type: ignore
-        import googleapiclient.discovery as _discovery  # type: ignore
+        import google.oauth2.service_account as _sa
+        import googleapiclient.discovery as _discovery
         creds = _sa.Credentials.from_service_account_info(
             _json.loads(sa_json_str),
             scopes=['https://www.googleapis.com/auth/calendar'],
@@ -1193,70 +1183,3 @@ def _calendar_create(context: dict[str, str]) -> str:
         return '[calendar_create: google-api-python-client 미설치 — pip install google-api-python-client google-auth]'
     except Exception as e:
         return f'[calendar_create 실패: {e}]'
-
-
-def _notion_write(context: dict[str, str]) -> str:
-    import urllib.request, json as _json
-    token = _resolve_token('NOTION_TOKEN')
-    if not token:
-        return '[notion_write: NOTION_TOKEN 미설정 — 컴포넌트 라이브러리에서 토큰을 등록하세요]'
-    page_id = context.get('page_id', '')
-    content = context.get('content', '')
-    if not page_id or not content:
-        return '[notion_write: page_id, content 필요]'
-
-    def _rich_text(text: str) -> list:
-        return [{'type': 'text', 'text': {'content': text[:2000]}}]
-
-    blocks: list[dict] = []
-    code_buf: list[str] = []
-    in_code = False
-    for line in content.splitlines():
-        if line.startswith('```'):
-            if in_code:
-                blocks.append({'object': 'block', 'type': 'code',
-                                'code': {'rich_text': _rich_text('\n'.join(code_buf)), 'language': 'plain text'}})
-                code_buf = []
-                in_code = False
-            else:
-                in_code = True
-            continue
-        if in_code:
-            code_buf.append(line)
-            continue
-        stripped = line.strip()
-        if stripped.startswith('# '):
-            blocks.append({'object': 'block', 'type': 'heading_1',
-                           'heading_1': {'rich_text': _rich_text(stripped[2:])}})
-        elif stripped.startswith('## '):
-            blocks.append({'object': 'block', 'type': 'heading_2',
-                           'heading_2': {'rich_text': _rich_text(stripped[3:])}})
-        elif stripped.startswith('### '):
-            blocks.append({'object': 'block', 'type': 'heading_3',
-                           'heading_3': {'rich_text': _rich_text(stripped[4:])}})
-        elif stripped.startswith('- ') or stripped.startswith('* '):
-            blocks.append({'object': 'block', 'type': 'bulleted_list_item',
-                           'bulleted_list_item': {'rich_text': _rich_text(stripped[2:])}})
-        elif stripped.startswith('> '):
-            blocks.append({'object': 'block', 'type': 'quote',
-                           'quote': {'rich_text': _rich_text(stripped[2:])}})
-        elif stripped:
-            blocks.append({'object': 'block', 'type': 'paragraph',
-                           'paragraph': {'rich_text': _rich_text(stripped)}})
-
-    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json',
-                'Notion-Version': '2022-06-28'}
-    total = 0
-    try:
-        for i in range(0, len(blocks), 100):
-            payload = _json.dumps({'children': blocks[i:i + 100]}).encode()
-            req = urllib.request.Request(
-                f'https://api.notion.com/v1/blocks/{page_id}/children',
-                data=payload, headers=headers,
-            )
-            with urllib.request.urlopen(req, timeout=10):
-                pass
-            total += len(blocks[i:i + 100])
-        return f'[Notion 작성 완료: {page_id} — {total}개 블록]'
-    except Exception as e:
-        return f'[notion_write 실패: {e}]'

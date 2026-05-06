@@ -304,7 +304,7 @@ async def get_job(job_id: str) -> dict[str, Any]:
     if spec:
         step_spec_by_id = {s.id: s for s in spec.steps}
         for step in steps:
-            sp = step_spec_by_id.get(step.get('step_id'))
+            sp = step_spec_by_id.get(str(step.get('step_id', '')))
             if sp:
                 step['parallel'] = bool(getattr(sp, 'parallel', False))
                 step['when'] = getattr(sp, 'when', '') or ''

@@ -1573,7 +1573,7 @@ async def _run_planner_synthesize(
 
 
 
-async def _teamlead_final_review(office: Any, user_input: str, task_graph: TaskGraph) -> bool:
+async def _teamlead_final_review(office: Any, user_input: str, task_graph: TaskGraph | None) -> bool:
   '''비서가 최종 산출물을 검수한다.
 
   3단계 검증:

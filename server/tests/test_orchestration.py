@@ -114,6 +114,35 @@ async def test_worklog_followup_moves_recent_task_date(office_setup, isolated_wo
 
 
 @pytest.mark.asyncio
+async def test_worklog_followup_deletes_named_task(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+    isolated_workreport_db.create_task(task_name='제안서 작성', progress=20)
+    isolated_workreport_db.create_task(task_name='랜딩 페이지', progress=20)
+
+    result = await office.receive('제안서 삭제')
+
+    tasks = isolated_workreport_db.get_recent_tasks(10)
+    assert result['state'] == 'completed'
+    assert [t['task_name'] for t in tasks] == ['랜딩 페이지']
+
+
+@pytest.mark.asyncio
+async def test_worklog_followup_pauses_and_resumes_named_task(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+    isolated_workreport_db.create_task(task_name='제안서 작성', progress=20)
+
+    paused = await office.receive('제안서 보류')
+    task = isolated_workreport_db.get_recent_tasks(1)[0]
+    assert paused['state'] == 'completed'
+    assert task['status'] == 'paused'
+
+    resumed = await office.receive('제안서 재개')
+    task = isolated_workreport_db.get_recent_tasks(1)[0]
+    assert resumed['state'] == 'completed'
+    assert task['status'] == 'active'
+
+
+@pytest.mark.asyncio
 async def test_chat_registers_and_removes_day_off(office_setup, isolated_workreport_db):
     office, _ = office_setup
 

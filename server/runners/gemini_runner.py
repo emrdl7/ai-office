@@ -120,7 +120,7 @@ async def _call_gemini_model(full_prompt: str, timeout: float, model: str, syste
 
     data = resp.json()
     try:
-        text = data['candidates'][0]['content']['parts'][0]['text']
+        text = str(data['candidates'][0]['content']['parts'][0]['text'])
     except (KeyError, IndexError) as e:
         raise GeminiRunnerError(f'Gemini 응답 파싱 실패: {e}')
 

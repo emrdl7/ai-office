@@ -59,7 +59,7 @@ class PlaybookSpec:
 def load_all() -> dict[str, PlaybookSpec]:
     """playbooks/ 디렉토리의 YAML을 로드한다."""
     try:
-        import yaml  # type: ignore[import]
+        import yaml  # type: ignore[import-untyped]
     except ImportError:
         return {}
 

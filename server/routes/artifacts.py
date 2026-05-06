@@ -83,7 +83,7 @@ async def list_all_artifacts(task_id: str = '') -> list[dict[str, Any]]:
 
 
 @router.get('/api/uploads/{task_id}/{filename}')
-async def get_upload_file(task_id: str, filename: str):
+async def get_upload_file(task_id: str, filename: str) -> Any:
   '''업로드된 파일을 바이너리로 반환한다 (이미지 썸네일 등).'''
   if '..' in task_id or '..' in filename:
     raise HTTPException(status_code=400, detail='유효하지 않은 경로')
@@ -94,7 +94,7 @@ async def get_upload_file(task_id: str, filename: str):
 
 
 @router.get('/api/artifacts/{file_path:path}')
-async def get_artifact_content(file_path: str, request: Request):
+async def get_artifact_content(file_path: str, request: Request) -> Any:
   '''산출물 파일 내용을 반환한다.'''
   from fastapi.responses import HTMLResponse, PlainTextResponse
   if '..' in file_path:
@@ -264,7 +264,7 @@ async def get_project_status(request: Request) -> dict[str, Any]:
 
 
 @router.get('/api/exports/{task_id}')
-async def get_exportable_formats(task_id: str):
+async def get_exportable_formats(task_id: str) -> dict[str, Any]:
   '''태스크의 내보내기 가능 포맷 목록을 반환한다.'''
   from harness.export_engine import get_exportable_formats
   task_dir = WORKSPACE_ROOT / task_id
@@ -272,7 +272,7 @@ async def get_exportable_formats(task_id: str):
 
 
 @router.post('/api/exports/{task_id}/{fmt}')
-async def export_artifact(task_id: str, fmt: str):
+async def export_artifact(task_id: str, fmt: str) -> Any:
   '''온디맨드 내보내기 — PDF, DOCX, ZIP 생성.'''
   from harness.export_engine import md_to_pdf, md_to_docx, folder_to_zip
 
