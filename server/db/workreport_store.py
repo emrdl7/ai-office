@@ -213,7 +213,7 @@ def get_monthly_tasks(month: str) -> dict[str, Any]:
         d['avg_progress'] = round(float(d.get('avg_progress') or 0), 1)
         d['done_count'] = int(d.get('done_count') or 0)
         d['overdue_count'] = int(d.get('overdue_count') or 0)
-        d['tasks'] = tasks_by_date.get(str(d['date']), [])[:5]
+        d['tasks'] = tasks_by_date.get(str(d['date']), [])
         days.append(d)
 
     return {

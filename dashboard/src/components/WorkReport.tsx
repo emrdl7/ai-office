@@ -320,10 +320,32 @@ function taskEndDate(task: CalendarTask): string {
   return task.completed_at || task.due_date || task.date
 }
 
+const RIBBON_TONES = [
+  'bg-blue-600 text-white dark:bg-blue-400 dark:text-slate-950',
+  'bg-emerald-600 text-white dark:bg-emerald-400 dark:text-slate-950',
+  'bg-amber-500 text-white dark:bg-amber-300 dark:text-slate-950',
+  'bg-rose-500 text-white dark:bg-rose-400 dark:text-slate-950',
+  'bg-violet-600 text-white dark:bg-violet-400 dark:text-slate-950',
+  'bg-cyan-600 text-white dark:bg-cyan-300 dark:text-slate-950',
+  'bg-orange-600 text-white dark:bg-orange-400 dark:text-slate-950',
+  'bg-teal-600 text-white dark:bg-teal-300 dark:text-slate-950',
+  'bg-fuchsia-600 text-white dark:bg-fuchsia-400 dark:text-slate-950',
+  'bg-lime-600 text-white dark:bg-lime-300 dark:text-slate-950',
+]
+
+function stableColorIndex(value: string): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash % RIBBON_TONES.length
+}
+
 function ribbonTone(task: CalendarTask): string {
-  if (task.progress >= 100) return 'bg-emerald-500 text-white dark:bg-emerald-400 dark:text-slate-950'
-  if (task.due_date && task.due_date < toLocalISODate(new Date())) return 'bg-amber-500 text-white dark:bg-amber-300 dark:text-slate-950'
-  return 'bg-cyan-500 text-white dark:bg-cyan-300 dark:text-slate-950'
+  if (task.due_date && task.due_date < toLocalISODate(new Date()) && task.progress < 100) {
+    return 'bg-red-600 text-white dark:bg-red-400 dark:text-slate-950'
+  }
+  return RIBBON_TONES[stableColorIndex(task.project || task.task_name)]
 }
 
 async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
@@ -355,8 +377,7 @@ async function fetchMonthlyCalendar(month: string): Promise<MonthlyCalendar> {
       overdue_count: dayTasks.filter((task) => task.due_date && task.due_date < date && task.progress < 100).length,
       projects,
       tasks: dayTasks
-        .sort((a, b) => `${a.time}-${a.id}`.localeCompare(`${b.time}-${b.id}`))
-        .slice(0, 5),
+        .sort((a, b) => `${a.time}-${a.id}`.localeCompare(`${b.time}-${b.id}`)),
     }
   })
   return {
@@ -440,11 +461,17 @@ function WorkCalendar({
           const weekEnd = week[week.length - 1].date
           const weekTasks = allTasks
             .filter((task) => taskStartDate(task) <= weekEnd && taskEndDate(task) >= weekStart)
-            .slice(0, 4)
+            .sort((a, b) => {
+              const startCompare = taskStartDate(a).localeCompare(taskStartDate(b))
+              if (startCompare !== 0) return startCompare
+              return `${a.time}-${a.id}`.localeCompare(`${b.time}-${b.id}`)
+            })
+          const weekHeight = Math.max(118, 56 + weekTasks.length * 22)
           return (
             <div
               key={`${weekStart}-${weekEnd}`}
-              className="relative grid min-h-[118px] grid-cols-7 border-t border-slate-200/70 first:border-t-0 dark:border-slate-800/70"
+              className="relative grid grid-cols-7 border-t border-slate-200/70 first:border-t-0 dark:border-slate-800/70"
+              style={{ minHeight: weekHeight }}
             >
               {week.map((cell) => {
                 const day = byDate.get(cell.date)
@@ -460,7 +487,7 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative min-h-[118px] border-l border-slate-200/60 bg-white/50 p-2 text-left transition-colors hover:bg-cyan-50/70 dark:border-slate-800/70 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
+                    className={`relative h-full min-h-[118px] border-l border-slate-200/60 bg-white/50 p-2 text-left transition-colors hover:bg-cyan-50/70 dark:border-slate-800/70 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
