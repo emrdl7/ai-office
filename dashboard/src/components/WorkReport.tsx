@@ -434,6 +434,10 @@ function WorkCalendar({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [months, setMonths] = useState(() => buildMonthRange(month, 0, 6))
   const [visibleMonth, setVisibleMonth] = useState(month)
+  const ribbonTop = 40
+  const ribbonRowHeight = 24
+  const ribbonRowGap = 6
+  const ribbonBottomPadding = 14
   const monthQueries = useQueries({
     queries: months.map((m) => ({
       queryKey: ['wr-monthly', m],
@@ -542,11 +546,14 @@ function WorkCalendar({
               endsAfter: taskEndDate(task) > segmentEnd,
             }
           })
-          const weekHeight = Math.max(126, 62 + lanes.length * 24)
+          const weekHeight = Math.max(
+            126,
+            ribbonTop + lanes.length * ribbonRowHeight + Math.max(0, lanes.length - 1) * ribbonRowGap + ribbonBottomPadding,
+          )
           return (
             <div
               key={`${weekStart}-${weekEnd}`}
-              className="relative grid grid-cols-7 border-t border-slate-300/80 first:border-t-0 dark:border-slate-700/80"
+              className="relative grid grid-cols-7 overflow-hidden border-t border-slate-300/80 first:border-t-0 dark:border-slate-700/80"
               style={{ minHeight: weekHeight }}
             >
               {week.map((cell) => {
@@ -574,13 +581,13 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative h-full min-h-[126px] border-l border-slate-300/80 p-2 text-left transition-colors first:border-l-0 hover:bg-teal-50/80 dark:border-slate-700/80 dark:hover:bg-teal-950/20
-                      ${isDayOff ? 'bg-amber-50/82 dark:bg-amber-950/16' : isHoliday || isSunday ? 'bg-rose-50/72 dark:bg-rose-950/10' : isSaturday ? 'bg-sky-50/72 dark:bg-sky-950/10' : 'bg-white/56 dark:bg-slate-950/24'}
+                    className={`relative h-full min-h-[126px] border-l border-slate-300/80 p-2 text-left transition-colors first:border-l-0 hover:bg-teal-50/70 dark:border-slate-700/80 dark:hover:bg-teal-950/20
+                      ${isDayOff ? 'bg-amber-50/78 dark:bg-amber-950/16' : isHoliday || isSunday ? 'bg-rose-50/68 dark:bg-rose-950/10' : isSaturday ? 'bg-sky-50/68 dark:bg-sky-950/10' : 'bg-white/62 dark:bg-slate-950/24'}
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
                     {isFirstDay && (
-                      <span className="absolute left-2 top-1.5 rounded-full bg-gradient-to-r from-slate-950 via-teal-800 to-amber-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 dark:text-slate-950">
+                      <span className="absolute left-2 top-1.5 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black text-white shadow-sm dark:bg-cyan-300 dark:text-slate-950">
                         {monthLabel(cellMonth)}
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
@@ -602,12 +609,15 @@ function WorkCalendar({
                 )
               })}
 
-              <div className="pointer-events-none absolute inset-x-0 top-9 grid grid-cols-7 gap-y-1.5 px-1.5">
+              <div
+                className="pointer-events-none absolute inset-x-0 grid grid-cols-7 gap-y-1.5 overflow-hidden px-1.5"
+                style={{ top: ribbonTop, gridAutoRows: ribbonRowHeight }}
+              >
                 {weekRibbons.map(({ task, startCol, endCol, row, startsBefore, endsAfter }) => {
                   return (
                     <div
                       key={`${task.id}-${weekIndex}`}
-                      className={`min-w-0 px-2.5 py-1.5 text-[10px] font-black leading-none shadow-md shadow-slate-900/12 ring-1 ring-white/20 ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
+                      className={`min-w-0 self-start px-2.5 py-1 text-[10px] font-black leading-none shadow-sm ring-1 ring-white/20 ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
                       style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row }}
                       title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
                     >
@@ -624,7 +634,7 @@ function WorkCalendar({
   }
 
   return (
-    <div className="command-surface rounded-[2rem] p-5 shadow-2xl shadow-slate-900/10">
+    <div className="rounded-[2rem] border border-white/70 bg-white/84 p-5 shadow-xl shadow-slate-900/8 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <p className="text-3xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">{monthLabel(visibleMonth)}</p>
@@ -638,7 +648,7 @@ function WorkCalendar({
             setVisibleMonth(today.slice(0, 7))
             onSelectDate(today)
           }}
-          className="rounded-2xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 px-3 py-2 text-xs font-black text-white shadow-lg shadow-teal-500/20 transition-transform hover:scale-105 active:scale-95 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 dark:text-slate-950"
+          className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-teal-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200"
         >
           오늘
         </button>
@@ -925,7 +935,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 flex items-center justify-center shadow-lg shadow-teal-500/20">
+          <div className="w-9 h-9 rounded-2xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center shadow-sm">
             <MatIcon name="edit_note" className="text-[18px] text-white dark:text-slate-950" />
           </div>
           <div>
@@ -1099,7 +1109,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </div>
         ) : tasks.length === 0 ? (
           <div className="rounded-[2rem] border border-white/70 bg-white/62 px-5 py-12 text-center shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-950/36">
-            <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 flex items-center justify-center mb-3 shadow-lg shadow-teal-500/20">
+            <div className="mx-auto w-14 h-14 rounded-3xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center mb-3 shadow-sm">
               <MatIcon name="edit_note" className="text-[28px] text-white dark:text-slate-950" />
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
