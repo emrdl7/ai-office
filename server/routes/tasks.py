@@ -45,7 +45,7 @@ async def chat(
   to: str = Form(default='all'),
   files: list[UploadFile] = File(default=[]),
 ) -> dict[str, Any]:
-  '''메신저 채팅 — 팀 채널 또는 특정 팀원에게 메시지 전송 (파일 첨부 지원)'''
+  '''비서 채팅 — 사용자 메시지와 첨부파일을 Office로 전달한다.'''
   from harness.file_reader import read_file
 
   office: Office = request.app.state.office
@@ -95,8 +95,7 @@ async def chat(
       update_task_state(task_id, 'running')
       office._current_task_id = task_id
 
-      # 모든 채팅은 office.receive()를 통해 팀장이 처리
-      # office.receive() 내부에서 intent 분류 → 팀장 직접 응답 또는 프로젝트 실행
+      # 모든 채팅은 office.receive()를 통해 단일 비서 경로로 처리한다.
       result = await office.receive(full_message)
       final_state = result.get('state', 'completed')
       update_task_state(task_id, final_state)

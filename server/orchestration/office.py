@@ -1,6 +1,5 @@
-# Office — 진짜 사무실처럼 동작하는 오케스트레이션 시스템
+# Office — 사용자 업무를 대화로 등록하고 실행하는 오케스트레이션 시스템
 from __future__ import annotations
-# 팀장이 판단하고, 팀원이 협업하고, 회의를 통해 프로젝트를 진행한다.
 import asyncio
 import json
 import re
@@ -14,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from core import paths
-from orchestration.intent import IntentType, classify_intent, classify_project_type
+from orchestration.intent import IntentType, classify_intent, classify_project_type, detect_worklog_intent
 from orchestration.phase_registry import ProjectType, get_phases, get_meeting_participants
 from orchestration.agent import Agent
 from orchestration.meeting import Meeting
@@ -67,16 +66,38 @@ def _extract_keywords(text: str) -> set[str]:
   return {t.lower() for t in tokens if t.lower() not in stopwords and len(t) >= 2}
 
 
+def _normalize_worklog_name(text: str) -> str:
+  return re.sub(r'\s+', '', text or '').lower()
+
+
+def _find_worklog_task_match(task_name: str, tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
+  needle = _normalize_worklog_name(task_name)
+  if not needle:
+    return None
+  for task in tasks:
+    if int(task.get('progress') or 0) >= 100:
+      continue
+    candidate = _normalize_worklog_name(str(task.get('task_name') or ''))
+    if candidate and (candidate == needle or candidate in needle or needle in candidate):
+      return task
+  return None
+
+
+def _is_worklog_help_request(text: str) -> bool:
+  phrases = (
+    '처리해', '도와줘', '대신해', '진행해줘', '실행해',
+    '작업해', '맡겨', '이거 해', '이 업무 해', '방금 업무',
+  )
+  return any(phrase in text for phrase in phrases)
+
+
 from orchestration.state import OfficeState  # re-export for main.py, tests
 
 
 class Office:
-  '''AI 사무실 — 팀장 주도 동적 흐름.
+  '''AI Office — 단일 비서가 대화, 업무 등록, 실행 연결을 처리한다.
 
-  모든 입력은 팀장이 먼저 판단한다:
-  - 대화/질문 → 팀장이 직접 응답
-  - 단순 요청 → 담당 팀원 한 명에게 지시
-  - 프로젝트 → 회의 소집 → 역할 분배 → 실행 → QA → 팀장 검수
+  사용자에게는 하나의 비서처럼 응답하고, 필요한 전문 역할/도구 선택은 내부에서 처리한다.
   '''
 
   MAX_REVISION_ROUNDS = 3
@@ -128,6 +149,7 @@ class Office:
 
     # 업무일지 등록 세션
     self._worklog_session: dict | None = None  # 진행 중인 등록 대화 상태
+    self._last_worklog_task: dict[str, Any] | None = None
 
     # receive() 중복 실행 방지
     self._receive_lock: asyncio.Lock = asyncio.Lock()
@@ -260,7 +282,7 @@ class Office:
     '''대화 맥락을 실시간 갱신한다. 최근 15개 턴만 유지.'''
     new_lines = [f'[사용자] {user_input[:150]}']
     if response:
-      new_lines.append(f'[팀장] {response[:150]}')
+      new_lines.append(f'[비서] {response[:150]}')
 
     existing = self._context_summary.split('\n') if self._context_summary else []
     updated = existing + new_lines
@@ -327,6 +349,7 @@ class Office:
       job_input = dict(pending['job_input'])
       orig_input = pending.get('orig_input', user_input)
       attachments = pending.get('attachments_text', '')
+      link_task_id = pending.get('link_task_id')
 
       if 'clarifying_fields' in pending:
         # Haiku가 자유응답을 field→value로 파싱
@@ -337,7 +360,8 @@ class Office:
         job_input[pending['missing'][0]] = user_input.strip()
 
       return await self._handle_job(spec_id, job_input, orig_input,
-                                    attachments_text=attachments, skip_clarify=True)
+                                    attachments_text=attachments, skip_clarify=True,
+                                    link_task_id=link_task_id)
 
     # 0-1. 대기 중인 프로젝트가 있으면 사용자 답변으로 이어서 진행
     if hasattr(self, '_pending_project') and self._pending_project:
@@ -403,6 +427,13 @@ class Office:
     _wl_triggers = ['업무일지 추가', '업무일지 등록', '업무 기록', '작업 기록']
     if any(t in user_input for t in _wl_triggers):
       return await self._start_worklog_session()
+
+    if self._last_worklog_task and _is_worklog_help_request(user_input):
+      return await self._handle_worklog_help_request(user_input, combined_context)
+
+    worklog_result = detect_worklog_intent(user_input)
+    if worklog_result:
+      return await self._handle_worklog_intent(worklog_result.worklog, combined_context)
 
     intent_result = await classify_intent(
       user_input,
@@ -523,6 +554,14 @@ class Office:
     self._state = OfficeState.COMPLETED
     return {'state': self._state.value, 'response': text, 'artifacts': []}
 
+  async def _emit_reply(self, user_input: str, text: str) -> dict[str, Any]:
+    await self._emit('teamlead', text, 'response')
+    self._update_context(user_input, text)
+    self._state = OfficeState.COMPLETED
+    self._active_agent = ''
+    self._work_started_at = ''
+    return {'state': self._state.value, 'response': text, 'artifacts': []}
+
   async def _start_worklog_session(self) -> dict:
     '''업무일지 등록 세션 시작 — 프로젝트 목록 제시.'''
     from db.workreport_store import list_projects
@@ -620,6 +659,7 @@ class Office:
             project=s['project'],
             progress=s['progress'],
           )
+          self._last_worklog_task = task
           self._worklog_session = None
           status = '완료' if task['progress'] >= 100 else f'{task["progress"]}% 진행 중' if task['progress'] > 0 else '등록'
           return self._reply(f'업무일지에 등록했습니다. ✓\n**{task["project"]}** / {task["task_name"]} — {status}')
@@ -634,6 +674,78 @@ class Office:
     self._worklog_session = None
     return self._reply('알 수 없는 상태입니다. 다시 시작해 주세요.')
 
+  async def _handle_worklog_intent(self, worklog: dict[str, Any], recent_context: str = '') -> dict[str, Any]:
+    '''자연어 업무 상태 표현을 업무일지 task 생성/갱신으로 연결한다.'''
+    from db.workreport_store import create_task, get_recent_tasks, update_task
+
+    raw = str(worklog.get('raw') or '').strip()
+    task_name = str(worklog.get('task_name') or raw[:50]).strip()
+    progress = int(worklog.get('progress') or 0)
+    if not task_name:
+      return await self._emit_reply(raw, '등록할 작업명을 찾지 못했습니다. 작업명을 포함해서 다시 말씀해 주세요.')
+
+    recent_tasks = await asyncio.to_thread(get_recent_tasks, 30)
+    matched = _find_worklog_task_match(task_name, recent_tasks)
+    if matched:
+      fields: dict[str, Any] = {}
+      if progress > 0:
+        fields['progress'] = progress
+        if progress >= 100:
+          fields['status'] = 'done'
+      if raw and raw != matched.get('task_detail'):
+        fields['task_detail'] = raw
+      task = await asyncio.to_thread(update_task, int(matched['id']), **fields) if fields else matched
+      if not task:
+        task = matched
+      action = '갱신했습니다'
+    else:
+      status = 'done' if progress >= 100 else 'active'
+      task = await asyncio.to_thread(
+        create_task,
+        task_name=task_name,
+        task_detail=raw,
+        progress=progress,
+        status=status,
+      )
+      action = '등록했습니다'
+
+    self._last_worklog_task = task
+    progress_label = '완료' if task.get('progress', 0) >= 100 else (
+      f'{task.get("progress", 0)}% 진행' if task.get('progress', 0) else '진행 중'
+    )
+    help_hint = '' if task.get('linked_job_id') else '\n도움이 필요하면 “이거 처리해” 또는 “도와줘”라고 말씀하세요.'
+    return await self._emit_reply(
+      raw,
+      f'업무일지에 {action}.\n**{task.get("project") or "기타"}** / {task["task_name"]} — {progress_label}{help_hint}',
+    )
+
+  async def _handle_worklog_help_request(self, user_input: str, recent_context: str = '') -> dict[str, Any]:
+    '''최근 업무일지 task를 실제 실행 Job으로 연결한다.'''
+    from orchestration.intent import map_to_job_spec
+
+    task = self._last_worklog_task
+    if not task:
+      return await self._emit_reply(user_input, '도움을 연결할 최근 업무가 없습니다. 먼저 업무를 등록해 주세요.')
+
+    task_text = ' '.join(
+      str(task.get(k) or '').strip()
+      for k in ('project', 'task_name', 'task_detail')
+      if str(task.get(k) or '').strip()
+    )
+    request = f'{task_text}\n\n사용자 추가 요청: {user_input}'
+    spec_id, job_input, conf = await map_to_job_spec(request, recent_context)
+    if not spec_id or conf < 0.5:
+      spec_id = 'research'
+      job_input = {'topic': task_text[:500] or user_input[:500]}
+
+    return await self._handle_job(
+      spec_id,
+      job_input,
+      user_input,
+      skip_clarify=True,
+      link_task_id=int(task['id']),
+    )
+
   async def _handle_job(
     self,
     spec_id: str,
@@ -641,8 +753,9 @@ class Office:
     user_input: str,
     attachments_text: str = '',
     skip_clarify: bool = False,
+    link_task_id: int | None = None,
   ) -> dict[str, Any]:
-    '''Job 파이프라인을 생성하고 팀장이 결과를 알린다.'''
+    '''Job 파이프라인을 생성하고 비서가 결과를 알린다.'''
     from jobs.registry import get as get_spec
     from jobs.runner import submit as job_submit
 
@@ -684,6 +797,7 @@ class Office:
         'missing': missing,
         'orig_input': user_input,
         'attachments_text': attachments_text,
+        'link_task_id': link_task_id,
       }
       self._state = OfficeState.COMPLETED
       self._active_agent = ''
@@ -711,6 +825,7 @@ class Office:
           'clarifying_fields': [q['field'] for q in questions],
           'orig_input': user_input,
           'attachments_text': attachments_text,
+          'link_task_id': link_task_id,
         }
         self._state = OfficeState.COMPLETED
         self._active_agent = ''
@@ -719,6 +834,16 @@ class Office:
 
     job_title = await _generate_job_title(spec.title, job_input, user_input)
     job = await job_submit(spec, job_input, title=job_title, attachments_text=attachments_text)
+    if link_task_id is not None:
+      from db.workreport_store import update_task
+      linked = await asyncio.to_thread(
+        update_task,
+        link_task_id,
+        linked_job_id=job.id,
+        status='delegated',
+      )
+      if linked:
+        self._last_worklog_task = linked
 
     await self._emit(
       'teamlead',
@@ -887,4 +1012,3 @@ async def _generate_job_title(spec_title: str, job_input: dict, user_input: str)
   if main_value:
     return f'{spec_title} — {main_value[:20]}'
   return spec_title
-

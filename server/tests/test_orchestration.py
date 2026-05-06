@@ -1,6 +1,7 @@
 # Office 오케스트레이션 테스트
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
 
 
 @pytest.fixture
@@ -25,6 +26,15 @@ def office_setup(tmp_path):
     return office, bus
 
 
+@pytest.fixture
+def isolated_workreport_db(tmp_path, monkeypatch):
+    from db import workreport_store
+
+    monkeypatch.setattr(workreport_store, '_DB', tmp_path / 'workreport.db')
+    workreport_store.init_db()
+    return workreport_store
+
+
 @pytest.mark.asyncio
 async def test_conversation_intent_direct_response(office_setup):
     '''대화 의도일 때 팀장이 직접 응답한다 (팀원 소집 없음)'''
@@ -37,6 +47,38 @@ async def test_conversation_intent_direct_response(office_setup):
     assert result['state'] == 'completed'
     assert 'AI Office' in result['response']
     assert result['artifacts'] == []
+
+
+@pytest.mark.asyncio
+async def test_natural_worklog_creates_task(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+
+    result = await office.receive('랜딩 페이지 작업 시작')
+
+    tasks = isolated_workreport_db.get_recent_tasks(5)
+    assert result['state'] == 'completed'
+    assert tasks[0]['task_name'] == '랜딩 페이지'
+    assert tasks[0]['status'] == 'active'
+
+
+@pytest.mark.asyncio
+async def test_worklog_help_request_links_job(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+    await office.receive('랜딩 페이지 작업 시작')
+
+    with patch('orchestration.intent.map_to_job_spec', new_callable=AsyncMock) as mock_map, \
+         patch('orchestration.office._generate_job_title', new_callable=AsyncMock) as mock_title, \
+         patch('jobs.runner.submit', new_callable=AsyncMock) as mock_submit:
+        mock_map.return_value = ('research', {'topic': '랜딩 페이지'}, 0.9)
+        mock_title.return_value = '랜딩 페이지 리서치'
+        mock_submit.return_value = SimpleNamespace(id='job-123', title='랜딩 페이지 리서치')
+
+        result = await office.receive('도와줘')
+
+    tasks = isolated_workreport_db.get_recent_tasks(5)
+    assert result['state'] == 'completed'
+    assert tasks[0]['linked_job_id'] == 'job-123'
+    assert tasks[0]['status'] == 'delegated'
 
 
 @pytest.mark.skip(reason='QUICK_TASK 직접 라우팅 제거됨 — 현재는 Job 파이프라인으로 처리 (2026-04)')

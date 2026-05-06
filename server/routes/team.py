@@ -1,4 +1,4 @@
-# 팀/에이전트 조회 엔드포인트
+# 비서 상태 조회 엔드포인트
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.get('/api/agents')
 async def get_agents(request: Request) -> list[dict[str, Any]]:
-  '''에이전트별 현재 상태를 Office 상태에서 추론한다.'''
+  '''프론트엔드에는 단일 비서 상태만 노출한다.'''
   office: Office = request.app.state.office
   state = office._state
 
@@ -31,65 +31,32 @@ async def get_agents(request: Request) -> list[dict[str, Any]]:
     OfficeState.TEAMLEAD_REVIEW, OfficeState.REVISION,
   }
 
-  agents: list[dict[str, Any]] = []
-  for agent_id in ['teamlead', 'planner', 'designer', 'developer', 'qa']:
-    if active == 'all':
-      status = 'meeting'
-    elif active == agent_id:
-      status = 'working'
-    elif state in {OfficeState.IDLE, OfficeState.COMPLETED, OfficeState.ESCALATED}:
-      status = 'idle'
-    else:
-      status = 'waiting'
-
-    if not is_working:
-      model = 'Gemini'
-    elif agent_id == 'teamlead':
-      model = 'Claude Haiku'
-    elif agent_id == 'qa':
-      model = 'Claude Haiku'
-    elif agent_id == 'planner':
-      model = 'Gemini'
-    elif agent_id == 'developer':
-      model = 'Gemini'
-    elif agent_id == 'designer':
-      model = 'Claude Sonnet'
-    else:
-      model = 'Claude Sonnet'
-
-    agents.append({
-      'agent_id': agent_id,
-      'status': status,
-      'model': model,
-      'work_started_at': office._work_started_at if status in ('working', 'meeting') else '',
-      'current_phase': office._current_phase if status == 'working' and active == agent_id else '',
-      'active_project_title': office._active_project_title if status in ('working', 'meeting', 'waiting') else '',
-    })
-  return agents
+  status = 'working' if is_working else 'idle'
+  return [{
+    'agent_id': 'teamlead',
+    'status': status,
+    'model': 'Claude CLI',
+    'work_started_at': office._work_started_at if status == 'working' else '',
+    'current_phase': office._current_phase if status == 'working' else '',
+    'active_project_title': office._active_project_title if active or status == 'working' else '',
+  }]
 
 
 @router.get('/api/agents/quotes')
 async def get_daily_quotes() -> dict[str, str]:
-  '''오늘의 한마디 반환. 없으면 Haiku로 생성 후 캐싱.'''
-  from db.daily_quote_store import get_quotes, save_quotes, AGENT_PERSONAS
+  '''비서 오늘의 한마디 반환. 없으면 Haiku로 생성 후 캐싱.'''
+  from db.daily_quote_store import get_quotes, save_quotes
   from runners.claude_runner import run_claude_isolated, ClaudeRunnerError
 
   cached = get_quotes()
-  if len(cached) >= 5:
-    return cached
+  if cached.get('teamlead'):
+    return {'teamlead': cached['teamlead']}
 
-  persona_block = '\n'.join(
-    f'- {agent_id}: {persona}'
-    for agent_id, persona in AGENT_PERSONAS.items()
-  )
   prompt = (
-    '아래 5명의 직장인 캐릭터가 오늘 아침 출근하며 한마디씩 합니다.\n'
-    '각 캐릭터의 성격을 살려, 짧고 인상적인 한마디를 만들어 주세요.\n'
-    '일상적인 감상, 일에 대한 생각, 오늘 날씨, 인생 통찰 등 자유롭게.\n'
-    '20자 이내, 구어체, 말줄임표 사용 가능, 직접 인용처럼.\n\n'
-    f'{persona_block}\n\n'
+    'AI Office 비서가 오늘 업무를 시작하며 남길 짧은 한마디를 만들어 주세요.\n'
+    '20자 이내, 한국어, 직접 인용처럼.\n\n'
     '아래 JSON 형식으로만 답하세요 (설명 없이):\n'
-    '{"teamlead":"...", "planner":"...", "designer":"...", "developer":"...", "qa":"..."}'
+    '{"teamlead":"..."}'
   )
 
   try:
@@ -101,22 +68,21 @@ async def get_daily_quotes() -> dict[str, str]:
     )
     from runners.json_parser import parse_json
     parsed = parse_json(result)
-    if parsed and isinstance(parsed, dict) and len(parsed) >= 5:
-      quotes = {k: str(v) for k, v in parsed.items() if k in AGENT_PERSONAS}
+    if parsed and isinstance(parsed, dict) and parsed.get('teamlead'):
+      quotes = {'teamlead': str(parsed['teamlead'])}
       save_quotes(quotes)
       return quotes
   except (ClaudeRunnerError, Exception):
     pass
 
-  from config.team import TEAM
-  fallback = {m.agent_id: m.fallback_quote for m in TEAM}
+  fallback = {'teamlead': '필요한 일을 정리하고 바로 실행하겠습니다.'}
   save_quotes(fallback)
   return fallback
 
 
 @router.get('/api/team')
 async def get_team() -> list[dict[str, Any]]:
-  '''팀 구성 조회 — 프론트엔드에서 이름/역할/페르소나 등을 동기화한다.'''
+  '''비서 표시 정보 조회. 내부 실행 역할은 노출하지 않는다.'''
   from config.team import to_api_dict
   return to_api_dict()
 

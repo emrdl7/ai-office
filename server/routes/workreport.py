@@ -29,6 +29,8 @@ class TaskCreate(BaseModel):
     duration_min: int | None = None
     date: str = ''
     time: str = ''
+    linked_job_id: str = ''
+    status: str = 'active'
 
 
 class TaskUpdate(BaseModel):
@@ -38,6 +40,13 @@ class TaskUpdate(BaseModel):
     project: str | None = None
     due_date: str | None = None
     duration_min: int | None = None
+    linked_job_id: str | None = None
+    status: str | None = None
+
+
+class TaskJobLink(BaseModel):
+    linked_job_id: str
+    status: str = 'delegated'
 
 
 @router.post('/api/workreport/tasks')
@@ -51,12 +60,26 @@ def api_create_task(body: TaskCreate) -> dict[str, Any]:
         duration_min=body.duration_min,
         work_date=body.date,
         work_time=body.time,
+        linked_job_id=body.linked_job_id,
+        status=body.status,
     )
 
 
 @router.put('/api/workreport/tasks/{task_id}')
 def api_update_task(task_id: int, body: TaskUpdate) -> dict[str, Any]:
     result = update_task(task_id, **body.model_dump(exclude_none=True))
+    if not result:
+        raise HTTPException(status_code=404, detail='작업을 찾을 수 없습니다')
+    return result
+
+
+@router.put('/api/workreport/tasks/{task_id}/link-job')
+def api_link_task_job(task_id: int, body: TaskJobLink) -> dict[str, Any]:
+    result = update_task(
+        task_id,
+        linked_job_id=body.linked_job_id,
+        status=body.status,
+    )
     if not result:
         raise HTTPException(status_code=404, detail='작업을 찾을 수 없습니다')
     return result

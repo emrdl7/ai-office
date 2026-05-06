@@ -31,6 +31,8 @@ def init_db() -> None:
             due_date TEXT,
             milestone_id INTEGER,
             duration_min INTEGER,
+            linked_job_id TEXT DEFAULT '',
+            status TEXT DEFAULT 'active',
             parent_id INTEGER,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
@@ -56,6 +58,15 @@ def init_db() -> None:
             description TEXT
         );
         """)
+        for column, definition in (
+            ('linked_job_id', "TEXT DEFAULT ''"),
+            ('status', "TEXT DEFAULT 'active'"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE wr_tasks ADD COLUMN {column} {definition}')
+            except sqlite3.OperationalError as exc:
+                if 'duplicate column name' not in str(exc).lower():
+                    raise
 
 
 # ── Task CRUD ──────────────────────────────────────────────────────────────
@@ -69,15 +80,21 @@ def create_task(
     duration_min: int | None = None,
     work_date: str = '',
     work_time: str = '',
+    linked_job_id: str = '',
+    status: str = 'active',
 ) -> dict[str, Any]:
     today = work_date or date.today().isoformat()
     now_time = work_time or datetime.now().strftime('%H:%M')
     with _conn() as c:
         cur = c.execute(
             """INSERT INTO wr_tasks
-               (date, time, project, task_name, task_detail, progress, due_date, duration_min)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (today, now_time, project, task_name, task_detail, progress, due_date or None, duration_min),
+               (date, time, project, task_name, task_detail, progress, due_date, duration_min,
+                linked_job_id, status)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                today, now_time, project, task_name, task_detail, progress,
+                due_date or None, duration_min, linked_job_id, status,
+            ),
         )
         row = c.execute('SELECT * FROM wr_tasks WHERE id=?', (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -85,7 +102,8 @@ def create_task(
 
 def update_task(task_id: int, **fields: Any) -> dict[str, Any] | None:
     allowed = {'task_name', 'task_detail', 'progress', 'project', 'due_date',
-               'duration_min', 'milestone_id', 'parent_id', 'date', 'time'}
+               'duration_min', 'milestone_id', 'parent_id', 'date', 'time',
+               'linked_job_id', 'status'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return None

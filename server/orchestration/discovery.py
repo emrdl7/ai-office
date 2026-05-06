@@ -36,14 +36,14 @@ _EARLY_REGISTER_PHRASES = [
 ]
 
 _DISCOVERY_SYSTEM = """\
-당신은 팀장(잡스)입니다. 사용자와 자연스럽게 대화하며 작업 요구사항을 파악합니다.
+당신은 AI Office 비서입니다. 사용자와 자연스럽게 대화하며 작업 요구사항을 파악합니다.
 
 규칙:
 - 한 번에 질문 하나만. 짧고 자연스럽게.
 - 이미 파악한 내용은 다시 묻지 마세요.
 - 작업 목적, 활용 방향, 중점 사항을 파악하세요.
 - 충분히 파악됐다면 자연스럽게 대화를 마무리하는 방향으로 유도하세요.
-- 2-4문장, 한국어, 팀장답게 친근하고 전문적으로.
+- 2-4문장, 한국어, 친근하고 전문적으로.
 """
 
 
@@ -77,7 +77,7 @@ async def start_discovery(
     user_input: str,
     attachments_text: str,
 ) -> DiscoveryState:
-    """Discovery 대화를 시작하고 팀장 첫 응답을 emit한다.
+    """Discovery 대화를 시작하고 비서 첫 응답을 emit한다.
 
     spec_id 결정 없이 대화부터 시작한다.
     """
@@ -148,13 +148,13 @@ def _attach_section(attachments_text: str, limit: int = 800) -> str:
 
 
 async def _generate_chat(state: DiscoveryState) -> str:
-    """팀장 페르소나로 자연스러운 대화 응답을 생성한다."""
+    """비서 페르소나로 자연스러운 대화 응답을 생성한다."""
     from runners.gemini_runner import run_gemini
     from runners.claude_runner import run_claude_isolated
     import os
 
     convo = '\n'.join(
-        f'{"사용자" if t["role"] == "user" else "팀장"}: {t["text"][:300]}'
+        f'{"사용자" if t["role"] == "user" else "비서"}: {t["text"][:300]}'
         for t in state.turns[-8:]
     )
     attach_note = _attach_section(state.attachments_text)
@@ -202,7 +202,7 @@ async def _build_proposal(state: DiscoveryState) -> str:
     from runners.claude_runner import run_claude_isolated
 
     convo = '\n'.join(
-        f'{"사용자" if t["role"] == "user" else "팀장"}: {t["text"][:200]}'
+        f'{"사용자" if t["role"] == "user" else "비서"}: {t["text"][:200]}'
         for t in state.turns
     )
     attach_note = _attach_section(state.attachments_text, limit=400)
@@ -212,7 +212,7 @@ async def _build_proposal(state: DiscoveryState) -> str:
         f'형식:\n'
         f'1. 핵심 내용을 1-2문장으로 요약\n'
         f'2. "이 내용으로 작업을 등록할까요?" 라고 자연스럽게 제안\n'
-        f'- 한국어, 팀장답게, 3-4문장 이내'
+        f'- 한국어, 3-4문장 이내'
     )
     try:
         return await run_claude_isolated(
@@ -232,7 +232,7 @@ async def _compress_to_job_input(state: DiscoveryState, spec_id: str) -> dict[st
         return {}
 
     convo = '\n'.join(
-        f'{"사용자" if t["role"] == "user" else "팀장"}: {t["text"][:200]}'
+        f'{"사용자" if t["role"] == "user" else "비서"}: {t["text"][:200]}'
         for t in state.turns
     )
     attach_note = _attach_section(state.attachments_text, limit=1200)
@@ -269,7 +269,7 @@ async def _finalize_and_register(office: 'Office', state: DiscoveryState) -> Non
     # 대화 전체 텍스트를 하나로 합쳐 spec 매핑
     all_user_text = ' '.join(t['text'] for t in state.turns if t['role'] == 'user')
     full_context = '\n'.join(
-        f'{"사용자" if t["role"] == "user" else "팀장"}: {t["text"][:150]}'
+        f'{"사용자" if t["role"] == "user" else "비서"}: {t["text"][:150]}'
         for t in state.turns
     )
 

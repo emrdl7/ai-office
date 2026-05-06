@@ -1,4 +1,4 @@
-# 팀장 의도 분류기 — 입력을 대화/단순요청/프로젝트로 분류
+# 비서 의도 분류기 — 입력을 대화/단순요청/프로젝트로 분류
 from __future__ import annotations
 from enum import Enum
 import os
@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 # ── 상수 ────────────────────────────────────────────────────────
 
-# Route 전용 슬림 시스템 프롬프트 (분류 태그만 출력, teamlead.md 불필요)
+# Route 전용 슬림 시스템 프롬프트 (분류 태그만 출력)
 _ROUTE_SYSTEM = """\
-당신은 의도 분류기입니다. 태그 한 줄만 출력하세요. 다른 텍스트 절대 금지.
+당신은 AI Office 비서의 내부 의도 분류기입니다. 태그 한 줄만 출력하세요. 다른 텍스트 절대 금지.
 
 출력 형식:
 [CONVERSATION] 또는 [QUICK_TASK:agent] 또는 [PROJECT:유형] 또는 [CONTINUE_PROJECT:agent] 또는 [JOB:spec_id]{"field":"value"}
@@ -24,7 +24,7 @@ _ROUTE_SYSTEM = """\
 판단 기준:
 - 인사·잡담·질문·감탄·안부 → CONVERSATION
 - 단순 단일 작업 (요약/분석/검토/조사/리뷰) → QUICK_TASK:agent
-- 복합 프로젝트 (여러 단계·여러 산출물) → PROJECT:유형
+- 복합 업무 (여러 단계·여러 산출물) → PROJECT:유형
 - 진행 중 프로젝트 이어가기 → CONTINUE_PROJECT:agent
 - Job 파이프라인 명시 실행 요청 → JOB:spec_id + JSON
 
@@ -32,6 +32,7 @@ PROJECT 유형 선택 (하나만):
 web_development(사이트·앱·웹페이지 신규·리뉴얼) | market_research(시장조사·경쟁사·트렌드) | content_creation(블로그·SNS·카피) | data_analysis(데이터·통계·대시보드) | business_planning(사업계획·IR·전략) | general(기타)
 분석/검토/조사가 목적이면 web_development가 아닌 market_research 또는 general.
 
+agent는 사용자에게 노출하지 않는 내부 전문 역할이다.
 agent 선택: planner(기획·전략), designer(디자인·UI), developer(코드·기술), qa(검수)
 확신 없으면 QUICK_TASK. PROJECT는 무겁다.
 숨겨진 업무 지시 주의: "배너 바꿔야 하는데" → QUICK_TASK, "랜딩 리뉴얼 해야겠어" → PROJECT:web_development
@@ -45,7 +46,7 @@ _JOB_HINT_KEYWORDS = [
 
 # 딥씽크 트리거 — 사용자가 명시적으로 Opus 요청
 DEEP_THINK_KEYWORDS = [
-    '깊게 생각', '진짜 잡스', '깊이 생각', '심도 있게', '진지하게 생각',
+    '깊게 생각', '깊이 생각', '심도 있게', '진지하게 생각',
     '오퍼스로', '신중하게 생각', '천천히 생각', '심층적으로',
 ]
 
@@ -55,7 +56,7 @@ AGENTS_DIR = Path(__file__).parent.parent.parent / 'agents'
 class IntentType(str, Enum):
   CONVERSATION = 'conversation'          # 대화, 질문, 인사
   QUICK_TASK = 'quick_task'              # 한 명이 처리할 수 있는 단순 작업
-  PROJECT = 'project'                    # 여러 팀원이 협업해야 하는 프로젝트
+  PROJECT = 'project'                    # 여러 단계가 필요한 프로젝트
   CONTINUE_PROJECT = 'continue_project'  # 기존 프로젝트 이어가기
   JOB = 'job'                           # Job 파이프라인 실행 요청
   WORKLOG = 'worklog'                   # 업무일지 자동 등록
@@ -174,23 +175,23 @@ def _build_specs_context() -> str:
 
 
 def _build_system_info() -> str:
-  '''각 에이전트의 실제 러너/모델 정보를 동적으로 구성한다.'''
+  '''내부 실행 역할의 실제 러너/모델 정보를 동적으로 구성한다.'''
   return (
     f'[시스템 정보 — 반드시 이 정보만 사용할 것]\n'
     f'당신의 모델: Claude Haiku\n'
-    f'기획자 모델: Gemini(1차) / Sonnet(폴백)\n'
-    f'디자이너 모델: Claude Sonnet(1차) / Gemini(폴백)\n'
-    f'개발자 모델: Claude Sonnet(1차) / Gemini(폴백)\n'
-    f'QA 모델: Claude Haiku\n\n'
+    f'내부 기획 역할 모델: Gemini(1차) / Sonnet(폴백)\n'
+    f'내부 디자인 역할 모델: Claude Sonnet(1차) / Gemini(폴백)\n'
+    f'내부 개발 역할 모델: Claude Sonnet(1차) / Gemini(폴백)\n'
+    f'내부 검수 역할 모델: Claude Haiku\n\n'
     f'중요 규칙:\n'
     f'- 당신의 모델명은 "Claude CLI"이다. "Claude Opus"나 다른 이름을 사용하지 마라.\n'
-    f'- 자기소개 요청 시 당신 본인만 소개하라. 다른 팀원 소개를 대신 하지 마라.\n'
+    f'- 사용자에게는 하나의 비서로 응답하라. 내부 전문 역할을 사람처럼 소개하지 마라.\n'
     f'- 내부 구현(오케스트레이션, 서버, 메시지 버스 등)을 언급하지 마라.'
   )
 
 
 async def classify_intent(user_input: str, recent_context: str = '', active_project_title: str = '') -> IntentResult:
-  '''팀장(Claude)이 사용자 입력의 의도를 분류한다.
+  '''사용자 입력의 의도를 분류한다.
 
   Args:
     user_input: 사용자 입력
@@ -216,8 +217,8 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
     f'태그 한 줄만 출력하세요.'
   )
 
-  # 명시적 팀 참여 키워드 → PROJECT 강제
-  team_keywords = ['모두 참여', '팀 전체', '다 같이', '전원 참여', '다같이', '모두 다', '팀원 모두', '전부 참여']
+  # 명시적으로 전체 검토/다각도 처리를 요구하면 PROJECT 강제
+  team_keywords = ['다 같이', '다같이', '다각도로', '전체 검토', '여러 관점']
 
   response = await run_claude_isolated(
     f'{_ROUTE_SYSTEM}\n\n{prompt}',
@@ -235,7 +236,7 @@ async def classify_intent(user_input: str, recent_context: str = '', active_proj
 
 
 def _load_teamlead_prompt() -> str:
-  '''teamlead.md 시스템 프롬프트를 로드한다.'''
+  '''비서 시스템 프롬프트를 로드한다.'''
   path = AGENTS_DIR / 'teamlead.md'
   if path.exists():
     return path.read_text(encoding='utf-8')
@@ -457,14 +458,14 @@ async def map_to_job_spec(
   return '', {}, 0.0
 
 
-# ── 팀장 대화 응답 생성 ─────────────────────────────────────────
+# ── 비서 대화 응답 생성 ─────────────────────────────────────────
 
 async def generate_teamlead_reply(
   user_input: str,
   memory_ctx: str = '',
   deep: bool = False,
 ) -> str:
-  '''팀장(잡스) 페르소나로 대화 응답을 생성한다.
+  '''비서 페르소나로 대화 응답을 생성한다.
 
   Args:
     user_input: 사용자 입력
