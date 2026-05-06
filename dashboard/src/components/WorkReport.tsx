@@ -104,13 +104,13 @@ function TaskCard({ task, onProgressChange, onDelete }: {
   const [draft, setDraft] = useState(task.progress)
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+    <div className="rounded-2xl border border-white/70 bg-white/82 p-4 shadow-sm shadow-slate-900/5 backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-teal-300/70 dark:border-slate-700/70 dark:bg-slate-900/72">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {task.project && (
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full
-                bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400">
+                bg-teal-100/90 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300">
                 {task.project}
               </span>
             )}
@@ -211,9 +211,9 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
   if (!open) return (
     <button
       onClick={() => setOpen(true)}
-      className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed
-        border-gray-200 dark:border-gray-700 text-gray-400 hover:text-teal-500
-        hover:border-teal-300 dark:hover:border-teal-700 transition-colors cursor-pointer text-sm"
+      className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border border-dashed
+        border-teal-300/60 bg-white/54 dark:bg-slate-950/30 text-slate-500 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-300
+        hover:border-teal-400 dark:hover:border-teal-600 transition-colors cursor-pointer text-sm backdrop-blur"
     >
       <MatIcon name="add" className="text-[16px]" />
       작업 직접 추가
@@ -221,7 +221,7 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
   )
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-teal-300 dark:border-teal-700 p-4 space-y-3">
+    <div className="rounded-2xl border border-teal-300/70 bg-white/88 p-4 shadow-lg shadow-teal-500/10 backdrop-blur dark:border-teal-700/70 dark:bg-slate-900/82 space-y-3">
       <input
         autoFocus
         value={name}
@@ -542,11 +542,11 @@ function WorkCalendar({
               endsAfter: taskEndDate(task) > segmentEnd,
             }
           })
-          const weekHeight = Math.max(118, 56 + lanes.length * 22)
+          const weekHeight = Math.max(126, 62 + lanes.length * 24)
           return (
             <div
               key={`${weekStart}-${weekEnd}`}
-              className="relative grid grid-cols-7 border-t border-slate-300 first:border-t-0 dark:border-slate-700"
+              className="relative grid grid-cols-7 border-t border-slate-300/80 first:border-t-0 dark:border-slate-700/80"
               style={{ minHeight: weekHeight }}
             >
               {week.map((cell) => {
@@ -574,18 +574,18 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative h-full min-h-[118px] border-l border-slate-300 p-2 text-left transition-colors first:border-l-0 hover:bg-cyan-50/70 dark:border-slate-700 dark:hover:bg-cyan-950/20
-                      ${isDayOff ? 'bg-amber-50/80 dark:bg-amber-950/15' : isHoliday || isSunday ? 'bg-rose-50/70 dark:bg-rose-950/10' : isSaturday ? 'bg-blue-50/70 dark:bg-blue-950/10' : 'bg-white/50 dark:bg-slate-950/20'}
+                    className={`relative h-full min-h-[126px] border-l border-slate-300/80 p-2 text-left transition-colors first:border-l-0 hover:bg-teal-50/80 dark:border-slate-700/80 dark:hover:bg-teal-950/20
+                      ${isDayOff ? 'bg-amber-50/82 dark:bg-amber-950/16' : isHoliday || isSunday ? 'bg-rose-50/72 dark:bg-rose-950/10' : isSaturday ? 'bg-sky-50/72 dark:bg-sky-950/10' : 'bg-white/56 dark:bg-slate-950/24'}
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
                     {isFirstDay && (
-                      <span className="absolute left-2 top-1.5 rounded-full bg-slate-950 px-2 py-0.5 text-[10px] font-black text-white shadow-sm dark:bg-cyan-300 dark:text-slate-950">
+                      <span className="absolute left-2 top-1.5 rounded-full bg-gradient-to-r from-slate-950 via-teal-800 to-amber-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 dark:text-slate-950">
                         {monthLabel(cellMonth)}
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
                     )}
-                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday || isSunday ? 'text-rose-600 dark:text-rose-300' : isSaturday ? 'text-blue-600 dark:text-blue-300' : isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
+                    <span className={`absolute right-2 top-1.5 text-base font-black tabular-nums ${isDayOff ? 'text-amber-700 dark:text-amber-200' : isHoliday || isSunday ? 'text-rose-600 dark:text-rose-300' : isSaturday ? 'text-sky-600 dark:text-sky-300' : isToday ? 'text-teal-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
                       {cell.day}
                     </span>
                     {dayLabels.length > 0 && (
@@ -602,12 +602,12 @@ function WorkCalendar({
                 )
               })}
 
-              <div className="pointer-events-none absolute inset-x-0 top-8 grid grid-cols-7 gap-y-1 px-1">
+              <div className="pointer-events-none absolute inset-x-0 top-9 grid grid-cols-7 gap-y-1.5 px-1.5">
                 {weekRibbons.map(({ task, startCol, endCol, row, startsBefore, endsAfter }) => {
                   return (
                     <div
                       key={`${task.id}-${weekIndex}`}
-                      className={`min-w-0 px-2 py-1 text-[10px] font-bold leading-none shadow-sm ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
+                      className={`min-w-0 px-2.5 py-1.5 text-[10px] font-black leading-none shadow-md shadow-slate-900/12 ring-1 ring-white/20 ${ribbonTone(task)} ${startsBefore ? 'rounded-l-none' : 'rounded-l-full'} ${endsAfter ? 'rounded-r-none' : 'rounded-r-full'}`}
                       style={{ gridColumn: `${startCol} / span ${Math.max(1, endCol - startCol + 1)}`, gridRow: row }}
                       title={`${taskStartDate(task)}~${taskEndDate(task)} ${task.project ? `[${task.project}] ` : ''}${task.task_name}`}
                     >
@@ -624,11 +624,11 @@ function WorkCalendar({
   }
 
   return (
-    <div className="command-surface rounded-3xl p-5">
+    <div className="command-surface rounded-[2rem] p-5 shadow-2xl shadow-slate-900/10">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(visibleMonth)}</p>
-          <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+          <p className="text-3xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">{monthLabel(visibleMonth)}</p>
+          <p className="mt-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
             {dataByMonth.get(visibleMonth)?.total ?? 0}개 작업 기록
           </p>
         </div>
@@ -638,29 +638,26 @@ function WorkCalendar({
             setVisibleMonth(today.slice(0, 7))
             onSelectDate(today)
           }}
-          className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-cyan-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200"
+          className="rounded-2xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 px-3 py-2 text-xs font-black text-white shadow-lg shadow-teal-500/20 transition-transform hover:scale-105 active:scale-95 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 dark:text-slate-950"
         >
           오늘
         </button>
       </div>
 
-      <div className="sticky top-0 z-10 grid grid-cols-7 border-y border-slate-300 bg-white/90 text-center backdrop-blur dark:border-slate-700 dark:bg-slate-950/90">
+      <div className="sticky top-0 z-10 grid grid-cols-7 rounded-t-2xl border border-x-0 border-slate-300/80 bg-white/82 text-center shadow-sm backdrop-blur-xl dark:border-slate-700/80 dark:bg-slate-950/82">
         {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
-          <div key={d} className="py-2 text-[10px] font-bold text-slate-400">{d}</div>
+          <div key={d} className="py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{d}</div>
         ))}
       </div>
 
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="max-h-[calc(100vh-220px)] min-h-[620px] overflow-y-auto pr-2"
+        className="max-h-[calc(100vh-214px)] min-h-[640px] overflow-y-auto pr-2"
       >
-        <div className="overflow-hidden bg-white/45 dark:bg-slate-950/20">
+        <div className="overflow-hidden rounded-b-2xl border-b border-slate-300/80 bg-white/38 dark:border-slate-700/80 dark:bg-slate-950/20">
           {renderCalendarRows()}
         </div>
-      </div>
-      <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-xs text-slate-500 dark:border-slate-800/80 dark:bg-slate-950/35 dark:text-slate-400">
-        날짜를 클릭하면 해당 일자의 일별 업무일지로 이동합니다. 리본은 시간순 업무, 하단 막대는 평균 진행도와 마감 위험을 나타냅니다.
       </div>
     </div>
   )
@@ -699,9 +696,9 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
   return (
     <div className="space-y-4">
       {/* 복사 텍스트 박스 */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800
-          bg-gray-50 dark:bg-gray-800/50">
+      <div className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100/80 dark:border-slate-800
+          bg-white/54 dark:bg-slate-800/50">
           <div className="flex items-center gap-2">
             <MatIcon name="content_copy" className="text-[14px] text-gray-500" />
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">주간업무 복사용 텍스트</span>
@@ -730,8 +727,8 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
           const done = tasks.filter(t => t.progress >= 100).length
           const avg = Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
           return (
-            <div key={project} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+            <div key={project} className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+              <div className="px-4 py-2.5 border-b border-slate-100/80 dark:border-slate-800 flex items-center gap-2">
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{project}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
                   {tasks.length}건 · 완료 {done}
@@ -761,7 +758,7 @@ function WeeklySummaryView({ weekStart }: { weekStart: string }) {
       </div>
 
       {data.overdue.length > 0 && (
-        <div className="bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-200 dark:border-orange-800/30 p-4">
+        <div className="rounded-2xl border border-orange-200/80 bg-orange-50/82 p-4 shadow-sm shadow-orange-500/10 backdrop-blur dark:border-orange-800/30 dark:bg-orange-900/10">
           <p className="text-xs font-semibold text-orange-700 dark:text-orange-400 mb-2">
             마감 초과 작업 ({data.overdue.length}건)
           </p>
@@ -913,7 +910,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     : calendarMonth
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-transparent">
+    <div className="chat-canvas flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
       <div className="px-4 md:px-5 h-[64px] shrink-0 flex items-center gap-2
         border-b border-slate-200/70 dark:border-slate-800/70 glass-panel rounded-none border-x-0 border-t-0">
@@ -928,23 +925,23 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-8 h-8 rounded-xl bg-slate-950 dark:bg-cyan-300 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 flex items-center justify-center shadow-lg shadow-teal-500/20">
             <MatIcon name="edit_note" className="text-[18px] text-white dark:text-slate-950" />
           </div>
           <div>
-            <h2 className="text-sm font-black text-slate-900 dark:text-white">업무일지</h2>
-            <p className="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400">작업 기록, 캘린더, 주간 취합</p>
+            <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">업무일지</h2>
+            <p className="hidden sm:block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Calendar log</p>
           </div>
         </div>
         {/* 탭 */}
-        <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/80 rounded-lg p-0.5">
+        <div className="flex items-center gap-1 rounded-2xl border border-white/70 bg-white/60 p-1 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/60">
           {(['daily', 'weekly'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer
                 ${tab === t
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                  ? 'bg-slate-950 text-white shadow-sm dark:bg-cyan-300 dark:text-slate-950'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
             >
@@ -959,8 +956,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         {/* 주간 탭 */}
         {tab === 'weekly' && (
           <>
-            <div className="flex items-center justify-between bg-white dark:bg-gray-900 rounded-xl
-              border border-gray-200 dark:border-gray-800 px-4 py-2.5">
+            <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/82 px-4 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
               <button onClick={prevWeek}
                 className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors">
                 <MatIcon name="chevron_left" className="text-[20px] text-gray-500" />
@@ -988,7 +984,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
 
         {/* 일별 탭 */}
         {tab === 'daily' && (
-          <div className="grid gap-5 lg:grid-cols-[minmax(560px,1fr)_390px]">
+          <div className="grid gap-5 lg:grid-cols-[minmax(620px,1fr)_380px] xl:grid-cols-[minmax(760px,1fr)_390px]">
             <aside className="hidden lg:block">
               <div className="sticky top-0">
                 <WorkCalendar
@@ -1010,7 +1006,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         {dash && isToday && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {statCards.map(({ label, value, icon, cls }) => (
-              <div key={label} className="bg-white/75 dark:bg-slate-950/40 rounded-xl border border-gray-200/80 dark:border-gray-800/80 p-3 backdrop-blur">
+              <div key={label} className="rounded-2xl border border-white/70 bg-white/78 p-3 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-950/42">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${cls}`}>
                   <MatIcon name={icon} className="text-[15px]" />
                 </div>
@@ -1022,8 +1018,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
         )}
 
         {/* 날짜 네비게이션 */}
-        <div className="flex items-center justify-between bg-white dark:bg-gray-900 rounded-xl
-          border border-gray-200 dark:border-gray-800 px-4 py-2.5">
+        <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/82 px-4 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
           <button onClick={prevDay}
             className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors">
             <MatIcon name="chevron_left" className="text-[20px] text-gray-500" />
@@ -1046,10 +1041,10 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
           </button>
         </div>
 
-        <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+        <div className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-sm backdrop-blur ${
           selectedDayOff
-            ? 'border-amber-200 bg-amber-50/80 text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-100'
-            : 'border-slate-200 bg-white/75 text-slate-700 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300'
+            ? 'border-amber-200/80 bg-amber-50/84 text-amber-900 shadow-amber-500/10 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-100'
+            : 'border-white/70 bg-white/76 text-slate-700 shadow-slate-900/5 dark:border-slate-700/70 dark:bg-slate-950/38 dark:text-slate-300'
         }`}>
           <div className="min-w-0">
             <p className="text-xs font-black">{selectedDayOff ? dayOffLabel(selectedDayOff) : '이 날짜를 휴무로 표시'}</p>
@@ -1083,7 +1078,7 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
 
         {/* 진행도 요약 바 */}
         {tasks.length > 0 && (
-          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-3">
+          <div className="rounded-2xl border border-white/70 bg-white/82 p-3 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-gray-500">전체 진행도</span>
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{avgProgress}%</span>
@@ -1103,9 +1098,9 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
             <MatIcon name="hourglass_empty" className="text-[40px]" />
           </div>
         ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
-              <MatIcon name="edit_note" className="text-[28px] text-gray-400" />
+          <div className="rounded-[2rem] border border-white/70 bg-white/62 px-5 py-12 text-center shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-950/36">
+            <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 flex items-center justify-center mb-3 shadow-lg shadow-teal-500/20">
+              <MatIcon name="edit_note" className="text-[28px] text-white dark:text-slate-950" />
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {isToday ? '오늘 기록된 작업이 없습니다' : '이 날 기록된 작업이 없습니다'}
