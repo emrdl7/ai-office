@@ -133,29 +133,7 @@ class ToolSpec:
 # ── 내장 도구 목록 ─────────────────────────────────────────────────────────────
 
 _BUILTIN_TOOLS: dict[str, ToolSpec] = {
-    # 'current_date', 'job_context' → jobs/tools/current_date.py, job_context.py 로 이동됨
-    'web_search': ToolSpec(
-        id='web_search',
-        name='웹 검색',
-        description='DuckDuckGo 또는 설정된 검색 엔진으로 웹 검색을 수행한다.',
-        category='research',
-        params=['topic', 'plan'],
-    ),
-    # 'url_fetch' → jobs/tools/url_fetch.py 로 이동됨
-    'read_file': ToolSpec(
-        id='read_file',
-        name='파일 읽기',
-        description='context의 file_path 키에 지정된 파일을 읽는다.',
-        category='file',
-        params=['file_path'],
-    ),
-    'list_files': ToolSpec(
-        id='list_files',
-        name='파일 목록',
-        description='context의 dir_path 키에 지정된 디렉토리의 파일 목록을 가져온다.',
-        category='file',
-        params=['dir_path'],
-    ),
+    # core file/research tools → jobs/tools/*.py 로 이동됨
     'run_shell': ToolSpec(
         id='run_shell',
         name='셸 명령 실행',
@@ -177,20 +155,6 @@ _BUILTIN_TOOLS: dict[str, ToolSpec] = {
         description='context의 feed_url 키에 지정된 RSS/Atom 피드에서 최신 항목을 수집한다. 트렌드·뉴스 리서치에 유용.',
         category='research',
         params=['feed_url'],
-    ),
-    'write_file': ToolSpec(
-        id='write_file',
-        name='파일 저장',
-        description='context의 file_path와 content 키를 사용해 파일을 저장한다. 산출물을 직접 파일로 출력할 때 사용.',
-        category='file',
-        params=['file_path', 'content'],
-    ),
-    'diff_files': ToolSpec(
-        id='diff_files',
-        name='파일 비교(diff)',
-        description='context의 file_a, file_b 키에 지정된 두 파일의 diff를 반환한다. 코드 리뷰 시 변경사항 파악에 유용.',
-        category='file',
-        params=['file_a', 'file_b'],
     ),
     'run_python': ToolSpec(
         id='run_python',
@@ -362,12 +326,6 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
         logger.debug('plugin 조회 실패 %s: %s', tool_id, e)
 
     # Legacy 내장 도구 (점진 이동 중)
-    if tool_id == 'web_search':
-        return _web_search(context)
-    if tool_id == 'read_file':
-        return _read_file(context)
-    if tool_id == 'list_files':
-        return _list_files(context)
     if tool_id == 'run_shell':
         spec = _BUILTIN_TOOLS.get('run_shell')
         if spec and not spec.enabled:
@@ -377,10 +335,6 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
         return _screenshot_url(context)
     if tool_id == 'rss_feed':
         return _rss_feed(context)
-    if tool_id == 'write_file':
-        return _write_file(context)
-    if tool_id == 'diff_files':
-        return _diff_files(context)
     if tool_id == 'run_python':
         return _run_python(context)
     if tool_id == 'figma_get_design':
@@ -431,85 +385,6 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
 
 
 # ── 내장 도구 구현 ─────────────────────────────────────────────────────────────
-
-def _web_search(context: dict[str, str]) -> str:
-    import json as _json, re
-
-    plan_text = context.get('plan', '')
-    queries: list[str] = []
-    try:
-        m = re.search(r'\{[\s\S]*\}', plan_text)
-        if m:
-            plan_data = _json.loads(m.group())
-            queries = plan_data.get('queries', [])
-    except Exception:
-        pass
-    if not queries:
-        queries = [context.get('topic', context.get('project', ''))]
-    queries = [q for q in queries[:3] if q]
-
-    brave_key = _resolve_token('BRAVE_SEARCH_API_KEY')
-    if brave_key:
-        return _web_search_brave(queries, brave_key)
-
-    from harness.file_reader import web_search
-    parts = [web_search(q, max_results=5) for q in queries]
-    return '\n\n'.join(parts)
-
-
-def _web_search_brave(queries: list[str], api_key: str) -> str:
-    import urllib.request, urllib.parse, json as _json
-    results = []
-    for q in queries:
-        encoded = urllib.parse.quote_plus(q)
-        req = urllib.request.Request(
-            f'https://api.search.brave.com/res/v1/web/search?q={encoded}&count=5',
-            headers={'Accept': 'application/json', 'X-Subscription-Token': api_key},
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = _json.loads(resp.read())
-            items = data.get('web', {}).get('results', [])
-            parts = [f'## 검색: {q}']
-            for item in items:
-                title = item.get('title', '')
-                url   = item.get('url', '')
-                desc  = item.get('description', '')[:200]
-                parts.append(f'- **{title}**\n  {url}\n  {desc}')
-            results.append('\n'.join(parts))
-        except Exception as e:
-            results.append(f'[Brave 검색 실패: {q} — {e}]')
-    return '\n\n'.join(results)
-
-
-def _read_file(context: dict[str, str]) -> str:
-    file_path = context.get('file_path', '')
-    if not file_path:
-        return ''
-    try:
-        p = Path(file_path)
-        if not p.exists():
-            return f'[파일 없음: {file_path}]'
-        content = p.read_text(encoding='utf-8')
-        # 너무 크면 앞부분만
-        if len(content) > 20000:
-            content = content[:20000] + f'\n\n[이후 {len(content) - 20000}자 생략]'
-        return content
-    except Exception as e:
-        return f'[파일 읽기 실패: {e}]'
-
-
-def _list_files(context: dict[str, str]) -> str:
-    dir_path = context.get('dir_path', '.')
-    try:
-        p = Path(dir_path)
-        if not p.is_dir():
-            return f'[디렉토리 없음: {dir_path}]'
-        files = [str(f.relative_to(p)) for f in sorted(p.rglob('*')) if f.is_file()][:100]
-        return '\n'.join(files)
-    except Exception as e:
-        return f'[목록 실패: {e}]'
-
 
 def _run_shell(context: dict[str, str]) -> str:
     import subprocess
@@ -588,38 +463,6 @@ def _rss_feed(context: dict[str, str]) -> str:
         return f'[RSS: {feed_url}]\n\n' + '\n\n'.join(items) if items else '[RSS: 항목 없음]'
     except Exception as e:
         return f'[rss_feed 실패: {e}]'
-
-
-def _write_file(context: dict[str, str]) -> str:
-    file_path = context.get('file_path', '')
-    content   = context.get('content', '')
-    if not file_path:
-        return '[write_file: file_path 없음]'
-    try:
-        p = Path(file_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding='utf-8')
-        return f'[파일 저장 완료: {file_path} ({len(content)}자)]'
-    except Exception as e:
-        return f'[write_file 실패: {e}]'
-
-
-def _diff_files(context: dict[str, str]) -> str:
-    import difflib
-    file_a = context.get('file_a', '')
-    file_b = context.get('file_b', '')
-    if not file_a or not file_b:
-        return '[diff_files: file_a, file_b 모두 필요]'
-    try:
-        a_lines = Path(file_a).read_text(encoding='utf-8').splitlines(keepends=True)
-        b_lines = Path(file_b).read_text(encoding='utf-8').splitlines(keepends=True)
-        diff = list(difflib.unified_diff(a_lines, b_lines, fromfile=file_a, tofile=file_b))
-        if not diff:
-            return '[두 파일이 동일합니다]'
-        result = ''.join(diff)
-        return result[:8000] + (f'\n[이후 생략]' if len(result) > 8000 else '')
-    except Exception as e:
-        return f'[diff_files 실패: {e}]'
 
 
 def _run_python(context: dict[str, str]) -> str:

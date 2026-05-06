@@ -225,6 +225,36 @@ def test_workreport_days_off_crud(isolated_workreport_db):
     assert isolated_workreport_db.list_days_off('2026-05') == []
 
 
+def test_workreport_dashboard_action_items(isolated_workreport_db):
+    today = isolated_workreport_db.kst_today().isoformat()
+    isolated_workreport_db.create_task(
+        task_name='오늘 마감 작업',
+        progress=30,
+        due_date=today,
+        work_date=today,
+    )
+    isolated_workreport_db.create_task(
+        task_name='보류 작업',
+        progress=40,
+        status='paused',
+        work_date=today,
+    )
+    isolated_workreport_db.create_task(
+        task_name='실행 연결 작업',
+        progress=20,
+        linked_job_id='job-1',
+        status='delegated',
+        work_date=today,
+    )
+
+    dashboard = isolated_workreport_db.get_dashboard()
+
+    action_items = dashboard['action_items']
+    assert [task['task_name'] for task in action_items['due_today']] == ['오늘 마감 작업']
+    assert [task['task_name'] for task in action_items['paused']] == ['보류 작업']
+    assert [task['task_name'] for task in action_items['delegated']] == ['실행 연결 작업']
+
+
 @pytest.mark.skip(reason='QUICK_TASK 직접 라우팅 제거됨 — 현재는 Job 파이프라인으로 처리 (2026-04)')
 @pytest.mark.asyncio
 async def test_quick_task_routes_to_single_agent(office_setup):

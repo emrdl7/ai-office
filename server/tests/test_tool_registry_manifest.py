@@ -38,7 +38,11 @@ def test_plugin_tools_load() -> None:
     from jobs.tools import load_plugin_tools
     plugins = load_plugin_tools()
     # 점진 분할된 플러그인 도구는 로드돼야 한다.
-    expected = {'current_date', 'job_context', 'url_fetch', 'slack_post', 'notion_write'}
+    expected = {
+        'current_date', 'job_context', 'url_fetch',
+        'web_search', 'read_file', 'list_files', 'write_file', 'diff_files',
+        'slack_post', 'notion_write',
+    }
     assert expected.issubset(set(plugins.keys())), (
         f'플러그인 로더 누락: {expected - set(plugins.keys())}'
     )

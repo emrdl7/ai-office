@@ -335,9 +335,19 @@ function StepCard({
                 {selectionSource.text}
               </span>
             )}
+            {step.model_used && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+                {step.model_used}
+              </span>
+            )}
             {step.started_at && (
               <span className="text-[10px] text-gray-400 shrink-0">
                 {elapsed(step.started_at, step.finished_at || undefined)}
+              </span>
+            )}
+            {step.cost_usd > 0 && (
+              <span className="text-[10px] text-gray-400 shrink-0">
+                ${step.cost_usd.toFixed(4)}
               </span>
             )}
             {hasOutput && (

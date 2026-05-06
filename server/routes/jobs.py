@@ -59,11 +59,18 @@ async def list_tools() -> list[dict[str, Any]]:
 async def toggle_tool(tool_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """도구 활성화/비활성화 (run_shell 등 위험 도구 관리용)."""
     from jobs.tool_registry import _BUILTIN_TOOLS
-    if tool_id not in _BUILTIN_TOOLS:
+    from jobs.tools import load_plugin_tools
+
+    plugins = load_plugin_tools()
+    if tool_id in _BUILTIN_TOOLS:
+        spec = _BUILTIN_TOOLS[tool_id]
+    elif tool_id in plugins:
+        spec = plugins[tool_id][0]
+    else:
         raise HTTPException(status_code=404, detail=f'도구를 찾을 수 없습니다: {tool_id}')
     enabled = body.get('enabled', True)
-    _BUILTIN_TOOLS[tool_id].enabled = bool(enabled)
-    return {'id': tool_id, 'enabled': _BUILTIN_TOOLS[tool_id].enabled}
+    spec.enabled = bool(enabled)
+    return {'id': tool_id, 'enabled': spec.enabled}
 
 
 @router.get('/api/jobs/gates/agreement_stats')

@@ -34,6 +34,13 @@ interface Dashboard {
   overdue_count: number
   active_projects: number
   recent_tasks: WRTask[]
+  action_items?: {
+    due_today: WRTask[]
+    overdue: WRTask[]
+    paused: WRTask[]
+    stale_active: WRTask[]
+    delegated: WRTask[]
+  }
 }
 
 interface MonthlyDay {
@@ -176,6 +183,67 @@ function TaskCard({ task, onProgressChange, onDelete }: {
         >
           <MatIcon name="close" className="text-[14px]" />
         </button>
+      </div>
+    </div>
+  )
+}
+
+function WorkOpsPanel({ dashboard, onSelectDate }: {
+  dashboard?: Dashboard
+  onSelectDate: (date: string) => void
+}) {
+  const actionItems = dashboard?.action_items
+  if (!actionItems) return null
+
+  const groups = [
+    { key: 'overdue', label: '지연', icon: 'priority_high', items: actionItems.overdue, tone: 'text-red-600 bg-red-50 dark:text-red-300 dark:bg-red-950/30' },
+    { key: 'due_today', label: '오늘 마감', icon: 'event_available', items: actionItems.due_today, tone: 'text-amber-600 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/30' },
+    { key: 'paused', label: '보류', icon: 'pause_circle', items: actionItems.paused, tone: 'text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-800' },
+    { key: 'stale_active', label: '재개 후보', icon: 'restart_alt', items: actionItems.stale_active, tone: 'text-indigo-600 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-950/30' },
+    { key: 'delegated', label: '실행 연결', icon: 'hub', items: actionItems.delegated, tone: 'text-teal-600 bg-teal-50 dark:text-teal-300 dark:bg-teal-950/30' },
+  ].filter((group) => group.items.length > 0)
+
+  if (groups.length === 0) return null
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">운영 액션</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">오늘 처리하거나 다시 판단해야 할 업무</p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+          {groups.reduce((sum, group) => sum + group.items.length, 0)}건
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group) => (
+          <div key={group.key} className="rounded-xl border border-slate-100 p-2.5 dark:border-slate-800">
+            <div className="mb-2 flex items-center gap-1.5">
+              <span className={`flex h-6 w-6 items-center justify-center rounded-lg ${group.tone}`}>
+                <MatIcon name={group.icon} className="text-[14px]" />
+              </span>
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">{group.label}</span>
+              <span className="ml-auto text-[10px] text-slate-400">{group.items.length}</span>
+            </div>
+            <div className="space-y-1">
+              {group.items.slice(0, 3).map((task) => (
+                <button
+                  key={`${group.key}-${task.id}`}
+                  onClick={() => onSelectDate(task.date)}
+                  className="block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
+                >
+                  <span className="block truncate text-[11px] font-medium text-slate-800 dark:text-slate-100">
+                    {task.task_name}
+                  </span>
+                  <span className="block truncate text-[10px] text-slate-400">
+                    {(task.project || '기타')} · {task.due_date ? `${task.due_date} 마감` : task.date}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -1011,6 +1079,16 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
             </aside>
 
             <section className="space-y-4 min-w-0">
+
+        {isToday && (
+          <WorkOpsPanel
+            dashboard={dash}
+            onSelectDate={(date) => {
+              setViewDate(date)
+              setCalendarMonth(date.slice(0, 7))
+            }}
+          />
+        )}
 
         {/* 오늘 요약 카드 */}
         {dash && isToday && (

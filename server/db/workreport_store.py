@@ -403,6 +403,34 @@ def get_dashboard() -> dict[str, Any]:
         recent = c.execute(
             'SELECT * FROM wr_tasks ORDER BY date DESC, id DESC LIMIT 5'
         ).fetchall()
+        due_today = c.execute(
+            """SELECT * FROM wr_tasks
+               WHERE due_date = ? AND progress < 100 AND status NOT IN ('done', 'cancelled')
+               ORDER BY time, id LIMIT 8""",
+            (today,),
+        ).fetchall()
+        overdue = c.execute(
+            """SELECT * FROM wr_tasks
+               WHERE due_date < ? AND progress < 100 AND status NOT IN ('done', 'cancelled')
+               ORDER BY due_date, time, id LIMIT 8""",
+            (today,),
+        ).fetchall()
+        paused = c.execute(
+            """SELECT * FROM wr_tasks
+               WHERE status = 'paused'
+               ORDER BY updated_at DESC, date DESC LIMIT 8"""
+        ).fetchall()
+        stale_active = c.execute(
+            """SELECT * FROM wr_tasks
+               WHERE date < ? AND progress BETWEEN 1 AND 99 AND status = 'active'
+               ORDER BY date DESC, time DESC LIMIT 8""",
+            (today,),
+        ).fetchall()
+        delegated = c.execute(
+            """SELECT * FROM wr_tasks
+               WHERE linked_job_id != '' AND status NOT IN ('done', 'cancelled')
+               ORDER BY updated_at DESC, date DESC LIMIT 8"""
+        ).fetchall()
     return {
         'today': today,
         'today_count': today_count,
@@ -411,4 +439,11 @@ def get_dashboard() -> dict[str, Any]:
         'overdue_count': overdue_count,
         'active_projects': projects,
         'recent_tasks': [dict(r) for r in recent],
+        'action_items': {
+            'due_today': [dict(r) for r in due_today],
+            'overdue': [dict(r) for r in overdue],
+            'paused': [dict(r) for r in paused],
+            'stale_active': [dict(r) for r in stale_active],
+            'delegated': [dict(r) for r in delegated],
+        },
     }
