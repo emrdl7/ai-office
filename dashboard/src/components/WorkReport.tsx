@@ -540,8 +540,10 @@ function WorkCalendar({
     <div className="command-surface rounded-3xl p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-lg font-black tracking-tight text-slate-950 dark:text-white">업무 캘린더</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">스크롤로 이전/다음 달을 계속 탐색합니다</p>
+          <p className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{monthLabel(month)}</p>
+          <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+            {dataByMonth.get(month)?.total ?? 0}개 작업 기록
+          </p>
         </div>
         <button
           onClick={() => {
