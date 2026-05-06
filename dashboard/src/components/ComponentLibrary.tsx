@@ -120,12 +120,11 @@ function CapabilityMap({ personas, skills, tools }: { personas: Persona[]; skill
     { label: 'Tool', items: tools, color: 'bg-amber-500' },
   ]
   return (
-    <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 command-surface p-4">
+    <div className="rounded-[2rem] border border-white/70 bg-white/82 p-4 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Capability Map</p>
           <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white">업무 실행 능력 지도</h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">페르소나, 스킬, 툴의 준비도와 사용 신호를 한 눈에 봅니다.</p>
         </div>
         <div className="hidden sm:grid grid-cols-3 gap-2 text-right">
           {groups.map((group) => (
@@ -143,7 +142,7 @@ function CapabilityMap({ personas, skills, tools }: { personas: Persona[]; skill
             ? Math.round(group.items.reduce((sum, item) => sum + (item.quality_score ?? 0), 0) / group.items.length)
             : 0
           return (
-            <div key={group.label} className="rounded-2xl bg-white/70 dark:bg-slate-950/40 p-3 ring-1 ring-slate-200/80 dark:ring-slate-800/80">
+            <div key={group.label} className="rounded-2xl bg-slate-50/82 p-3 ring-1 ring-slate-200/80 dark:bg-slate-950/40 dark:ring-slate-800/80">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{group.label}</span>
                 <span className="text-[10px] text-slate-400">{ready}/{group.items.length} ready</span>
@@ -188,7 +187,7 @@ function Card({ title, id, cat, desc, tags, item, footer }: {
   const qualityScore = item.quality_score ?? 0
   const qualityBand = item.quality_band ?? 'blocked'
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 flex flex-col gap-2 hover:border-blue-500/50 transition-colors">
+    <div className="rounded-2xl border border-white/70 bg-white/82 p-4 flex flex-col gap-2 shadow-sm backdrop-blur transition-colors hover:border-teal-300/80 dark:border-slate-700/70 dark:bg-slate-900/72 dark:hover:border-cyan-500/45">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">{title}</div>
@@ -201,22 +200,22 @@ function Card({ title, id, cat, desc, tags, item, footer }: {
       </div>
       <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{desc || '(설명 없음)'}</p>
       <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-        <div className="rounded-lg bg-gray-50 dark:bg-gray-950 px-2 py-1">
+        <div className="rounded-xl bg-slate-50/82 dark:bg-slate-950/40 px-2 py-1">
           <div className="text-gray-400">Spec</div>
           <div className="font-semibold text-gray-700 dark:text-gray-200">{usedBy.length}</div>
         </div>
-        <div className="rounded-lg bg-gray-50 dark:bg-gray-950 px-2 py-1">
+        <div className="rounded-xl bg-slate-50/82 dark:bg-slate-950/40 px-2 py-1">
           <div className="text-gray-400">실행</div>
           <div className="font-semibold text-gray-700 dark:text-gray-200">{usageCount}</div>
         </div>
-        <div className="rounded-lg bg-gray-50 dark:bg-gray-950 px-2 py-1">
+        <div className="rounded-xl bg-slate-50/82 dark:bg-slate-950/40 px-2 py-1">
           <div className="text-gray-400">실패</div>
           <div className={failureCount ? 'font-semibold text-red-500' : 'font-semibold text-gray-700 dark:text-gray-200'}>
             {failureCount}
           </div>
         </div>
       </div>
-      <div className="rounded-lg bg-gray-50 dark:bg-gray-950 px-2 py-1 text-[11px]">
+      <div className="rounded-xl bg-slate-50/82 dark:bg-slate-950/40 px-2 py-1 text-[11px]">
         <div className="flex items-center justify-between">
           <span className="text-gray-400">품질 점수</span>
           <span className={`font-semibold ${QUALITY_STYLE[qualityBand]}`}>
@@ -314,7 +313,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
   const summary = data?.summary
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-transparent">
+    <div className="chat-canvas flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
       <header className="flex items-center gap-2 px-4 md:px-5 h-[64px] shrink-0 border-b border-slate-200/70 dark:border-slate-800/70 glass-panel rounded-none border-x-0 border-t-0">
         <button
@@ -328,13 +327,12 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           <MatIcon name="widgets" className="text-[18px] text-white dark:text-slate-950" />
         </div>
         <div className="flex-1 min-w-0 leading-tight">
-          <h1 className="text-sm font-semibold text-slate-900 dark:text-white">컴포넌트 라이브러리</h1>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">비서가 업무 실행에 사용하는 페르소나·스킬·도구 레지스트리</p>
+          <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">컴포넌트 라이브러리</h1>
         </div>
       </header>
 
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-3 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/55 dark:bg-slate-950/30 backdrop-blur">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-3 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/50 dark:bg-slate-950/24 backdrop-blur">
           {[
             ['전체', summary.total],
             ['정상', summary.ok],
@@ -342,7 +340,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
             ['오류', summary.error + summary.broken_ref_count],
             ['평균품질', summary.avg_quality_score],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-xl border border-gray-200/80 dark:border-gray-800/80 bg-white/60 dark:bg-slate-900/50 px-3 py-2">
+            <div key={label} className="rounded-2xl border border-white/70 bg-white/74 px-3 py-2 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/62">
               <div className="text-[11px] text-gray-500">{label}</div>
               <div className="text-lg font-semibold text-gray-900 dark:text-white">{value}</div>
             </div>
@@ -351,7 +349,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
       )}
 
       {/* 탭 + 검색 */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/55 dark:bg-slate-950/30 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200/70 dark:border-gray-800/70 bg-white/50 dark:bg-slate-950/24 backdrop-blur">
         {(['personas', 'skills', 'tools'] as const).map((t) => (
           <button
             key={t}
@@ -369,7 +367,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-            className="px-2 py-1.5 rounded-lg text-sm bg-gray-100 dark:bg-gray-800 border border-transparent focus:border-blue-500 outline-none"
+            className="px-2 py-1.5 rounded-xl text-sm bg-white/76 dark:bg-slate-900/72 border border-white/70 dark:border-slate-700/70 focus:border-teal-400 outline-none"
           >
             <option value="all">전체 상태</option>
             <option value="ok">정상</option>
@@ -380,7 +378,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-2 py-1.5 rounded-lg text-sm bg-gray-100 dark:bg-gray-800 border border-transparent focus:border-blue-500 outline-none"
+            className="px-2 py-1.5 rounded-xl text-sm bg-white/76 dark:bg-slate-900/72 border border-white/70 dark:border-slate-700/70 focus:border-teal-400 outline-none"
           >
             <option value="all">전체 분류</option>
             {categories.map((cat) => (
@@ -391,7 +389,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="검색"
-            className="px-3 py-1.5 rounded-lg text-sm bg-gray-100 dark:bg-gray-800 border border-transparent focus:border-blue-500 outline-none w-40 md:w-60"
+            className="px-3 py-1.5 rounded-xl text-sm bg-white/76 dark:bg-slate-900/72 border border-white/70 dark:border-slate-700/70 focus:border-teal-400 outline-none w-40 md:w-60"
           />
         </div>
       </div>
@@ -411,7 +409,7 @@ export function ComponentLibrary({ onBack }: { onBack: () => void }) {
           </div>
         )}
         {summary && (
-          <div className="mb-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+          <div className="mb-3 rounded-2xl border border-white/70 bg-white/76 px-4 py-3 text-xs text-gray-600 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72 dark:text-gray-300">
             실행 준비도: ready {summary.ready}개 · review {summary.needs_review}개 · blocked {summary.blocked}개 · 미사용 {summary.unused}개
           </div>
         )}

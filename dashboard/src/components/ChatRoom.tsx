@@ -152,9 +152,6 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
             {activeChannel !== 'all' && profile && (
               <p className="text-[11px] text-gray-500">{profile.role}</p>
             )}
-            {activeChannel === 'all' && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">대화로 업무를 만들고 실행 흐름을 관제합니다</p>
-            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -246,16 +243,14 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
         <div className="max-w-4xl mx-auto px-3 md:px-6 space-y-1 pt-5 pb-36">
           {channelLogs.length === 0 ? (
             <div className="py-24 md:py-32">
-              <div className="command-surface mx-auto max-w-xl rounded-[2rem] p-7 text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-slate-950 via-teal-700 to-amber-500 text-white shadow-lg shadow-teal-500/20 dark:from-cyan-300 dark:via-teal-300 dark:to-amber-200 dark:text-slate-950">
+              <div className="mx-auto max-w-md rounded-[2rem] border border-white/70 bg-white/76 p-7 text-center shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-950 text-white shadow-lg shadow-slate-900/15 dark:bg-cyan-300 dark:text-slate-950">
                   <MatIcon name="auto_awesome" className="text-[26px]" />
                 </div>
                 <h3 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">무엇을 맡길까요?</h3>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  {activeChannel === 'all'
-                    ? '업무 등록, 일정 관리, 자료 정리, 실행 요청처럼 필요한 내용을 그대로 말하면 됩니다.'
-                    : `${profile?.name}에게 메시지를 보내세요.`}
-                </p>
+                {activeChannel !== 'all' && (
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{profile?.name}에게 메시지를 보내세요.</p>
+                )}
               </div>
             </div>
           ) : (

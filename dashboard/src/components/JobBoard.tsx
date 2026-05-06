@@ -32,13 +32,13 @@ const STATUS_STYLE: Record<string, { dot: string; bar: string; badge: string; la
   cancelled:    { dot: 'bg-slate-500', bar: 'bg-slate-500', badge: 'bg-slate-500/15 text-slate-500 dark:text-slate-400', label: '취소됨' },
 }
 
-const SPEC_META: Record<string, { icon: string; tone: string }> = {
-  research:         { icon: 'search',       tone: 'from-sky-500 to-blue-600' },
-  planning:         { icon: 'account_tree', tone: 'from-indigo-500 to-violet-600' },
-  design_direction: { icon: 'palette',      tone: 'from-pink-500 to-rose-600' },
-  review:           { icon: 'rate_review',  tone: 'from-amber-500 to-orange-600' },
-  publishing:       { icon: 'code',         tone: 'from-emerald-500 to-teal-600' },
-  coding:           { icon: 'terminal',     tone: 'from-fuchsia-500 to-purple-600' },
+const SPEC_META: Record<string, { icon: string; tile: string; iconTone: string }> = {
+  research:         { icon: 'search',       tile: 'bg-sky-50 dark:bg-sky-950/40', iconTone: 'text-sky-700 dark:text-sky-300' },
+  planning:         { icon: 'account_tree', tile: 'bg-indigo-50 dark:bg-indigo-950/40', iconTone: 'text-indigo-700 dark:text-indigo-300' },
+  design_direction: { icon: 'palette',      tile: 'bg-rose-50 dark:bg-rose-950/40', iconTone: 'text-rose-700 dark:text-rose-300' },
+  review:           { icon: 'rate_review',  tile: 'bg-amber-50 dark:bg-amber-950/40', iconTone: 'text-amber-700 dark:text-amber-300' },
+  publishing:       { icon: 'code',         tile: 'bg-emerald-50 dark:bg-emerald-950/40', iconTone: 'text-emerald-700 dark:text-emerald-300' },
+  coding:           { icon: 'terminal',     tile: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', iconTone: 'text-fuchsia-700 dark:text-fuchsia-300' },
 }
 
 function timeAgo(ts: string): string {
@@ -56,7 +56,7 @@ function JobCard({
   job: Job; isSelected: boolean; onClick: () => void; onDelete: (e: React.MouseEvent) => void
 }) {
   const s = STATUS_STYLE[job.status] ?? STATUS_STYLE.queued
-  const meta = SPEC_META[job.spec_id] ?? { icon: 'work', tone: 'from-slate-500 to-slate-600' }
+  const meta = SPEC_META[job.spec_id] ?? { icon: 'work', tile: 'bg-slate-100 dark:bg-slate-800', iconTone: 'text-slate-700 dark:text-slate-300' }
   const hasPendingGate = job.status === 'waiting_gate'
   const canDelete = DELETABLE_STATUSES.has(job.status)
   const isLive = job.status === 'running' || job.status === 'waiting_gate' || job.status === 'queued'
@@ -70,8 +70,8 @@ function JobCard({
     <div
       className={`relative group w-full rounded-2xl transition-all duration-200
         ${isSelected
-          ? 'bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/40 dark:to-slate-900 ring-2 ring-indigo-400 dark:ring-indigo-500/60 shadow-lg shadow-indigo-500/10'
-          : 'bg-white dark:bg-slate-900 ring-1 ring-slate-200 dark:ring-slate-800 hover:ring-slate-300 dark:hover:ring-slate-700 hover:-translate-y-0.5 hover:shadow-md'
+          ? 'bg-white/92 dark:bg-slate-900/86 ring-2 ring-teal-400/70 dark:ring-cyan-400/55 shadow-lg shadow-teal-500/10'
+          : 'bg-white/74 dark:bg-slate-900/64 ring-1 ring-white/70 dark:ring-slate-700/70 backdrop-blur hover:ring-teal-300/70 dark:hover:ring-cyan-500/40 hover:-translate-y-0.5 hover:shadow-md'
         }`}
     >
       {/* 좌측 상태 컬러바 */}
@@ -79,16 +79,15 @@ function JobCard({
 
       <button onClick={onClick} className="w-full text-left cursor-pointer p-3.5 pl-4">
         <div className="flex items-start gap-3">
-          {/* spec 아이콘 — gradient tone */}
-          <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0
-            bg-gradient-to-br ${meta.tone} shadow-md ring-1 ring-black/5`}>
-            <MatIcon name={meta.icon} className="text-white text-[18px]" />
+          <div className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shrink-0
+            ${meta.tile} shadow-sm ring-1 ring-black/5 dark:ring-white/10`}>
+            <MatIcon name={meta.icon} className={`text-[18px] ${meta.iconTone}`} />
             {isLive && totalSteps > 0 && (
               <svg className="absolute -top-1 -right-1 w-5 h-5" viewBox="0 0 20 20">
                 <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor"
                         className="text-white/40 dark:text-slate-900/80" strokeWidth="2" />
                 <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor"
-                        className="text-indigo-500" strokeWidth="2" strokeLinecap="round"
+                        className="text-teal-500" strokeWidth="2" strokeLinecap="round"
                         strokeDasharray={`${(progress/100) * 50.27} 50.27`}
                         transform="rotate(-90 10 10)" />
               </svg>
@@ -98,7 +97,7 @@ function JobCard({
           <div className="flex-1 min-w-0 pr-6">
             <div className="flex items-start justify-between gap-1">
               <p className={`text-[13.5px] font-semibold leading-snug line-clamp-2
-                ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-900 dark:text-slate-100'}`}>
+                ${isSelected ? 'text-teal-800 dark:text-cyan-200' : 'text-slate-900 dark:text-slate-100'}`}>
                 {job.title}
               </p>
               {hasPendingGate && (
@@ -122,7 +121,7 @@ function JobCard({
             <div className="flex items-center justify-between mt-2">
               {job.current_step && isLive ? (
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate font-medium flex items-center gap-1">
-                  <MatIcon name="play_arrow" className="text-[12px] text-indigo-500" />
+                  <MatIcon name="play_arrow" className="text-[12px] text-teal-500" />
                   {job.current_step}
                 </p>
               ) : (
@@ -189,7 +188,7 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
     counts[j.status] = (counts[j.status] || 0) + 1
   }
   return (
-    <div className="flex-1 flex min-h-0 overflow-x-hidden bg-transparent">
+    <div className="chat-canvas flex-1 flex min-h-0 overflow-x-hidden bg-transparent">
       {/* 좌측: Job 목록 */}
       <div className={`flex flex-col border-r border-slate-200/70 dark:border-slate-800/70
         glass-panel rounded-none border-y-0 border-l-0
@@ -211,14 +210,14 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
                   <MatIcon name="arrow_back_ios_new" className="text-[16px]" />
                 </button>
               )}
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">작업 보드</h2>
+              <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">작업 보드</h2>
             </div>
             <div className="flex gap-1.5 items-center">
               <button
                 onClick={() => setShowPlaybook(true)}
                 className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium
-                  text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/30
-                  hover:bg-violet-200 dark:hover:bg-violet-900/50 rounded-lg transition-colors cursor-pointer"
+                  text-slate-700 dark:text-slate-200 bg-white/70 dark:bg-slate-800/70
+                  ring-1 ring-slate-200/80 dark:ring-slate-700/80 hover:ring-teal-300 rounded-lg transition-colors cursor-pointer"
                 title="플레이북 — 여러 작업을 순서대로 자동 실행"
               >
                 <MatIcon name="play_circle" className="text-[14px]" />
@@ -227,7 +226,7 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
               <button
                 onClick={() => setShowNewJob(true)}
                 className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-white
-                  bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm shadow-indigo-500/20 transition-colors cursor-pointer"
+                  bg-slate-950 hover:bg-teal-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 rounded-lg shadow-sm shadow-slate-900/15 transition-colors cursor-pointer"
               >
                 <MatIcon name="add" className="text-[14px]" />
                 새 Job
@@ -243,7 +242,7 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
                 onClick={() => setFilter(tab.key)}
                 className={`shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer
                   ${filter === tab.key
-                    ? 'bg-slate-950 dark:bg-cyan-300 text-white dark:text-slate-950'
+                    ? 'bg-slate-950 dark:bg-cyan-300 text-white dark:text-slate-950 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
               >
@@ -283,7 +282,7 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
                 <button
                   onClick={() => setShowNewJob(true)}
                   className="mt-3 px-4 py-2 text-sm text-blue-600 dark:text-blue-400
-                    hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors cursor-pointer"
+                    hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors cursor-pointer"
                 >
                   첫 Job 시작하기
                 </button>
@@ -338,10 +337,9 @@ export function JobBoard({ onBack }: { onBack?: () => void }) {
         </div>
       ) : (
         <div className="hidden md:flex flex-1 items-center justify-center text-center p-8">
-          <div className="command-surface max-w-md rounded-3xl p-8">
-            <MatIcon name="work_outline" className="text-[48px] text-cyan-500/70 mb-3" />
+          <div className="max-w-md rounded-[2rem] border border-white/70 bg-white/76 p-8 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+            <MatIcon name="work_outline" className="text-[48px] text-teal-500/70 mb-3" />
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Job을 선택하면 실행 흐름이 열립니다</p>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">판단, 실행 모드, 툴 사용, 검토 결과를 한 화면에서 확인합니다.</p>
           </div>
         </div>
       )}

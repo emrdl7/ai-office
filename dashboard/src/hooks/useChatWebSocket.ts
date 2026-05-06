@@ -84,10 +84,10 @@ export function useChatWebSocket({ addLog, setLogs }: Props) {
   }, [connect])
 
   useEffect(() => {
+    const timers = typingTimers.current
     connect()
     return () => {
       clearTimeout(reconnectTimer.current)
-      const timers = typingTimers.current
       timers.forEach(clearTimeout)
       timers.clear()
       wsRef.current?.close()

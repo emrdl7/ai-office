@@ -40,12 +40,14 @@ async def test_conversation_intent_direct_response(office_setup):
     '''대화 의도일 때 비서가 직접 응답한다 (전문 역할 소집 없음)'''
     office, bus = office_setup
 
-    with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_claude:
-        mock_claude.return_value = '[CONVERSATION]\n저는 AI Office의 비서입니다.'
+    with patch('orchestration.intent.run_claude_isolated', new_callable=AsyncMock) as mock_route, \
+         patch('orchestration.intent.generate_teamlead_reply', new_callable=AsyncMock) as mock_reply:
+        mock_route.return_value = '[CONVERSATION]'
+        mock_reply.return_value = '저는 AI 오피스의 개인 업무 비서입니다.'
         result = await office.receive('너 누구야?')
 
     assert result['state'] == 'completed'
-    assert 'AI Office' in result['response']
+    assert 'AI 오피스' in result['response']
     assert result['artifacts'] == []
 
 

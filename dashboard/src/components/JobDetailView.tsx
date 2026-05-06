@@ -305,16 +305,6 @@ function StepCard({
                 수정됨 ×{step.revised}
               </span>
             )}
-            {step.model_used && (
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0
-                ${step.model_used.includes('gemini') ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                  : step.model_used.includes('opus') ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                  : step.model_used.includes('sonnet') ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                }`}>
-                {step.model_used.replace('claude-', '').replace('-4-5-20251001', '').replace('-4-6', '')}
-              </span>
-            )}
             {executionMode && (
               <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${executionMode.cls}`}>
                 {executionMode.text}
@@ -612,36 +602,21 @@ function GateControl({ job, gate }: { job: Job; gate: NonNullable<Job['gates']>[
 function CrossReviewCard({ content }: { content: string }) {
   const [open, setOpen] = useState(false)
 
-  // reviewer 판별: 마크다운 헤더에서 추출
-  const isOpus = content.includes('Opus') || content.includes('🟣')
-  const reviewer = isOpus ? 'opus' : 'gemini'
-
   // 점수 추출
   const scoreMatch = content.match(/점수[:\s]*(\d+)\s*\/\s*100/)
   const score = scoreMatch ? parseInt(scoreMatch[1]) : null
 
   return (
-    <div className={`rounded-xl overflow-hidden border
-      ${reviewer === 'opus'
-        ? 'border-purple-200 dark:border-purple-700/50'
-        : 'border-blue-200 dark:border-blue-700/50'
-      }`}>
-      {/* 그라데이션 헤더 */}
-      <div className={`px-4 py-3
-        ${reviewer === 'opus'
-          ? 'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-700 dark:to-purple-900'
-          : 'bg-gradient-to-r from-blue-500 to-blue-700 dark:from-blue-600 dark:to-blue-900'
-        }`}>
+    <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700/70">
+      <div className="bg-slate-950 px-4 py-3 text-white dark:bg-slate-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg">{reviewer === 'opus' ? '🟣' : '🔵'}</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/12">
+              <MatIcon name="verified" className="text-[16px] text-cyan-200" />
+            </div>
             <div>
-              <p className="text-xs font-bold text-white">
-                {reviewer === 'opus' ? 'Claude Opus 4.7' : 'Gemini 2.5 Pro'} 교차 리뷰
-              </p>
-              <p className="text-[10px] text-white/70">
-                {reviewer === 'opus' ? 'Gemini 산출물 검토' : 'Claude 산출물 검토'}
-              </p>
+              <p className="text-xs font-bold text-white">교차 리뷰</p>
+              <p className="text-[10px] text-white/70">산출물 품질 검토</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -668,11 +643,7 @@ function CrossReviewCard({ content }: { content: string }) {
 
       {/* 펼쳐진 내용 */}
       {open && (
-        <div className={`px-4 py-3
-          ${reviewer === 'opus'
-            ? 'bg-purple-50/50 dark:bg-purple-950/30'
-            : 'bg-blue-50/50 dark:bg-blue-950/30'
-          }`}>
+        <div className="bg-slate-50/80 px-4 py-3 dark:bg-slate-950/30">
           <MarkdownViewer content={content} />
         </div>
       )}

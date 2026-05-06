@@ -12,7 +12,6 @@ interface PendingGate {
   gate_prompt: string
   after_step: string
   step_output: string
-  step_model: string
   step_revised: number
   step_revision_feedback: string
   opened_at: string
@@ -80,18 +79,18 @@ function GateItem({ gate }: { gate: PendingGate }) {
   const isCode = gate.step_output?.includes('```html') || gate.step_output?.includes('```css')
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+    <div className="overflow-hidden rounded-3xl border border-white/70 bg-white/84 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
 
       {/* 헤더 */}
-      <div className="px-4 py-3 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-100 dark:border-yellow-700/30">
+      <div className="border-b border-slate-100/80 bg-white/46 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/40">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-yellow-100 dark:bg-yellow-800/30 flex items-center justify-center shrink-0">
-            <MatIcon name={SPEC_ICONS[gate.job_spec_id] || 'work'} className="text-[16px] text-yellow-600 dark:text-yellow-400" />
+          <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+            <MatIcon name={SPEC_ICONS[gate.job_spec_id] || 'work'} className="text-[16px] text-amber-700 dark:text-amber-300" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{gate.job_title}</p>
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className="text-[10px] text-yellow-600 dark:text-yellow-500 font-medium">{gate.gate_id}</span>
+              <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">{gate.gate_id}</span>
               {gate.after_step && (
                 <>
                   <span className="text-[10px] text-gray-400">·</span>
@@ -108,7 +107,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
               )}
             </div>
           </div>
-          <MatIcon name="pending" className="text-[20px] text-yellow-500 shrink-0" />
+          <MatIcon name="pending" className="text-[20px] text-amber-500 shrink-0" />
         </div>
       </div>
 
@@ -130,11 +129,11 @@ function GateItem({ gate }: { gate: PendingGate }) {
 
       {/* 검토할 산출물 */}
       {gate.step_output ? (
-        <div className="mx-4 mb-3 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="mx-4 mb-3 overflow-hidden rounded-2xl border border-white/70 bg-white/70 dark:border-slate-700/70 dark:bg-slate-950/30">
           <button
             onClick={() => setOutputOpen(!outputOpen)}
             className="w-full flex items-center justify-between px-3 py-2
-              bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750
+              bg-slate-50/80 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900
               transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-2">
@@ -142,15 +141,6 @@ function GateItem({ gate }: { gate: PendingGate }) {
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                 산출물 — {gate.after_step}
               </span>
-              {gate.step_model && (
-                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full
-                  ${gate.step_model.includes('gemini') ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                    : gate.step_model.includes('opus') ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
-                  }`}>
-                  {gate.step_model.replace('claude-', '').replace('-4-5-20251001', '').replace('-4-6', '')}
-                </span>
-              )}
               <span className="text-[10px] text-gray-400">
                 {(gate.step_output.length / 1000).toFixed(1)}k자
               </span>
@@ -162,7 +152,7 @@ function GateItem({ gate }: { gate: PendingGate }) {
           </button>
 
           {outputOpen && (
-            <div className="px-3 py-3 max-h-[50vh] overflow-y-auto border-t border-gray-200 dark:border-gray-700">
+            <div className="px-3 py-3 max-h-[50vh] overflow-y-auto border-t border-slate-200/80 dark:border-slate-700/70">
               {isCode ? (
                 <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
                   {gate.step_output}
@@ -186,17 +176,17 @@ function GateItem({ gate }: { gate: PendingGate }) {
           value={feedback}
           onChange={e => setFeedback(e.target.value)}
           placeholder="수정 요청 시 피드백을 입력하세요 (없으면 비워두고 승인/거절)"
-          className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700
-            bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 resize-none
-            focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+          className="w-full resize-none rounded-2xl border border-slate-200/80 bg-white/76 px-3 py-2 text-sm
+            text-gray-900 outline-none focus:ring-2 focus:ring-amber-400/45
+            dark:border-slate-700/70 dark:bg-slate-950/35 dark:text-gray-100"
         />
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => decide.mutate('approved')}
             disabled={decide.isPending}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white
-              bg-green-600 hover:bg-green-700 rounded-xl transition-colors cursor-pointer
+              bg-slate-950 hover:bg-emerald-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 rounded-xl transition-colors cursor-pointer
               disabled:opacity-50"
           >
             <MatIcon name="check" className="text-[16px]" />
@@ -208,8 +198,8 @@ function GateItem({ gate }: { gate: PendingGate }) {
             disabled={decide.isPending || !feedback.trim()}
             title={!feedback.trim() ? '피드백을 먼저 입력하세요' : ''}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium
-              text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30
-              hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-xl transition-colors
+              text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30
+              hover:bg-blue-100 dark:hover:bg-blue-950/50 rounded-xl transition-colors
               cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <MatIcon name="refresh" className="text-[16px]" />
@@ -250,9 +240,9 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
   })
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
+    <div className="chat-canvas flex-1 flex flex-col min-h-0 bg-transparent">
       {/* 헤더 */}
-      <div className="px-4 md:px-5 h-[60px] shrink-0 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="glass-panel rounded-none border-x-0 border-t-0 px-4 md:px-5 h-[64px] shrink-0 flex items-center gap-2 border-b border-slate-200/70 dark:border-slate-800/70">
         {onBack && (
           <button
             onClick={onBack}
@@ -269,7 +259,7 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
             <MatIcon name="rule" className="text-[18px] text-amber-600 dark:text-amber-400" />
           </div>
           <div className="leading-tight">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">검토 수신함</h2>
+            <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">검토 수신함</h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {isLoading ? '로딩 중...' : `${gates.length}개 검토 대기 중`}
             </p>
@@ -302,7 +292,7 @@ export function GateInbox({ onBack }: { onBack?: () => void } = {}) {
           </div>
         )}
 
-        <div className="space-y-5 max-w-2xl">
+        <div className="space-y-5 max-w-4xl">
           {gates.map(gate => (
             <GateItem key={`${gate.job_id}-${gate.gate_id}`} gate={gate} />
           ))}
