@@ -217,6 +217,7 @@ async def submit_job(
 async def job_insights() -> dict[str, Any]:
     """Job 파이프라인 인사이트 — 완료율, 모델 사용, 스펙별 통계."""
     from db.job_store import _conn as _jconn
+    from db.job_store import get_routing_quality_stats
 
     c = _jconn()
 
@@ -296,6 +297,7 @@ async def job_insights() -> dict[str, Any]:
         'daily_done': daily_done,
         'total_cost_usd': total_cost_usd,
         'step_cost_usd': step_cost_usd,
+        'routing_quality': get_routing_quality_stats(),
     }
 
 

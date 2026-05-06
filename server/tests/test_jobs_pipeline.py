@@ -240,6 +240,55 @@ class TestJobStoreCrud:
         assert stored['selection_source'] == 'spec_static'
         assert '코드 리뷰' in stored['selection_reason']
 
+    def test_routing_quality_stats_aggregates_execution_metadata(self):
+        from db.job_store import create_job, upsert_step, get_routing_quality_stats
+        from jobs.models import StepRun
+        from datetime import datetime, timezone
+        job = self._make_job('j023')
+        create_job(job)
+        now = datetime.now(timezone.utc).isoformat()
+        upsert_step(StepRun(
+            job_id='j023',
+            step_id='research',
+            status='done',
+            started_at=now,
+            finished_at=now,
+            model_used='gpt-5.4',
+            cost_usd=0.01,
+            persona='senior_ux_researcher',
+            skills=['research_synthesis'],
+            tools=['web_search'],
+            execution_mode='research',
+            selection_source='llm_configurator',
+            selection_reason='최신 자료 확인이 필요합니다.',
+        ))
+        upsert_step(StepRun(
+            job_id='j023',
+            step_id='review',
+            status='failed',
+            started_at=now,
+            finished_at=now,
+            model_used='gpt-5.4',
+            cost_usd=0.02,
+            revised=1,
+            persona='code_reviewer',
+            skills=['code_review'],
+            tools=['diff_files'],
+            execution_mode='review',
+            selection_source='fallback',
+            selection_reason='',
+        ))
+
+        stats = get_routing_quality_stats()
+
+        assert stats['overall']['steps'] == 2
+        assert stats['overall']['done'] == 1
+        assert stats['overall']['failed'] == 1
+        assert stats['overall']['success_rate'] == 50.0
+        assert stats['overall']['fallback_count'] == 1
+        assert {m['id'] for m in stats['by_execution_mode']} == {'research', 'review'}
+        assert stats['risk_items']['tools'][0]['id'] == 'diff_files'
+
     def test_upsert_step_idempotent(self):
         """같은 step_id로 두 번 upsert해도 row가 하나여야 함."""
         from db.job_store import create_job, upsert_step, get_steps

@@ -35,6 +35,30 @@ interface JobInsights {
   daily_done: { day: string; count: number }[]
   total_cost_usd: number
   step_cost_usd: number
+  routing_quality?: RoutingQuality
+}
+
+interface RoutingQualityItem {
+  id: string
+  steps: number
+  done: number
+  failed: number
+  success_rate: number
+  revised: number
+  revision_rate: number
+  fallback_count: number
+  avg_cost_usd: number
+  avg_quality_score: number
+}
+
+interface RoutingQuality {
+  overall: RoutingQualityItem
+  by_execution_mode: RoutingQualityItem[]
+  risk_items: {
+    personas: RoutingQualityItem[]
+    skills: RoutingQualityItem[]
+    tools: RoutingQualityItem[]
+  }
 }
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
@@ -47,12 +71,26 @@ const STATUS_COLOR: Record<string, string> = {
   done: 'bg-green-500', running: 'bg-blue-500', queued: 'bg-gray-400',
   failed: 'bg-red-500', cancelled: 'bg-gray-500', waiting_gate: 'bg-yellow-500',
 }
+const MODE_LABEL: Record<string, string> = {
+  single: '단일 실행',
+  tool_assisted: '툴 보조',
+  research: '리서치',
+  review: '검토',
+  parallel_safe: '병렬 안전',
+  unknown: '미분류',
+}
 
 function fmtSec(sec: number): string {
   if (!sec) return '—'
   if (sec < 60) return `${sec}초`
   if (sec < 3600) return `${Math.floor(sec / 60)}분 ${sec % 60}초`
   return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`
+}
+
+function qualityTone(score: number): string {
+  if (score >= 85) return 'text-emerald-600 dark:text-emerald-400'
+  if (score >= 65) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
 }
 
 // ─── 메인 패널 ──────────────────────────────────────────────────────────────
@@ -308,6 +346,84 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
                   </div>
                 ))}
               </div>
+
+              {/* 라우팅 품질 */}
+              {data.routing_quality && data.routing_quality.overall.steps > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">라우팅 품질</p>
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/60 p-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[10px] text-gray-500">최근 Step {data.routing_quality.overall.steps}건</span>
+                      <span className={`text-lg font-black tabular-nums ${qualityTone(data.routing_quality.overall.avg_quality_score)}`}>
+                        {Math.round(data.routing_quality.overall.avg_quality_score)}점
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-[9px] text-gray-400">성공률</p>
+                        <p className="text-xs font-bold text-gray-700 dark:text-gray-200">{data.routing_quality.overall.success_rate}%</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400">수정률</p>
+                        <p className="text-xs font-bold text-gray-700 dark:text-gray-200">{data.routing_quality.overall.revision_rate}%</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400">Fallback</p>
+                        <p className="text-xs font-bold text-gray-700 dark:text-gray-200">{data.routing_quality.overall.fallback_count}건</p>
+                      </div>
+                    </div>
+                    {data.routing_quality.by_execution_mode.length > 0 && (
+                      <div className="mt-3 space-y-1.5">
+                        {data.routing_quality.by_execution_mode.slice(0, 5).map((m) => (
+                          <div key={m.id} className="flex items-center gap-2">
+                            <span className="w-20 text-[10px] text-right text-gray-500 truncate">{MODE_LABEL[m.id] ?? m.id}</span>
+                            <div className="flex-1 h-2 bg-white dark:bg-gray-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${m.avg_quality_score >= 85 ? 'bg-emerald-500' : m.avg_quality_score >= 65 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                style={{ width: `${Math.max(4, Math.round(m.avg_quality_score))}%` }}
+                              />
+                            </div>
+                            <span className={`w-10 text-[10px] text-right font-bold tabular-nums ${qualityTone(m.avg_quality_score)}`}>
+                              {Math.round(m.avg_quality_score)}
+                            </span>
+                            <span className="w-8 text-[10px] text-gray-400 text-right">({m.steps})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 위험 조합 */}
+              {data.routing_quality && (
+                (() => {
+                  const riskItems = [
+                    ...data.routing_quality.risk_items.personas.map((x) => ({ ...x, kind: 'persona' })),
+                    ...data.routing_quality.risk_items.skills.map((x) => ({ ...x, kind: 'skill' })),
+                    ...data.routing_quality.risk_items.tools.map((x) => ({ ...x, kind: 'tool' })),
+                  ]
+                    .filter((x) => x.steps > 0 && (x.avg_quality_score < 85 || x.failed > 0 || x.revision_rate > 0))
+                    .sort((a, b) => a.avg_quality_score - b.avg_quality_score)
+                    .slice(0, 6)
+                  if (!riskItems.length) return null
+                  return (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">점검 필요 조합</p>
+                      <div className="space-y-1">
+                        {riskItems.map((item) => (
+                          <div key={`${item.kind}:${item.id}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50/70 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30">
+                            <span className="w-12 text-[9px] uppercase tracking-wide text-red-400">{item.kind}</span>
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-200 flex-1 truncate">{item.id}</span>
+                            <span className={`text-[10px] font-bold tabular-nums ${qualityTone(item.avg_quality_score)}`}>{Math.round(item.avg_quality_score)}점</span>
+                            <span className="text-[10px] text-gray-400">{item.steps}건</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()
+              )}
 
               {/* 비용 추적 */}
               {(data.total_cost_usd > 0 || data.step_cost_usd > 0) && (

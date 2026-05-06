@@ -260,6 +260,121 @@ def get_component_usage_stats(limit: int = 1000) -> dict[str, dict[str, Any]]:
     return stats
 
 
+def get_routing_quality_stats(limit: int = 1000) -> dict[str, Any]:
+    """최근 step 실행 이력에서 라우팅 선택 품질을 집계한다.
+
+    품질 점수는 운영 관측용 휴리스틱이다. 모델 출력 평가가 아니라, 성공/실패,
+    수정 재실행, fallback, 선택 근거 누락 같은 실행 신호를 합산한다.
+    """
+    c = _conn()
+    rows = c.execute(
+        'SELECT status, model_used, cost_usd, revised, persona, skills_json, tools_json, '
+        'execution_mode, selection_source, selection_reason '
+        'FROM job_steps ORDER BY rowid DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    c.close()
+
+    def parse_json_list(value: str | None) -> list[str]:
+        try:
+            parsed = json.loads(value or '[]')
+            return [str(v) for v in parsed if str(v)]
+        except Exception:
+            return []
+
+    def quality(row: sqlite3.Row) -> int:
+        score = 100 if row['status'] == 'done' else 35
+        score -= min(int(row['revised'] or 0) * 12, 36)
+        if row['selection_source'] == 'fallback':
+            score -= 12
+        if not row['selection_reason']:
+            score -= 6
+        if not row['execution_mode']:
+            score -= 6
+        return max(0, min(100, score))
+
+    def make_bucket(label: str) -> dict[str, Any]:
+        return {
+            'id': label,
+            'steps': 0,
+            'done': 0,
+            'failed': 0,
+            'revised': 0,
+            'fallback_count': 0,
+            'total_cost_usd': 0.0,
+            'quality_total': 0,
+        }
+
+    def bump(bucket: dict[str, Any], row: sqlite3.Row, q: int) -> None:
+        bucket['steps'] += 1
+        if row['status'] == 'done':
+            bucket['done'] += 1
+        if row['status'] == 'failed':
+            bucket['failed'] += 1
+        if int(row['revised'] or 0) > 0:
+            bucket['revised'] += 1
+        if row['selection_source'] == 'fallback':
+            bucket['fallback_count'] += 1
+        bucket['total_cost_usd'] += float(row['cost_usd'] or 0.0)
+        bucket['quality_total'] += q
+
+    overall = make_bucket('overall')
+    by_mode: dict[str, dict[str, Any]] = {}
+    by_persona: dict[str, dict[str, Any]] = {}
+    by_skill: dict[str, dict[str, Any]] = {}
+    by_tool: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        q = quality(row)
+        bump(overall, row, q)
+
+        mode = row['execution_mode'] or 'unknown'
+        bump(by_mode.setdefault(mode, make_bucket(mode)), row, q)
+
+        persona = row['persona'] or ''
+        if persona:
+            bump(by_persona.setdefault(persona, make_bucket(persona)), row, q)
+        for skill_id in parse_json_list(row['skills_json']):
+            bump(by_skill.setdefault(skill_id, make_bucket(skill_id)), row, q)
+        for tool_id in parse_json_list(row['tools_json']):
+            bump(by_tool.setdefault(tool_id, make_bucket(tool_id)), row, q)
+
+    def finalize(bucket: dict[str, Any]) -> dict[str, Any]:
+        steps = int(bucket['steps'] or 0)
+        done = int(bucket['done'] or 0)
+        revised = int(bucket['revised'] or 0)
+        return {
+            'id': bucket['id'],
+            'steps': steps,
+            'done': done,
+            'failed': int(bucket['failed'] or 0),
+            'success_rate': round(done / steps * 100, 1) if steps else 0,
+            'revised': revised,
+            'revision_rate': round(revised / steps * 100, 1) if steps else 0,
+            'fallback_count': int(bucket['fallback_count'] or 0),
+            'avg_cost_usd': round(float(bucket['total_cost_usd'] or 0.0) / steps, 5) if steps else 0,
+            'avg_quality_score': round(float(bucket['quality_total'] or 0.0) / steps, 1) if steps else 0,
+        }
+
+    def top_items(items: dict[str, dict[str, Any]], *, limit_items: int = 8) -> list[dict[str, Any]]:
+        finalized = [finalize(v) for v in items.values()]
+        finalized.sort(key=lambda x: (x['avg_quality_score'], -x['steps'], x['id']))
+        return finalized[:limit_items]
+
+    return {
+        'overall': finalize(overall),
+        'by_execution_mode': sorted(
+            [finalize(v) for v in by_mode.values()],
+            key=lambda x: (-x['steps'], x['id']),
+        ),
+        'risk_items': {
+            'personas': top_items(by_persona),
+            'skills': top_items(by_skill),
+            'tools': top_items(by_tool),
+        },
+    }
+
+
 # ── Gate CRUD ─────────────────────────────────────────────────────────────────
 
 def open_gate(gate: GateRun) -> None:
