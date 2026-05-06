@@ -470,7 +470,7 @@ function WorkCalendar({
           return (
             <div
               key={`${weekStart}-${weekEnd}`}
-              className="relative grid grid-cols-7 border-t border-slate-200/70 first:border-t-0 dark:border-slate-800/70"
+              className="relative grid grid-cols-7 border-t border-slate-300 first:border-t-0 dark:border-slate-700"
               style={{ minHeight: weekHeight }}
             >
               {week.map((cell) => {
@@ -487,7 +487,7 @@ function WorkCalendar({
                       onMonthChange(cellMonth)
                       onSelectDate(cell.date)
                     }}
-                    className={`relative h-full min-h-[118px] border-l border-slate-200/60 bg-white/50 p-2 text-left transition-colors hover:bg-cyan-50/70 dark:border-slate-800/70 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
+                    className={`relative h-full min-h-[118px] border-l border-slate-300 bg-white/50 p-2 text-left transition-colors hover:bg-cyan-50/70 dark:border-slate-700 dark:bg-slate-950/20 dark:hover:bg-cyan-950/20
                       ${isToday ? 'shadow-[inset_0_0_0_2px_rgba(34,211,238,0.65)]' : ''}`}
                     style={{ gridColumn: cell.dayOfWeek + 1 }}
                   >
@@ -497,11 +497,11 @@ function WorkCalendar({
                         {isMonthLoading ? '' : ` · ${monthData?.total ?? 0}`}
                       </span>
                     )}
-                    <span className={`absolute right-2 top-1.5 text-xs font-black tabular-nums ${isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                    <span className={`absolute right-2 top-1.5 text-sm font-black tabular-nums ${isToday ? 'text-cyan-700 dark:text-cyan-200' : 'text-slate-800 dark:text-slate-100'}`}>
                       {cell.day}
                     </span>
                     {day && (
-                      <span className={`absolute left-2 text-[9px] font-bold text-slate-400 dark:text-slate-500 ${isFirstDay ? 'top-7' : 'top-2'}`}>
+                      <span className={`absolute left-2 text-[10px] font-black text-slate-500 dark:text-slate-300 ${isFirstDay ? 'top-7' : 'top-2'}`}>
                         {day.task_count}
                       </span>
                     )}
@@ -554,7 +554,7 @@ function WorkCalendar({
         </button>
       </div>
 
-      <div className="sticky top-0 z-10 grid grid-cols-7 border-y border-slate-200/80 bg-white/90 text-center backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/90">
+      <div className="sticky top-0 z-10 grid grid-cols-7 border-y border-slate-300 bg-white/90 text-center backdrop-blur dark:border-slate-700 dark:bg-slate-950/90">
         {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
           <div key={d} className="py-2 text-[10px] font-bold text-slate-400">{d}</div>
         ))}
