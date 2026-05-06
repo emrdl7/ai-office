@@ -301,7 +301,7 @@ function WorkCalendar({
   onSelectDate: (date: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [months, setMonths] = useState(() => buildMonthRange(month, 4, 2))
+  const [months, setMonths] = useState(() => buildMonthRange(month, 0, 6))
   const monthQueries = useQueries({
     queries: months.map((m) => ({
       queryKey: ['wr-monthly', m],
@@ -676,6 +676,10 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
     { label: '마감 초과', value: dash?.overdue_count ?? 0, icon: 'warning', cls: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' },
     { label: '활성 프로젝트', value: dash?.active_projects ?? 0, icon: 'folder_open', cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400' },
   ]
+  const latestTaskMonth = dash?.recent_tasks?.[0]?.date?.slice(0, 7)
+  const calendarAnchorMonth = calendarMonth === today.slice(0, 7) && dash?.today_count === 0 && latestTaskMonth
+    ? latestTaskMonth
+    : calendarMonth
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-transparent">
@@ -757,7 +761,8 @@ export function WorkReport({ onBack }: { onBack?: () => void } = {}) {
             <aside className="hidden lg:block">
               <div className="sticky top-0">
                 <WorkCalendar
-                  month={calendarMonth}
+                  key={calendarAnchorMonth}
+                  month={calendarAnchorMonth}
                   today={today}
                   onMonthChange={setCalendarMonth}
                   onSelectDate={(date) => {
