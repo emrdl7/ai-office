@@ -225,14 +225,7 @@ _BUILTIN_TOOLS: dict[str, ToolSpec] = {
         params=['file_key', 'node_id', 'properties'],
         env_var='FIGMA_TOKEN',
     ),
-    'slack_post': ToolSpec(
-        id='slack_post',
-        name='Slack 메시지 전송',
-        description='context의 channel과 message를 Slack에 전송한다.',
-        category='integration',
-        params=['channel', 'message'],
-        env_var='SLACK_BOT_TOKEN',
-    ),
+    # 'slack_post' → jobs/tools/slack_post.py 로 이동됨
     'notion_write': ToolSpec(
         id='notion_write',
         name='Notion 페이지 작성',
@@ -404,8 +397,6 @@ def execute_tool(tool_id: str, context: dict[str, str]) -> str:
         return _figma_create_frame(context)
     if tool_id == 'figma_update_node':
         return _figma_update_node(context)
-    if tool_id == 'slack_post':
-        return _slack_post(context)
     if tool_id == 'notion_write':
         return _notion_write(context)
     if tool_id == 'pdf_generate':
@@ -695,31 +686,6 @@ def _figma_create_frame(context: dict[str, str]) -> str:
 
 def _figma_update_node(context: dict[str, str]) -> str:
     return '[figma_update_node 비활성] Figma REST API로 노드 속성 쓰기는 지원되지 않습니다. Figma Plugin API가 필요합니다.'
-
-
-def _slack_post(context: dict[str, str]) -> str:
-    import urllib.request, json as _json
-    token = _resolve_token('SLACK_BOT_TOKEN')
-    if not token:
-        return '[slack_post: SLACK_BOT_TOKEN 미설정 — 컴포넌트 라이브러리에서 토큰을 등록하세요]'
-    channel = context.get('channel', '')
-    message = context.get('message', '')
-    if not channel or not message:
-        return '[slack_post: channel, message 필요]'
-    try:
-        payload = _json.dumps({'channel': channel, 'text': message}).encode()
-        req = urllib.request.Request(
-            'https://slack.com/api/chat.postMessage',
-            data=payload,
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = _json.loads(resp.read())
-        if data.get('ok'):
-            return f'[Slack 전송 완료: #{channel}]'
-        return f'[slack_post 실패: {data.get("error", "unknown")}]'
-    except Exception as e:
-        return f'[slack_post 실패: {e}]'
 
 
 def _pdf_generate(context: dict[str, str]) -> str:

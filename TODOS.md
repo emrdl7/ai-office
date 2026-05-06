@@ -1,10 +1,10 @@
 # TODOS
 
-> **현재 상태 (2026-04-20 기준)**
+> **현재 상태 (2026-05-06 기준)**
 > - UX Studio 피벗 완료 — 자율 대화/teamlead_review/autonomous_loop 삭제, Job 파이프라인 + Playbook 중심.
 > - Job Spec 6종: research / design_direction / planning / review / publishing / coding.
 > - Playbook 2종: research_to_planning(선형), full_campaign(DAG).
-> - `model_router` 5-tier (nano/fast/standard/deep/research). Opus 일일 10회 제한.
+> - `model_router` 5-tier (nano/fast/standard/deep/research) + Claude/Codex primary 전환 + Gemini fallback.
 > - Haiku 동적 설정: `step_configurator`(persona/skills/tools 자동 선택) + `job_planner`(optional 스텝 순서 결정).
 > - Gate: 인간 판단 + Gate AI 대리 판단(`gate_ai.py`) + 일치율 측정(`gate_agreement_stats`).
 > - DAG: `PlaybookStepSpec.after` 기반 레벨별 `asyncio.gather`.
@@ -38,10 +38,10 @@
 ### W2-2. Tool Registry 분할 (부분 완료, 점진 이동) 🔄
 - `jobs/tools/__init__.py` — `load_plugin_tools()` 자동 로더
 - `jobs/tools/_common.py` — `resolve_token` 공용 헬퍼
-- 샘플 3개 이동 완료: `current_date.py` / `job_context.py` / `url_fetch.py`
+- 이동 완료: `current_date.py` / `job_context.py` / `url_fetch.py` / `slack_post.py`
 - `tool_registry.py` — 플러그인 우선, legacy builtin fallback
 - 테스트: `tests/test_tool_registry_manifest.py` — YAML 참조 id / 플러그인 로더 / 중복 id 검증
-- **점진 이동 필요**: 남은 26개 도구(web_search, read_file, slack_post 등)를 차례로 `tools/<id>.py`로 이동
+- **점진 이동 필요**: 남은 legacy 도구(web_search, read_file, notion_write, pdf_generate 등)를 차례로 `tools/<id>.py`로 이동
 
 ### W2-3. CI/mypy/TODOS 정합 ✅
 - `server-tests.yml` mypy 경로 — 삭제된 `teamlead_review`/`autonomous_loop` 제거, `suggestion_filer`/`office` 추가
@@ -53,8 +53,8 @@
 ## 📦 백로그
 
 ### tool_registry 점진 이동 (W2-2 후속)
-남은 26개 도구를 `jobs/tools/<id>.py`로 하나씩 이동. 각 단계에서 manifest 테스트가 회귀 방지.
-우선순위: 외부 API 의존 있는 것부터 (slack_post, notion_write, pdf_generate → 파라미터 검증 단위 테스트 동반).
+남은 legacy 도구를 `jobs/tools/<id>.py`로 하나씩 이동. 각 단계에서 manifest 테스트가 회귀 방지.
+우선순위: 외부 API 의존 있는 것부터 (notion_write, pdf_generate, email_send → 파라미터 검증 단위 테스트 동반).
 
 ### 병렬 그룹 정적 검증
 현재는 그룹 내 step이 서로의 output_key를 의존하면 런타임 빈 값. 정적 체크(스펙 로드 시 검사):

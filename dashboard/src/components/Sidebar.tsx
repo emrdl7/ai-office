@@ -190,7 +190,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         />
       </div>
       {showSearch && <SearchPanel onClose={() => setShowSearch(false)} />}
-      {showInsight && <InsightPanel onClose={() => setShowInsight(false)} />}
+      {showInsight && (
+        <InsightPanel
+          onClose={() => setShowInsight(false)}
+          onOpenComponents={() => setActiveChannel('components')}
+        />
+      )}
     </aside>
   )
 }

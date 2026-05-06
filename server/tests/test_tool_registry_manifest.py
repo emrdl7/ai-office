@@ -37,8 +37,8 @@ def test_plugin_tools_load() -> None:
     """tools/ 디렉토리의 플러그인 로더가 실패 없이 동작해야 한다."""
     from jobs.tools import load_plugin_tools
     plugins = load_plugin_tools()
-    # 최소한 분할된 샘플 3개는 로드돼야 한다
-    expected = {'current_date', 'job_context', 'url_fetch'}
+    # 점진 분할된 플러그인 도구는 로드돼야 한다.
+    expected = {'current_date', 'job_context', 'url_fetch', 'slack_post'}
     assert expected.issubset(set(plugins.keys())), (
         f'플러그인 로더 누락: {expected - set(plugins.keys())}'
     )

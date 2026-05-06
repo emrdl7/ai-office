@@ -97,7 +97,6 @@ async def pending_gates() -> list[dict[str, Any]]:
 
         # 검토 대상 step 산출물 조회
         step_output = ''
-        step_model = ''
         step_revised = 0
         step_revision_feedback = ''
         if after_step:
@@ -105,7 +104,6 @@ async def pending_gates() -> list[dict[str, Any]]:
             for s in steps:
                 if s['step_id'] == after_step and s.get('status') == 'done':
                     step_output = s.get('output', '')
-                    step_model = s.get('model_used', '')
                     step_revised = s.get('revised', 0) or 0
                     step_revision_feedback = s.get('revision_feedback', '')
                     break
@@ -118,7 +116,6 @@ async def pending_gates() -> list[dict[str, Any]]:
             'gate_prompt': gate_prompt,
             'after_step': after_step,
             'step_output': step_output,
-            'step_model': step_model,
             'step_revised': step_revised,
             'step_revision_feedback': step_revision_feedback,
             'opened_at': row['opened_at'],

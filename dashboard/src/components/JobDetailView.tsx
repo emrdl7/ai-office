@@ -361,15 +361,12 @@ function StepCard({
               ))}
             </div>
           )}
-          {(step.selection_reason || step.selection_source) && (
+          {step.selection_reason && (
             <div className="mt-1.5 inline-flex max-w-full items-start gap-1.5 rounded-lg border border-cyan-200/70 bg-cyan-50/70 px-2 py-1 text-[10px] leading-snug text-cyan-800 dark:border-cyan-700/40 dark:bg-cyan-950/20 dark:text-cyan-200">
               <MatIcon name="route" className="mt-0.5 text-[12px] shrink-0" />
               <span className="min-w-0">
-                <span className="font-bold">Why this path: </span>
+                <span className="font-bold">실행 근거: </span>
                 {step.selection_reason}
-                {step.selection_source && (
-                  <span className="ml-1 font-mono opacity-60">({step.selection_source})</span>
-                )}
               </span>
             </div>
           )}

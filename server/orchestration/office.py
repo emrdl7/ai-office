@@ -92,6 +92,57 @@ def _is_worklog_help_request(text: str) -> bool:
   return any(phrase in text for phrase in phrases)
 
 
+_WORKLOG_REF_KEYWORDS = (
+  '이거', '이것', '그거', '그것', '방금', '아까', '최근', '저거',
+  '이 작업', '이 업무', '그 작업', '그 업무',
+)
+_WORKLOG_DONE_KEYWORDS = ('완료', '끝냈', '끝남', '마침', '마무리', '다 됐', '다됨')
+_WORKLOG_PROGRESS_KEYWORDS = ('진행', '진행률', '진척', '완료율')
+_WORKLOG_MOVE_KEYWORDS = ('미뤄', '옮겨', '변경', '이동', '연기', '로 해', '로 바꿔')
+
+
+def _detect_worklog_followup(text: str) -> dict[str, Any] | None:
+  '''최근 업무에 대한 짧은 후속 명령을 감지한다.'''
+  has_ref = any(keyword in text for keyword in _WORKLOG_REF_KEYWORDS)
+  fields: dict[str, Any] = {}
+  explicit_progress = False
+
+  progress_match = re.search(r'(\d{1,3})\s*%', text)
+  if progress_match and any(keyword in text for keyword in _WORKLOG_PROGRESS_KEYWORDS):
+    fields['progress'] = min(100, max(0, int(progress_match.group(1))))
+    explicit_progress = True
+
+  if any(keyword in text for keyword in _WORKLOG_DONE_KEYWORDS):
+    fields['progress'] = 100
+    fields['status'] = 'done'
+
+  target_date = _parse_korean_calendar_date(text)
+  if target_date and any(keyword in text for keyword in _WORKLOG_MOVE_KEYWORDS):
+    fields['date'] = target_date
+    fields.setdefault('status', 'active')
+
+  if not fields:
+    return None
+
+  # "70% 진행"처럼 명확한 상태 업데이트는 지시어가 없어도 허용한다.
+  # "랜딩 완료"처럼 작업명이 있는 문장은 일반 업무일지 의도 감지로 넘긴다.
+  if has_ref or explicit_progress:
+    return fields
+  return None
+
+
+def _pick_recent_worklog_task(
+  last_task: dict[str, Any] | None,
+  recent_tasks: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+  if last_task:
+    return last_task
+  for task in recent_tasks:
+    if str(task.get('status') or '') not in ('done', 'cancelled') and int(task.get('progress') or 0) < 100:
+      return task
+  return recent_tasks[0] if recent_tasks else None
+
+
 _DAY_OFF_KEYWORDS = ('오전반차', '오전 반차', '오후반차', '오후 반차', '휴가', '연차', '휴무', '반차', '대체휴무', '쉬는날', '쉬는 날')
 _DAY_OFF_DELETE_KEYWORDS = ('해제', '삭제', '취소', '빼', '빼줘', '제거')
 
@@ -501,6 +552,10 @@ class Office:
     if self._last_worklog_task and _is_worklog_help_request(user_input):
       return await self._handle_worklog_help_request(user_input, combined_context)
 
+    followup = _detect_worklog_followup(user_input)
+    if followup:
+      return await self._handle_worklog_followup(user_input, followup)
+
     worklog_result = detect_worklog_intent(user_input)
     if worklog_result:
       return await self._handle_worklog_intent(worklog_result.worklog, combined_context)
@@ -658,6 +713,8 @@ class Office:
   async def _step_worklog_session(self, user_input: str) -> dict:
     '''업무일지 등록 대화 세션 단계별 처리.'''
     s = self._worklog_session
+    if s is None:
+      return self._reply('진행 중인 업무일지 등록이 없습니다.')
     text = user_input.strip()
 
     # 취소
@@ -803,6 +860,28 @@ class Office:
     kind = intent.get('kind') or 'vacation'
     day_off = await asyncio.to_thread(upsert_day_off, work_date, name, kind)
     return await self._emit_reply(raw, f'{day_off["date"]}을(를) **{day_off["name"]}**로 등록했습니다.')
+
+  async def _handle_worklog_followup(self, user_input: str, fields: dict[str, Any]) -> dict[str, Any]:
+    '''"이거 완료", "70% 진행", "내일로 미뤄"를 최근 업무에 반영한다.'''
+    from db.workreport_store import get_recent_tasks, update_task
+
+    recent_tasks = await asyncio.to_thread(get_recent_tasks, 20)
+    task = _pick_recent_worklog_task(self._last_worklog_task, recent_tasks)
+    if not task:
+      return await self._emit_reply(user_input, '수정할 최근 업무가 없습니다. 먼저 업무를 등록해 주세요.')
+
+    updated = await asyncio.to_thread(update_task, int(task['id']), **fields)
+    if not updated:
+      return await self._emit_reply(user_input, '업무일지를 갱신하지 못했습니다.')
+
+    self._last_worklog_task = updated
+    progress = int(updated.get('progress') or 0)
+    progress_label = '완료' if progress >= 100 else f'{progress}% 진행' if progress else '진행 중'
+    date_label = f' · {updated["date"]}' if fields.get('date') else ''
+    return await self._emit_reply(
+      user_input,
+      f'업무일지를 갱신했습니다.\n**{updated.get("project") or "기타"}** / {updated["task_name"]} — {progress_label}{date_label}',
+    )
 
   async def _handle_worklog_help_request(self, user_input: str, recent_context: str = '') -> dict[str, Any]:
     '''최근 업무일지 task를 실제 실행 Job으로 연결한다.'''

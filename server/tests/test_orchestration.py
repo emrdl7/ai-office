@@ -84,6 +84,36 @@ async def test_worklog_help_request_links_job(office_setup, isolated_workreport_
 
 
 @pytest.mark.asyncio
+async def test_worklog_followup_updates_recent_task(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+    task = isolated_workreport_db.create_task(task_name='랜딩 페이지', progress=10)
+    office._last_worklog_task = task
+
+    result = await office.receive('이거 완료')
+
+    updated = isolated_workreport_db.get_recent_tasks(1)[0]
+    assert result['state'] == 'completed'
+    assert updated['task_name'] == '랜딩 페이지'
+    assert updated['progress'] == 100
+    assert updated['status'] == 'done'
+
+
+@pytest.mark.asyncio
+async def test_worklog_followup_moves_recent_task_date(office_setup, isolated_workreport_db):
+    office, _ = office_setup
+    task = isolated_workreport_db.create_task(task_name='제안서 작성', progress=20)
+    office._last_worklog_task = task
+
+    result = await office.receive('이거 내일로 미뤄')
+
+    from core.dates import kst_today
+    from datetime import timedelta
+    updated = isolated_workreport_db.get_recent_tasks(1)[0]
+    assert result['state'] == 'completed'
+    assert updated['date'] == (kst_today() + timedelta(days=1)).isoformat()
+
+
+@pytest.mark.asyncio
 async def test_chat_registers_and_removes_day_off(office_setup, isolated_workreport_db):
     office, _ = office_setup
 

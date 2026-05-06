@@ -1,4 +1,5 @@
 // 인사이트 패널 — Job 파이프라인 통계
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { MatIcon } from './icons'
@@ -74,7 +75,14 @@ function qualityTone(score: number): string {
 
 // ─── 메인 패널 ──────────────────────────────────────────────────────────────
 
-export function InsightPanel({ onClose }: { onClose: () => void }) {
+export function InsightPanel({
+  onClose,
+  onOpenComponents,
+}: {
+  onClose: () => void
+  onOpenComponents?: () => void
+}) {
+  const [auditState, setAuditState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const { data, isLoading } = useQuery<JobInsights>({
     queryKey: ['job-insights'],
     queryFn: async () => (await fetch('/api/jobs/insights')).json(),
@@ -91,6 +99,26 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
   })
 
   const maxDaily = Math.max(...(data?.daily_done ?? []).map((d) => d.count), 1)
+  const riskItems = data?.routing_quality
+    ? [
+        ...data.routing_quality.risk_items.personas.map((x) => ({ ...x, kind: 'persona' })),
+        ...data.routing_quality.risk_items.skills.map((x) => ({ ...x, kind: 'skill' })),
+        ...data.routing_quality.risk_items.tools.map((x) => ({ ...x, kind: 'tool' })),
+      ]
+        .filter((x) => x.steps > 0 && (x.avg_quality_score < 85 || x.failed > 0 || x.revision_rate > 0))
+        .sort((a, b) => a.avg_quality_score - b.avg_quality_score)
+        .slice(0, 6)
+    : []
+  const runCapabilityAudit = async () => {
+    setAuditState('running')
+    try {
+      const res = await fetch('/api/improvement/capability-audit?register=true', { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setAuditState('done')
+    } catch {
+      setAuditState('error')
+    }
+  }
 
   const panel = (
     <div
@@ -121,6 +149,34 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
 
         {/* 콘텐츠 */}
         <div className="overflow-y-auto p-5">
+          {(riskItems.length > 0 || (agreement && agreement.total > 0 && agreement.match_rate < 0.8)) && (
+            <div className="mb-4 rounded-2xl border border-white/70 bg-white/76 p-3 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/72">
+              <div className="flex items-center gap-2">
+                <MatIcon name="bolt" className="text-[16px] text-amber-500" />
+                <p className="text-xs font-black text-slate-900 dark:text-white">바로 조치</p>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {riskItems.length > 0 && (
+                  <button
+                    onClick={() => { onOpenComponents?.(); onClose() }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-700 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200"
+                  >
+                    <MatIcon name="widgets" className="text-[14px]" />
+                    컴포넌트 점검
+                  </button>
+                )}
+                <button
+                  onClick={runCapabilityAudit}
+                  disabled={auditState === 'running'}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-teal-300 disabled:opacity-50 dark:border-slate-700/80 dark:bg-slate-950/40 dark:text-slate-200"
+                >
+                  <MatIcon name={auditState === 'running' ? 'hourglass_empty' : 'fact_check'} className="text-[14px]" />
+                  {auditState === 'running' ? '감사 중' : auditState === 'done' ? '감사 완료' : auditState === 'error' ? '감사 실패' : '능력 감사 실행'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Gate AI ↔ 사람 일치율 */}
           {agreement && agreement.total > 0 && (
             <div className="mt-4 p-3 bg-indigo-50 dark:bg-indigo-900/15 rounded-lg border border-indigo-200 dark:border-indigo-700/30">
@@ -258,18 +314,7 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
               )}
 
               {/* 위험 조합 */}
-              {data.routing_quality && (
-                (() => {
-                  const riskItems = [
-                    ...data.routing_quality.risk_items.personas.map((x) => ({ ...x, kind: 'persona' })),
-                    ...data.routing_quality.risk_items.skills.map((x) => ({ ...x, kind: 'skill' })),
-                    ...data.routing_quality.risk_items.tools.map((x) => ({ ...x, kind: 'tool' })),
-                  ]
-                    .filter((x) => x.steps > 0 && (x.avg_quality_score < 85 || x.failed > 0 || x.revision_rate > 0))
-                    .sort((a, b) => a.avg_quality_score - b.avg_quality_score)
-                    .slice(0, 6)
-                  if (!riskItems.length) return null
-                  return (
+              {riskItems.length > 0 && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">점검 필요 조합</p>
                       <div className="space-y-1">
@@ -283,8 +328,6 @@ export function InsightPanel({ onClose }: { onClose: () => void }) {
                         ))}
                       </div>
                     </div>
-                  )
-                })()
               )}
 
               {/* 일별 완료 차트 (7일) */}

@@ -58,4 +58,6 @@ moved = bus.archive_old_messages(days=30)  # done + 30일 경과분 이관
 print(f'{moved} messages archived')
 ```
 
-현재 자동 스케줄은 미연결. cron 또는 서버 시작 시 1회 호출 검토 (TODOS P2).
+서버 생명주기에서 `_archive_loop()`가 시작 시 1회 실행되고 이후 24시간 주기로
+자동 이관한다. `chat_logs`도 같은 루프에서 30일 기준 archive로 이동하며,
+1년 이상 archive 데이터는 분기별 JSONL 파일로 덤프한다.
