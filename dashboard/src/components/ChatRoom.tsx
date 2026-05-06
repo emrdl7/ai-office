@@ -23,13 +23,6 @@ async function fetchJobs(): Promise<Job[]> {
   return res.json()
 }
 
-const QUICK_STARTERS = [
-  { label: '업무 등록', prompt: '다음 업무를 등록하고 실행 계획을 잡아줘: ' },
-  { label: '리서치', prompt: '다음 주제에 대해 근거 중심으로 리서치해줘: ' },
-  { label: '검토', prompt: '다음 내용을 기준에 맞게 검토하고 개선안을 정리해줘: ' },
-  { label: '문서화', prompt: '다음 내용을 업무 문서로 정리해줘: ' },
-]
-
 export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
   const { logs, addLog, setLogs, activeChannel, searchQuery, setSearchQuery } = useStore()
 
@@ -39,7 +32,7 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
     staleTime: 10000,
   })
   const { data: jobs = [] } = useQuery({
-    queryKey: ['jobs', 'command-strip'],
+    queryKey: ['jobs', 'chat-active-strip'],
     queryFn: fetchJobs,
     refetchInterval: 5000,
   })
@@ -195,33 +188,14 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
 
       {activeChannel === 'all' && (
         <section className="shrink-0 px-4 md:px-6 py-3 border-b border-slate-200/70 dark:border-slate-800/70">
-          <div className="max-w-5xl mx-auto grid gap-3 md:grid-cols-[1fr_auto] items-center">
-            <div className="command-surface rounded-2xl px-4 py-3">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-slate-950 text-white dark:bg-cyan-300 dark:text-slate-950">
-                  <MatIcon name="bolt" className="text-[15px]" />
-                </span>
-                <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">Command Center</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">요청을 업무로 바꾸고, 필요한 전문 모드와 툴을 선택합니다.</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {QUICK_STARTERS.map((starter) => (
-                  <button
-                    key={starter.label}
-                    onClick={() => {
-                      setMessage(starter.prompt)
-                      requestAnimationFrame(() => inputRef.current?.focus())
-                    }}
-                    className="rounded-full border border-slate-200/80 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/60 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:border-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-colors cursor-pointer"
-                  >
-                    {starter.label}
-                  </button>
-                ))}
-              </div>
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-900 dark:text-white">대화로 업무를 요청하세요</p>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                비서가 요청 내용을 해석해 필요한 페르소나, 스킬, 툴, 실행 방식을 선택합니다.
+              </p>
             </div>
-            <div className="hidden lg:block text-right">
+            <div className="text-right">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Active Jobs</p>
               <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{activeJobs.length}</p>
             </div>
@@ -288,23 +262,9 @@ export function ChatRoom({ onMenuClick }: { onMenuClick?: () => void }) {
                 <h3 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">무엇을 맡길까요?</h3>
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                   {activeChannel === 'all'
-                    ? '대화로 요청하면 업무 등록, 실행, 검토까지 이어집니다.'
+                    ? '업무 등록, 일정 관리, 자료 정리, 실행 요청처럼 필요한 내용을 그대로 말하면 됩니다.'
                     : `${profile?.name}에게 메시지를 보내세요.`}
                 </p>
-                <div className="mt-5 flex flex-wrap justify-center gap-2">
-                  {QUICK_STARTERS.map((starter) => (
-                    <button
-                      key={starter.label}
-                      onClick={() => {
-                        setMessage(starter.prompt)
-                        requestAnimationFrame(() => inputRef.current?.focus())
-                      }}
-                      className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-600 dark:bg-white dark:text-slate-950 dark:hover:bg-cyan-200 transition-colors"
-                    >
-                      {starter.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           ) : (
