@@ -67,6 +67,13 @@ interface DayOff {
   created_at?: string
 }
 
+interface ProjectSummary {
+  project: string
+  task_count: number
+  last_date?: string
+  status?: string
+}
+
 const DAY_OFF_OPTIONS = [
   { name: '휴가', kind: 'vacation' },
   { name: '오전반차', kind: 'half_day_am' },
@@ -253,10 +260,29 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [project, setProject] = useState('')
+  const [projectFocused, setProjectFocused] = useState(false)
   const [detail, setDetail] = useState('')
   const [progress, setProgress] = useState(0)
 
   const qc = useQueryClient()
+  const { data: projects = [] } = useQuery<ProjectSummary[]>({
+    queryKey: ['wr-projects'],
+    queryFn: async () => {
+      const res = await fetch('/api/workreport/projects')
+      if (!res.ok) return []
+      return res.json()
+    },
+    enabled: open,
+    staleTime: 30000,
+  })
+  const projectOptions = projects
+    .filter((item) => {
+      const value = item.project.trim()
+      if (!value) return false
+      return !project.trim() || value.toLowerCase().includes(project.trim().toLowerCase())
+    })
+    .slice(0, 8)
+
   const add = useMutation({
     mutationFn: async () => {
       const res = await fetch('/api/workreport/tasks', {
@@ -270,7 +296,9 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wr-daily'] })
       qc.invalidateQueries({ queryKey: ['wr-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['wr-projects'] })
       setName(''); setProject(''); setDetail(''); setProgress(0)
+      setProjectFocused(false)
       setOpen(false)
       onAdded()
     },
@@ -300,14 +328,37 @@ function AddTaskForm({ onAdded }: { onAdded: () => void }) {
           focus:outline-none focus:ring-2 focus:ring-teal-400/50"
       />
       <div className="flex gap-2">
-        <input
-          value={project}
-          onChange={e => setProject(e.target.value)}
-          placeholder="프로젝트"
-          className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700
-            bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100
-            focus:outline-none focus:ring-2 focus:ring-teal-400/50"
-        />
+        <div className="relative flex-1">
+          <input
+            value={project}
+            onChange={e => setProject(e.target.value)}
+            onFocus={() => setProjectFocused(true)}
+            onBlur={() => window.setTimeout(() => setProjectFocused(false), 120)}
+            placeholder="프로젝트"
+            className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700
+              bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100
+              focus:outline-none focus:ring-2 focus:ring-teal-400/50"
+          />
+          {projectFocused && projectOptions.length > 0 && (
+            <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              {projectOptions.map((item) => (
+                <button
+                  key={item.project}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setProject(item.project)
+                    setProjectFocused(false)
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  <span className="truncate font-medium text-slate-800 dark:text-slate-100">{item.project}</span>
+                  <span className="shrink-0 text-[10px] text-slate-400">{item.task_count}건</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-xs text-gray-500">진행도</span>
           <input
