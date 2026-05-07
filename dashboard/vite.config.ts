@@ -20,7 +20,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3100,
-    allowedHosts: ['footer.kr'],
+    allowedHosts: ['footer.kr', 's-mac-mini-1.tail991e46.ts.net'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
